@@ -1,0 +1,66 @@
+#! /bin/sh
+
+pkill firewall-applet
+pkill audio-swap.sh
+
+pgrep -x sxhkd > /dev/null || sxhkd &
+
+bspc monitor DP-2 -d 1 2
+bspc monitor DP-4 -d 3 4
+bspc monitor DP-0 -d coms mus
+
+bspc config border_width        3
+bspc config window_gap          3
+
+bspc config split_ratio          0.5
+bspc config borderless_monocle   true
+bspc config gapless_monocle      true
+bspc config pointer_follows_focus true
+bspc config focus_follows_pointer true
+
+bspc rule -a Pavucontrol:\* state=floating
+bspc rule -a Chromium:crx_pbmimonoifmankpbmkcinjoohejdnjll desktop=coms
+bspc rule -a 'discord:*' desktop=coms
+bspc rule -a Chromium:crx_cinhimbnkkaeohfgghhklpknlkffjgod desktop=mus
+
+
+# Border
+bspc config focused_border_color        "#4f0fd9"
+bspc config normal_border_color         "#070b61"
+bspc config active_border_color         "#070b61"
+
+#
+# Autostart
+#
+# Set display from arandr saved script
+sh ~/.screenlayout/layout.sh
+
+# Vertical monitor
+if  ! pgrep Discord; then
+	chromium "--profile-directory=Profile 1" --app-id=cinhimbnkkaeohfgghhklpknlkffjgod &
+	chromium "--profile-directory=Profile 1" --app-id=pbmimonoifmankpbmkcinjoohejdnjll &
+	discord &
+fi
+# Audio swap
+~/.config/bspwm/scripts/audio-swap.sh &
+# Bar
+~/.config/polybar/launch.sh &
+# Notifications
+/usr/bin/dunst &a
+# Polkit
+/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1 &
+# Wallpaper
+nitrogen --restore &
+# Dex
+dex -a -s /etc/xdg/autostart/:~/.config/autostart/  &
+# Picom
+# picom -b &
+# Network Applet
+nm-applet --indicator &
+
+# Cursor
+xsetroot -cursor_name left_ptr &
+
+# Low battery notifier
+~/.config/bspwm/scripts/low_bat_notifier.sh
+
