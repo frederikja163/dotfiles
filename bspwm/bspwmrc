@@ -5,9 +5,9 @@ pkill audio-swap.sh
 
 pgrep -x sxhkd > /dev/null || sxhkd &
 
-bspc monitor DP-2 -d 1 2
-bspc monitor DP-4 -d 3 4
-bspc monitor DP-0 -d coms mus
+bspc monitor DisplayPort-0 -d 1 2
+bspc monitor DisplayPort-1 -d 3 4
+bspc monitor DisplayPort-2 -d coms mus
 
 bspc config border_width        3
 bspc config window_gap          3
@@ -33,11 +33,14 @@ bspc config active_border_color         "#070b61"
 # Autostart
 #
 # Set display from arandr saved script
-sh ~/.screenlayout/layout.sh
+#sh ~/.screenlayout/layout_nv.sh
+sh ~/.screenlayout/layout_amd.sh
+
 
 # Vertical monitor
 if  ! pgrep Discord; then
 	chromium "--profile-directory=Profile 1" --app-id=cinhimbnkkaeohfgghhklpknlkffjgod &
+	sleep 1s
 	chromium "--profile-directory=Profile 1" --app-id=pbmimonoifmankpbmkcinjoohejdnjll &
 	discord &
 fi
@@ -62,5 +65,5 @@ nm-applet --indicator &
 xsetroot -cursor_name left_ptr &
 
 # Low battery notifier
-~/.config/bspwm/scripts/low_bat_notifier.sh
+# ~/.config/bspwm/scripts/low_bat_notifier.sh
 

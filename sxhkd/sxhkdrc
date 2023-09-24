@@ -1,3 +1,23 @@
+# Macro 1
+super + F2
+	~/.config/bspwm/scripts/macro-right.sh
+
+# Macro 2
+super + F3
+	~/.config/bspwm/scripts/macro-left.sh
+
+# Macro 3
+super + F4
+	~/.config/bspwm/scripts/macro-start-farm.sh
+
+# Macro 4
+super + F5
+	~/.config/bspwm/scripts/macro-start-manual-farm.sh
+
+# Kill all open macro
+super + Escape
+	~/.config/bspwm/scripts/stop-macro.sh
+
 #
 # wm independent hotkeys
 #
@@ -29,7 +49,7 @@ super + shift + e
      ~/.config/rofi/powermenu.sh
 
 # make sxhkd reload its configuration files:
-super + Escape
+super + shift + Escape
 	pkill -USR1 -x sxhkd
 
 #
@@ -104,11 +124,11 @@ super + {o,i}
 
 # swap desktop on monitor
 super + {1,2,3}
-	~/.config/bspwm/scripts/swap-desktop.sh {DP-2,DP-4,DP-0}
+	~/.config/bspwm/scripts/swap-desktop.sh {DisplayPort-0,DisplayPort-1,DisplayPort-2}
 
 # transfer node to monitor
 super + shift + {1,2,3}
-	~/.config/bspwm/scripts/move-node.sh {DP-2,DP-4,DP-0}
+	~/.config/bspwm/scripts/move-node.sh {DisplayPort-0,DisplayPort-1,DisplayPort-2}
 
 #
 # preselect
