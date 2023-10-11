@@ -2,6 +2,7 @@
 export _JAVA_AWT_WM_NONREPARENTING=1
 
 laptop(){
+	export MON=1
 	export MON1="eDP-1"
 
 	# Low battery notifier
@@ -11,19 +12,24 @@ laptop(){
 }
 
 desktop(){
+	export MON=3
+	export MON1="DisplayPort-0"
+	export MON2="DisplayPort-1"
+	export MON3="DisplayPort-2"
+
 	# Set display from arandr saved script
 	#sh ~/.screenlayout/layout_nv.sh
 	sh ~/.screenlayout/layout_amd.sh
 }
 
 single_monitor(){
-	bspc monitor $MON1 1 2 3 4
+	bspc monitor $MON1 -d 1a 1b 2a 2b 3a 3b
 }
 
 triple_monitor(){
-	bspc monitor DisplayPort-0 -d 1 2
-	bspc monitor DisplayPort-1 -d 3 4
-	bspc monitor DisplayPort-2 -d coms mus
+	bspc monitor $MON1 -d 1a 1b
+	bspc monitor $MON2 -d 2a 2b
+	bspc monitor $MON3 -d 3a 3b
 	
 
 	# Vertical monitor

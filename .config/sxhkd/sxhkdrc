@@ -124,11 +124,11 @@ super + {o,i}
 
 # swap desktop on monitor
 super + {1,2,3}
-	~/.config/bspwm/scripts/swap-desktop.sh {DisplayPort-0,DisplayPort-1,DisplayPort-2}
+	~/.config/bspwm/scripts/swap-desktop.sh {1,2,3}
 
 # transfer node to monitor
 super + shift + {1,2,3}
-	~/.config/bspwm/scripts/move-node.sh {DisplayPort-0,DisplayPort-1,DisplayPort-2}
+	~/.config/bspwm/scripts/move-node.sh {1,2,3}
 
 #
 # preselect
