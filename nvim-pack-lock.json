@@ -1,5 +1,21 @@
 {
   "plugins": {
+    "cmp-nvim-lsp": {
+      "rev": "cbc7b02bb99fae35cb42f514762b89b5126651ef",
+      "src": "https://github.com/hrsh7th/cmp-nvim-lsp"
+    },
+    "cmp-path": {
+      "rev": "c642487086dbd9a93160e1679a1327be111cbc25",
+      "src": "https://github.com/hrsh7th/cmp-path"
+    },
+    "cmp-vsnip": {
+      "rev": "989a8a73c44e926199bfd05fa7a516d51f2d2752",
+      "src": "https://github.com/hrsh7th/cmp-vsnip"
+    },
+    "lspkind.nvim": {
+      "rev": "3ddd1b4edefa425fda5a9f95a4f25578727c0bb3",
+      "src": "https://github.com/onsails/lspkind.nvim"
+    },
     "mason.nvim": {
       "rev": "57e5a8addb8c71fb063ee4acda466c7cf6ad2800",
       "src": "https://github.com/mason-org/mason.nvim"
@@ -12,6 +28,10 @@
       "rev": "193e123cdbc4dd3e86db883d55349e9587f0ded6",
       "src": "https://github.com/catppuccin/nvim"
     },
+    "nvim-cmp": {
+      "rev": "d97d85e01339f01b842e6ec1502f639b080cb0fc",
+      "src": "https://github.com/hrsh7th/nvim-cmp"
+    },
     "nvim-lspconfig": {
       "rev": "9c923997123ff9071198ea3b594d4c1931fab169",
       "src": "https://github.com/neovim/nvim-lspconfig"
@@ -19,6 +39,10 @@
     "nvim-treesitter": {
       "rev": "42fc28ba918343ebfd5565147a42a26580579482",
       "src": "https://github.com/nvim-treesitter/nvim-treesitter"
+    },
+    "vim-vsnip": {
+      "rev": "9bcfabea653abdcdac584283b5097c3f8760abaa",
+      "src": "https://github.com/hrsh7th/vim-vsnip"
     }
   }
 }
