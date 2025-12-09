@@ -20,7 +20,9 @@ vim.g.mapleader = " "
 vim.keymap.set('n', '<leader>c', '<cmd>update<CR> <cmd>source<CR>')
 vim.keymap.set('n', '<leader>q', '<cmd>quit<CR>')
 vim.keymap.set('n', '<leader>w', '<cmd>write<CR>')
+vim.keymap.set('n', '<leader>t', '<cmd>terminal<CR>')
 vim.keymap.set('n', '<Esc>', '<cmd>nohlsearch<CR>')
+vim.keymap.set('t', '<Esc>', '<C-\\><C-n>')
 vim.keymap.set('i', '<C-j>', '<C-o>j')
 vim.keymap.set('i', '<C-k>', '<C-o>k')
 vim.keymap.set('i', '<C-h>', '<C-o>h')
@@ -43,7 +45,7 @@ vim.keymap.set('n', '<leader>fh', '<cmd>Pick help<CR>')
 
 -- LSP
 vim.pack.add({ { src = "https://github.com/neovim/nvim-lspconfig" } })
-vim.lsp.enable({ "lua_ls" })
+vim.lsp.enable({ "lua_ls", "clangd" })
 vim.keymap.set('n', '<leader>d', vim.diagnostic.open_float)
 vim.keymap.set('n', '<leader>lf', vim.lsp.buf.format)
 vim.keymap.set('n', '<leader>ca', vim.lsp.buf.code_action)
