@@ -45,7 +45,7 @@ vim.keymap.set('n', '<leader>fh', '<cmd>Pick help<CR>')
 
 -- LSP
 vim.pack.add({ { src = "https://github.com/neovim/nvim-lspconfig" } })
-vim.lsp.enable({ "lua_ls", "clangd" })
+vim.lsp.enable({ "lua_ls", "clangd", "denols", "html", "ts_ls" })
 vim.keymap.set('n', '<leader>d', vim.diagnostic.open_float)
 vim.keymap.set('n', '<leader>lf', vim.lsp.buf.format)
 vim.keymap.set('n', '<leader>ca', vim.lsp.buf.code_action)
