@@ -1,4 +1,3 @@
-resize on close apps
 suspend
 figure out keybindings
 duplicate windows (terminals)
