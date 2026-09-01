@@ -5,7 +5,7 @@
 local HYPR = os.getenv("HYPR_DIR") or "hypr"
 package.path = HYPR .. "/?.lua;" .. package.path
 
-local msgs, dispatched, world, open_handler, early_handler, binds, timers
+local msgs, dispatched, world, open_handler, early_handler, binds, timers, events
 
 local function win(addr, x, y, w, h, floating)
     return {
@@ -18,13 +18,14 @@ local function win(addr, x, y, w, h, floating)
 end
 
 local function reset(w)
-    world, msgs, dispatched, binds, timers = w, {}, {}, {}, 0
+    world, msgs, dispatched, binds, timers, events = w, {}, {}, {}, 0, {}
 
     _G.hl = {
         bind = function(keys, fn, opts) binds[keys] = fn end,
         on = function(event, fn)
             if event == "window.open" then open_handler = fn end
             if event == "window.open_early" then early_handler = fn end
+            events[event] = fn
         end,
         timer = function(cb, opts) timers = timers + 1 end, -- do not fire: it is a safety net
         dispatch = function(d)
@@ -32,6 +33,11 @@ local function reset(w)
             if type(d) == "table" and d.layout then table.insert(msgs, d.layout) end
         end,
         get_active_window = function() return world.active end,
+        get_active_monitor = function() return world.monitor_obj end,
+        get_config = function(key)
+            if key == "general.gaps_out" then return { left = 5, right = 5, top = 5, bottom = 5 } end
+            if key == "general.border_size" then return 2 end
+        end,
         get_windows = function(filter)
             local out = {}
             for _, x in ipairs(world.windows) do table.insert(out, x) end
@@ -79,15 +85,25 @@ check("evens all three columns", msgs[2], "colresize all 0.333")
 
 -- Scenario B: uneven columns. Focused column is 700 wide of 960 logical
 -- (fraction 0.729) with 2 windows -> new column should be half: ~0.365
-print("B: uneven columns, split one out -> half of selected")
+print("B: uneven columns with room to spare -> half of selected")
+-- usable is 946; these span 508, so there is plenty of room for a new column
 local b1 = win("b1", 7, 7, 200, 526)
-local b2 = win("b2", 215, 7, 700, 259)
-local b3 = win("b3", 215, 274, 700, 259)
+local b2 = win("b2", 215, 7, 300, 259)
+local b3 = win("b3", 215, 274, 300, 259)
 mod = reset({ windows = { b1, b2, b3 }, active = b2 })
 for _, w in ipairs({ b1, b2, b3 }) do w.workspace, w.monitor = ws, MON end
 mod.new_column()
 check("promote first", msgs[1], "promote")
-check("half of selected fraction", msgs[2], "colresize 0.365")
+check("half of the source column (300/946/2)", msgs[2], "colresize 0.159")
+
+print("B2: the same split with no room left evens out instead of overflowing")
+local c1 = win("c1", 7, 7, 200, 526)
+local c2 = win("c2", 215, 7, 700, 259)
+local c3 = win("c3", 215, 274, 700, 259) -- span 908 of 946 usable
+mod = reset({ windows = { c1, c2, c3 }, active = c2 })
+for _, w in ipairs({ c1, c2, c3 }) do w.workspace, w.monitor = ws, MON end
+mod.new_column()
+check("evens rather than spilling over", msgs[2], "colresize all 0.333")
 
 -- Scenario C: focused window already alone in its column -> no-op
 print("C: already alone in its column -> nothing happens")
@@ -286,6 +302,87 @@ mod = reset({ windows = { q1, q2, f }, active = f })
 for _, w in ipairs({ q1, q2, f }) do w.workspace, w.monitor = ws, MON end
 mod.move_between_columns("prev")
 check("no messages", #msgs, 0)
+
+print("I: columns must never exceed the monitor")
+-- MON is 1920 at scale 2 -> 960 logical, so usable = 960 - 2*5 - 2*2 = 946
+local u1 = win("u1", 7, 7, 946, 526)
+mod = reset({ windows = { u1 }, active = u1 })
+u1.workspace, u1.monitor = ws, MON
+check("usable width matches the calibrated formula", mod.usable_width(MON), 946)
+
+print("I2: growing a column that already fills the screen does nothing")
+local v1 = win("v1", 7, 7, 473, 526)
+local v2 = win("v2", 484, 7, 473, 526) -- two halves: span 950 >= usable
+mod = reset({ windows = { v1, v2 }, active = v1 })
+for _, w in ipairs({ v1, v2 }) do w.workspace, w.monitor = ws, MON end
+mod.resize_column(0.05)
+check("no resize message", #msgs, 0)
+
+print("I3: growing is capped at the free space")
+-- one column of 300 on a 946 usable: 646 free = 0.68 of the monitor
+local x1 = win("x1", 7, 7, 300, 526)
+mod = reset({ windows = { x1 }, active = x1 })
+x1.workspace, x1.monitor = ws, MON
+mod.resize_column(0.05) -- plenty of room, so the full step applies
+check("normal step applied", msgs[1], "colresize 0.367")
+
+print("I4: a step larger than the remaining room is trimmed")
+local y1 = win("y1", 7, 7, 900, 526) -- 46px free = 0.049
+mod = reset({ windows = { y1 }, active = y1 })
+y1.workspace, y1.monitor = ws, MON
+mod.resize_column(0.5)
+check("trimmed to the free space", msgs[1], "colresize 1.000")
+
+print("I5: shrinking is always allowed")
+mod = reset({ windows = { v1, v2 }, active = v1 })
+for _, w in ipairs({ v1, v2 }) do w.workspace, w.monitor = ws, MON end
+mod.resize_column(-0.05)
+check("shrink works even when full", msgs[1], "colresize 0.450")
+
+print("I6: new column falls back to evening out when there is no room")
+-- three columns already filling the monitor, focused one shares its column
+local z1 = win("z1", 7, 7, 313, 526)
+local z2 = win("z2", 327, 7, 313, 259)
+local z3 = win("z3", 327, 274, 313, 259) -- focused, not alone
+local z4 = win("z4", 647, 7, 306, 526)
+mod = reset({ windows = { z1, z2, z3, z4 }, active = z3 })
+for _, w in ipairs({ z1, z2, z3, z4 }) do w.workspace, w.monitor = ws, MON end
+mod.new_column()
+check("promoted", msgs[1], "promote")
+check("evened to 1/4 instead of overflowing", msgs[2], "colresize all 0.250")
+
+print("J: overflow that arrives from outside is corrected")
+-- two columns wider than the monitor: 600 + 600 on a 946 usable
+local o1 = win("o1", 7, 7, 600, 526)
+local o2 = win("o2", 615, 7, 600, 526)
+local mon_ws = { id = 1, special = false }
+mod = reset({ windows = { o1, o2 }, active = o1,
+              monitor_obj = { width = MON.width, scale = MON.scale, active_workspace = mon_ws } })
+for _, w in ipairs({ o1, o2 }) do w.workspace, w.monitor = mon_ws, MON end
+mod.enforce_bounds()
+check("evens the columns to fit", msgs[1], "fit all")
+
+print("J2: columns that already fit are left alone")
+local q1 = win("q1", 7, 7, 400, 526)
+local q2 = win("q2", 415, 7, 400, 526) -- span 808 of 946
+mod = reset({ windows = { q1, q2 }, active = q1,
+              monitor_obj = { width = MON.width, scale = MON.scale, active_workspace = mon_ws } })
+for _, w in ipairs({ q1, q2 }) do w.workspace, w.monitor = mon_ws, MON end
+mod.enforce_bounds()
+check("no message, uneven widths preserved", #msgs, 0)
+
+print("J3: a lone column is never touched")
+local r1 = win("r1", 7, 7, 946, 526)
+mod = reset({ windows = { r1 }, active = r1,
+              monitor_obj = { width = MON.width, scale = MON.scale, active_workspace = mon_ws } })
+r1.workspace, r1.monitor = mon_ws, MON
+mod.enforce_bounds()
+check("no message", #msgs, 0)
+
+print("J4: enforcement is wired to the events that can change geometry")
+check("workspace.active hooked", type(events["workspace.active"]), "function")
+check("window.close hooked", type(events["window.close"]), "function")
+check("monitor.removed hooked", type(events["monitor.removed"]), "function")
 
 print("")
 print(("%d passed, %d failed"):format(pass, fail))

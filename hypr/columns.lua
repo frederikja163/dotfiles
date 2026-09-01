@@ -99,21 +99,56 @@ local function all_same_width(cols)
     return true
 end
 
--- colresize takes a fraction of the usable width. Window geometry is in
--- logical pixels, so the monitor's pixel width has to be divided by its scale.
--- The remaining error from gaps and borders is under 2%, which is invisible for
--- a "half of the selected column" rule.
+-- Width available to columns, in the same logical pixels window geometry uses.
+--
+--   monitor width / scale, minus the outer gaps and the borders on both sides
+--
+-- Verified against a lone column, which spans everything: eDP-1 is 1920 at
+-- scale 1.5, so 1280 logical, and the column measures 1266 = 1280 - 2*5 - 2*2.
+-- colresize fractions are relative to exactly this width.
 local function usable_width(mon)
     if not mon then
         return nil
     end
 
     local scale = (mon.scale and mon.scale > 0) and mon.scale or 1
-    return mon.width / scale
+
+    local gap = 5
+    local gaps = hl.get_config("general.gaps_out")
+    if type(gaps) == "table" and tonumber(gaps.left) then
+        gap = tonumber(gaps.left)
+    elseif tonumber(gaps) then
+        gap = tonumber(gaps)
+    end
+
+    local border = tonumber(hl.get_config("general.border_size")) or 2
+
+    return (mon.width / scale) - 2 * gap - 2 * border
 end
 
+-- How much of the monitor the columns currently occupy, left edge of the first
+-- to right edge of the last. Wider than usable_width means the tape scrolls.
+local function span_of(cols)
+    if #cols == 0 then
+        return 0
+    end
+
+    local last = cols[#cols]
+    return (last.x + last.width) - cols[1].x
+end
+
+-- Fraction of the monitor still free. Negative if the columns already overflow.
+local function free_fraction(cols, usable)
+    if not usable or usable <= 0 then
+        return 0
+    end
+    return (usable - span_of(cols)) / usable
+end
+
+local MIN_COLUMN = 0.1
+
 local function clamp_fraction(f)
-    return math.max(0.1, math.min(1.0, f))
+    return math.max(MIN_COLUMN, math.min(1.0, f))
 end
 
 -- M+n: move the focused window into a new column of its own.
@@ -142,16 +177,96 @@ local function new_column()
 
     local even = all_same_width(cols)
     local usable = usable_width(win.monitor)
-    local source_fraction = usable and (source.width / usable) or nil
+
+    -- Splitting a window out adds a column, so it has to come out of the space
+    -- that is left. Work out how wide it may be before moving anything.
+    local wanted, room
+    if usable then
+        wanted = (source.width / usable) / 2
+        room = free_fraction(cols, usable)
+    end
 
     layout_msg("promote")
 
-    if even then
-        -- One more column than before, all equal.
+    if even or not usable or room < MIN_COLUMN then
+        -- Either the columns were all equal anyway, or there is not enough room
+        -- left for a sensibly sized column. Re-even them: n columns at 1/n
+        -- always fills the monitor exactly and never overflows it.
         layout_msg(("colresize all %.3f"):format(1.0 / (#cols + 1)))
-    elseif source_fraction then
-        layout_msg(("colresize %.3f"):format(clamp_fraction(source_fraction / 2)))
+    else
+        -- Half the source column, but never more than the free space, so the
+        -- columns stay inside the monitor.
+        layout_msg(("colresize %.3f"):format(clamp_fraction(math.min(wanted, room))))
     end
+end
+
+-- Bring the columns back inside the monitor if they are somehow wider than it.
+--
+-- Nothing in this file can create an overflow -- new columns and resizes are
+-- both capped -- but one can arrive from outside: a workspace moved to a
+-- smaller monitor, a `colresize` from hyprctl, a monitor that changed scale.
+-- `fit all` evens the columns out and makes them fill the monitor exactly,
+-- which is the only cheap way back into bounds.
+local function enforce_bounds()
+    local mon = hl.get_active_monitor()
+    local ws = mon and mon.active_workspace
+    if not ws or ws.special then
+        return
+    end
+
+    local cols = columns_of(ws)
+    if #cols < 2 then
+        return -- a lone column is capped at the full width already
+    end
+
+    local usable = usable_width(mon)
+    if not usable then
+        return
+    end
+
+    -- A pixel of slack: widths are rounded, so exact equality is not reliable.
+    if span_of(cols) > usable + 1 then
+        layout_msg("fit all")
+    end
+end
+
+-- Grow or shrink the focused column, without letting the columns spill past the
+-- edge of the monitor: growing is capped at the space that is actually free.
+-- Once the monitor is full, growing does nothing -- shrink another column first.
+local function resize_column(delta)
+    local win = hl.get_active_window()
+    if not win or win.floating then
+        return
+    end
+
+    local ws = win.workspace
+    if not ws or ws.special then
+        return
+    end
+
+    local cols = columns_of(ws)
+    local own = column_containing(cols, win)
+    local usable = usable_width(win.monitor)
+    if not own or not usable or usable <= 0 then
+        return
+    end
+
+    local current = own.width / usable
+
+    if delta > 0 then
+        local room = free_fraction(cols, usable)
+        if room <= 0 then
+            return -- already filling the monitor
+        end
+        delta = math.min(delta, room)
+    end
+
+    local target = clamp_fraction(current + delta)
+    if math.abs(target - current) < 0.001 then
+        return
+    end
+
+    layout_msg(("colresize %.3f"):format(target))
 end
 
 -- New windows should join the focused column instead of opening as their own
@@ -218,7 +333,13 @@ hl.on("window.open", function(win)
 
     layout_msg("consume_or_expel prev")
     layout_msg("inhibit_scroll false")
+    enforce_bounds()
 end)
+
+-- The column geometry can also change without any of the binds being used.
+for _, event in ipairs({ "workspace.active", "window.close", "monitor.added", "monitor.removed" }) do
+    hl.on(event, enforce_bounds)
+end
 
 -- M+m: cycle windows through the "main slot", which is simply whichever column
 -- is currently the biggest.
@@ -415,6 +536,12 @@ for _, h in ipairs(horizontal) do
             move_between_columns(h.dir)
         end, { repeating = true, description = "Move window to the column " .. h.label })
 
+        -- Column width. Capped so the columns never run past the monitor edge,
+        -- which is what makes the tape scroll when focus moves.
+        hl.bind(mainMod .. " + CTRL + " .. key, function()
+            resize_column(h.dir == "next" and 0.05 or -0.05)
+        end, { repeating = true, description = "Resize column " .. h.label })
+
         hl.bind(mainMod .. " + ALT + " .. key, hl.dsp.layout("swapcol " .. h.swapcol),
                 { repeating = true, description = "Swap column with the one to the " .. h.label })
     end
@@ -429,6 +556,10 @@ return {
     new_column = new_column,
     cycle_main = cycle_main,
     move_between_columns = move_between_columns,
+    resize_column = resize_column,
+    enforce_bounds = enforce_bounds,
+    usable_width = usable_width,
+    span_of = span_of,
     stable_order = stable_order,
     main_column = main_column,
 }

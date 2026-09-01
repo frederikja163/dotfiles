@@ -1,3 +1,7 @@
+resize on close apps
+suspend
+figure out keybindings
+
 Github integration
 Desktop extension + monitor setups
 Auto update config with notification
@@ -38,7 +42,8 @@ config does not care how they are arranged)
 M+S+[jk] = move window up/down inside its column
 M+S+[hl] = move window into the neighbouring column
 M+A+[hl] = swap the whole column with its neighbour
-M+C+[hl] = resize the column
+M+C+[hl] = resize the column (capped so the columns never extend past the
+monitor, which would make the view scroll sideways when moving focus)
 M+C+[jk] = resize the window inside its column
 
 Each monitor has a number associated with it, [1-0]

@@ -49,22 +49,23 @@ local resizeStep = 60
 -- The horizontal ones are column operations (move between columns, swap whole
 -- columns) and live in columns.lua instead.
 --
+-- Horizontal CTRL binds resize the column and are in columns.lua, because they
+-- have to know how much room is left on the monitor.
+--
 -- Focus uses the scrolling layout's own `focus` rather than
 -- focus({ direction = ... }). The latter steps onto the neighbouring monitor
 -- once it runs out of windows, which ties the binds to how the monitors happen
 -- to be arranged; the layout version wraps within the workspace instead.
 -- Monitors are switched deliberately with the number keys, see deskbinds.lua.
 local directions = {
-    { dir = "left",  keys = { "H", "left"  }, focus = "l",
-      resize = hl.dsp.layout("colresize -0.05") },
+    { dir = "left",  keys = { "H", "left"  }, focus = "l" },
     { dir = "down",  keys = { "J", "down"  }, focus = "d",
       resize = hl.dsp.window.resize({ x = 0, y =  resizeStep, relative = true }),
       swap = hl.dsp.window.swap({ direction = "down" }) },
     { dir = "up",    keys = { "K", "up"    }, focus = "u",
       resize = hl.dsp.window.resize({ x = 0, y = -resizeStep, relative = true }),
       swap = hl.dsp.window.swap({ direction = "up" }) },
-    { dir = "right", keys = { "L", "right" }, focus = "r",
-      resize = hl.dsp.layout("colresize +0.05") },
+    { dir = "right", keys = { "L", "right" }, focus = "r" },
 }
 
 for _, d in ipairs(directions) do
@@ -77,9 +78,11 @@ for _, d in ipairs(directions) do
                     d.swap,
                     { repeating = true, description = "Swap window " .. d.dir })
         end
-        hl.bind(mainMod .. " + CTRL + " .. key,
-                d.resize,
-                { repeating = true, description = "Resize window " .. d.dir })
+        if d.resize then
+            hl.bind(mainMod .. " + CTRL + " .. key,
+                    d.resize,
+                    { repeating = true, description = "Resize window " .. d.dir })
+        end
     end
 end
 

@@ -48,12 +48,20 @@ Windows live in **columns** on an infinite horizontal tape (Hyprland's
   column is `SUPER+Q` then `SUPER+N`, not the other way round.
 - New column width: if all columns were equal, they are re-evened; otherwise the
   new column takes half the width of the column it came from.
+- Columns **never extend past the monitor**. Growing a column is capped at the
+  space that is actually free, and a new column takes the smaller of "half the
+  source column" and whatever room is left — falling back to evening all columns
+  out when there is none. An overflow arriving from elsewhere (a workspace moved
+  to a smaller monitor, a stray `colresize`) is corrected on the next workspace
+  switch or window close. This is what stops the tape scrolling sideways when
+  focus moves.
 - `SUPER + H/J/K/L` moves focus within the desktop and wraps at the ends; it
   never steps onto another monitor, so the binds do not depend on how the
   monitors are arranged. Use the number keys to switch monitor.
 - `SUPER + SHIFT + H/L` moves the focused window into the neighbouring column,
   and `SUPER + SHIFT + J/K` moves it up and down inside its own column.
-- `SUPER + ALT + H/L` swaps the whole column with its neighbour.
+- `SUPER + ALT + H/L` swaps the whole column with its neighbour, and
+  `SUPER + CTRL + H/L` resizes the column within the bounds above.
 - `SUPER + M` cycles windows through the **main slot**, which is the widest
   column. If the focused window is outside that column it moves into it;
   otherwise each press pulls in the next window from elsewhere. Focus follows
