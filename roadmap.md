@@ -33,7 +33,8 @@ M+n = move the focused window into a new column
 M+m = cycle windows through the main slot (the widest column). If the focused
 window is outside it, it moves in; otherwise each press pulls in the next
 window. Focus follows the main slot so the big window stays highlighted.
-M+[hjkl] = focus
+M+[hjkl] = focus, wrapping within the desktop (never crosses monitors, so the
+config does not care how they are arranged)
 M+S+[jk] = move window up/down inside its column
 M+S+[hl] = move window into the neighbouring column
 M+A+[hl] = swap the whole column with its neighbour
@@ -47,7 +48,7 @@ M+#n = focus
 M+S+#n = move window
 M+C+#n = toggle extend/duplicate with focused monitor (works both ways: a
 duplicating monitor vanishes from Hyprland's monitor list, so deskbinds.lua
-remembers it in order to switch it back)
+remembers it in order to switch it back, and refreshes waybar)
 M+#f = next desktop on monitor (loops back to first desktop, or creates a second
 one if the monitor only has a single desktop)
 M+s+#f = move window to next desktop on monitor

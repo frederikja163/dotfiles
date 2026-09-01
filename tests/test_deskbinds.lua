@@ -5,16 +5,17 @@
 local HYPR = os.getenv("HYPR_DIR") or "hypr"
 package.path = HYPR .. "/?.lua;" .. package.path
 
-local binds, dispatched, monitor_calls, world, events, renames, mod
+local binds, dispatched, monitor_calls, world, events, renames, execs, mod
 
 local function reset(w)
     world = w
-    binds, dispatched, monitor_calls, events, renames = {}, {}, {}, {}, {}
+    binds, dispatched, monitor_calls, events, renames, execs = {}, {}, {}, {}, {}, {}
 
     _G.hl = {
         bind = function(keys, fn, opts) binds[keys] = { fn = fn, opts = opts } end,
         on = function(event, fn) events[event] = fn end,
         timer = function(cb, opts) cb() end, -- fire immediately in tests
+        exec_cmd = function(cmd) table.insert(execs, cmd) end,
         dispatch = function(d) table.insert(dispatched, d) end,
         monitor = function(spec)
             table.insert(monitor_calls, spec)
@@ -26,7 +27,6 @@ local function reset(w)
                 end
             end
         end,
-        exec_cmd = function(cmd) table.insert(dispatched, { exec = cmd }) end,
         get_monitors = function()
             -- Hyprland drops a mirroring monitor from this list entirely.
             local out = {}
@@ -177,6 +177,10 @@ check("get_monitors no longer reports it", #hl.get_monitors(), 1)
 
 binds["SUPER + CTRL + 2"].fn()
 check("second press clears the mirror", monitor_calls[2].mirror, "")
+check("waybar refreshed on both toggles", #execs, 2)
+check("via SIGUSR2", execs[1]:match("pkill %-USR2 %-x waybar") ~= nil, true)
+check("and relaunches waybar if the reload lost it",
+      execs[1]:match("pgrep %-x waybar") ~= nil, true)
 check("position restored to auto", monitor_calls[2].position, "auto")
 check("monitor is live again", #hl.get_monitors(), 2)
 check("slot no longer flagged", mod.monitor_slots()[2].source, nil)

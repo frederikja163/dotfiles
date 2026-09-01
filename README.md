@@ -48,6 +48,9 @@ Windows live in **columns** on an infinite horizontal tape (Hyprland's
   column is `SUPER+Q` then `SUPER+N`, not the other way round.
 - New column width: if all columns were equal, they are re-evened; otherwise the
   new column takes half the width of the column it came from.
+- `SUPER + H/J/K/L` moves focus within the desktop and wraps at the ends; it
+  never steps onto another monitor, so the binds do not depend on how the
+  monitors are arranged. Use the number keys to switch monitor.
 - `SUPER + SHIFT + H/L` moves the focused window into the neighbouring column,
   and `SUPER + SHIFT + J/K` moves it up and down inside its own column.
 - `SUPER + ALT + H/L` swaps the whole column with its neighbour.
@@ -78,6 +81,10 @@ duplicate could never be switched off. Remembered monitors are spliced back into
 the numbering by id, so the other monitors keep their numbers. (`hyprctl
 monitors all` does list them, but calling `hyprctl` from inside the config
 deadlocks — the compositor is busy running the Lua.)
+
+Toggling duplication also refreshes waybar (`pkill -USR2 -x waybar`), since its
+bars are keyed by monitor name and its workspace buttons by desktop name, both
+of which change when a monitor comes or goes.
 
 Desktops are **numbered per monitor**. Hyprland's own workspace ids are global,
 so the second monitor can own ids 2 and 3. `deskbinds.lua` renames every desktop

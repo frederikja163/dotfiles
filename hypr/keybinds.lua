@@ -48,19 +48,29 @@ local resizeStep = 60
 -- Vertical SHIFT binds swap the window with its neighbour inside the column.
 -- The horizontal ones are column operations (move between columns, swap whole
 -- columns) and live in columns.lua instead.
+--
+-- Focus uses the scrolling layout's own `focus` rather than
+-- focus({ direction = ... }). The latter steps onto the neighbouring monitor
+-- once it runs out of windows, which ties the binds to how the monitors happen
+-- to be arranged; the layout version wraps within the workspace instead.
+-- Monitors are switched deliberately with the number keys, see deskbinds.lua.
 local directions = {
-    { dir = "left",  keys = { "H", "left"  }, resize = hl.dsp.layout("colresize -0.05") },
-    { dir = "down",  keys = { "J", "down"  }, resize = hl.dsp.window.resize({ x = 0, y =  resizeStep, relative = true }),
+    { dir = "left",  keys = { "H", "left"  }, focus = "l",
+      resize = hl.dsp.layout("colresize -0.05") },
+    { dir = "down",  keys = { "J", "down"  }, focus = "d",
+      resize = hl.dsp.window.resize({ x = 0, y =  resizeStep, relative = true }),
       swap = hl.dsp.window.swap({ direction = "down" }) },
-    { dir = "up",    keys = { "K", "up"    }, resize = hl.dsp.window.resize({ x = 0, y = -resizeStep, relative = true }),
+    { dir = "up",    keys = { "K", "up"    }, focus = "u",
+      resize = hl.dsp.window.resize({ x = 0, y = -resizeStep, relative = true }),
       swap = hl.dsp.window.swap({ direction = "up" }) },
-    { dir = "right", keys = { "L", "right" }, resize = hl.dsp.layout("colresize +0.05") },
+    { dir = "right", keys = { "L", "right" }, focus = "r",
+      resize = hl.dsp.layout("colresize +0.05") },
 }
 
 for _, d in ipairs(directions) do
     for _, key in ipairs(d.keys) do
         hl.bind(mainMod .. " + " .. key,
-                hl.dsp.focus({ direction = d.dir }),
+                hl.dsp.layout("focus " .. d.focus),
                 { repeating = true, description = "Focus window " .. d.dir })
         if d.swap then
             hl.bind(mainMod .. " + SHIFT + " .. key,

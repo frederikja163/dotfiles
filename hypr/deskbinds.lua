@@ -176,6 +176,24 @@ local function move_window_to(ws)
     end
 end
 
+-- Waybar builds one bar per output, keyed by monitor name, and its workspace
+-- buttons come from the desktop names -- both of which change when a monitor
+-- starts or stops duplicating. SIGUSR2 makes it re-read the config and rebuild
+-- its bars from the current state.
+--
+-- Deferred a moment so the monitor change has landed before waybar looks, and
+-- followed by a check: a bar that fails to come back leaves the desktop with no
+-- status bar at all, so start one if the reload lost it.
+--
+-- Note that pkill matches every waybar on the machine, which matters only when
+-- running a nested Hyprland for testing: the host's bar gets reloaded too.
+local function reload_waybar()
+    hl.timer(function()
+        hl.exec_cmd("sh -c 'pkill -USR2 -x waybar; sleep 1; " ..
+                    "pgrep -x waybar >/dev/null || waybar >/dev/null 2>&1 &'")
+    end, { timeout = 300, type = "oneshot" })
+end
+
 -- Toggle duplicate/extend for a monitor slot.
 --
 -- Mirroring is a monitor property rather than a dispatcher, so it re-issues
@@ -198,6 +216,7 @@ local function toggle_mirror(slot, focused)
         })
         if ok then
             mirrored[slot.name] = nil
+            reload_waybar()
         end
     else
         if not focused or focused.name == slot.name then
@@ -212,6 +231,7 @@ local function toggle_mirror(slot, focused)
             -- Remember it: from here on Hyprland will not report this monitor
             -- at all, so this table is the only record that it exists.
             mirrored[slot.name] = { id = slot.id, source = focused.name }
+            reload_waybar()
         end
     end
 
