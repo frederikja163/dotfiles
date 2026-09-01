@@ -11,7 +11,7 @@ package.path = HYPR .. "/?.lua;" .. package.path
 local MON = { width = 1920, scale = 2 } -- usable 946
 local USABLE = 946
 
-local msgs, dispatched, focuses, world, binds, events, timers, mod
+local msgs, dispatched, focuses, world, binds, events, timers, timer_cbs, mod
 local open_handler, early_handler
 
 local function win(addr, x, y, w, h, floating)
@@ -24,7 +24,8 @@ local function win(addr, x, y, w, h, floating)
 end
 
 local function reset(w)
-    world, msgs, dispatched, focuses, binds, events, timers = w, {}, {}, {}, {}, {}, 0
+    world, msgs, dispatched, focuses, binds, events, timers, timer_cbs =
+        w, {}, {}, {}, {}, {}, 0, {}
 
     _G.hl = {
         bind = function(keys, fn, opts) binds[keys] = fn end,
@@ -33,7 +34,10 @@ local function reset(w)
             if event == "window.open" then open_handler = fn end
             if event == "window.open_early" then early_handler = fn end
         end,
-        timer = function(cb, opts) timers = timers + 1 end,
+        timer = function(cb, opts)
+            timers = timers + 1
+            table.insert(timer_cbs, cb)
+        end,
         exec_cmd = function(cmd) end,
         dispatch = function(d)
             table.insert(dispatched, d)
@@ -100,7 +104,7 @@ local ws = { id = 1, special = false }
 
 local function place(windows, active, monitor_ws)
     local w = { windows = windows, active = active,
-                monitor_obj = { width = MON.width, scale = MON.scale,
+                monitor_obj = { width = MON.width, scale = MON.scale, x = 0,
                                 active_workspace = monitor_ws or ws } }
     reset(w)
     for _, x in ipairs(windows) do
@@ -351,6 +355,60 @@ local order = mod.stable_order(ws)
 check("stable order: leftmost first", order[1].address, "y2")
 check("then top of the next column", order[2].address, "y1")
 check("then below it", order[3].address, "y3")
+
+print("alignment: the tape is pulled back to the monitor edge")
+-- correct widths but shifted right: content starts at 58 instead of 7
+local a1 = win("a1", 58, 7, 469, 526)
+local a2 = win("a2", 535, 7, 469, 526)
+place({ a1, a2 }, a1)
+mod.align_start()
+check("moves the tape back by the offset", msgs[1], "move -51")
+
+print("alignment: shifted off the left edge is also corrected")
+local b3 = win("b3", -44, 7, 469, 526)
+local b4 = win("b4", 433, 7, 469, 526)
+place({ b3, b4 }, b3)
+mod.align_start()
+check("moves the tape right", msgs[1], "move +51")
+
+print("alignment: already at the edge is left alone")
+local c3 = win("c3", 7, 7, 469, 526)
+local c4 = win("c4", 484, 7, 469, 526)
+place({ c3, c4 }, c3)
+mod.align_start()
+check("no message", #msgs, 0)
+
+print("alignment: content wider than the monitor may legitimately scroll")
+local d4 = win("d4", -200, 7, 700, 526)
+local d5 = win("d5", 508, 7, 700, 526) -- span 1408 > 946
+place({ d4, d5 }, d4)
+mod.align_start()
+check("no message", #msgs, 0)
+
+print("closing a column: measured after the fact, not before")
+-- window.destroy and friends must go through the scheduler, because reading the
+-- geometry straight away still shows the column that is going away
+place({ c3, c4 }, c3)
+mod.schedule_balance()
+check("arms two passes: widths, then offset", timers, 2)
+check("nothing dispatched yet", #msgs, 0)
+-- run them, with the layout now showing the column already gone and shrunk
+local shrunk = win("s1", 58, 7, 400, 526)
+place({ shrunk }, shrunk)
+mod.schedule_balance()
+for _, cb in ipairs(timer_cbs) do cb() end
+check("the widths pass ran", (function()
+    for _, m in ipairs(msgs) do if m:match("colresize") then return true end end
+    return false
+end)(), true)
+
+print("events that can remove a column are all wired up")
+place({ c3, c4 }, c3)
+for _, e in ipairs({ "window.close", "window.destroy", "workspace.active",
+                     "workspace.move_to_monitor", "window.move_to_workspace",
+                     "monitor.added", "monitor.removed", "monitor.layout_changed" }) do
+    check("  " .. e, type(events[e]), "function")
+end
 
 print("")
 print(("%d passed, %d failed"):format(pass, fail))

@@ -119,13 +119,7 @@ end
 -- Verified against a lone column, which spans everything: eDP-1 is 1920 at
 -- scale 1.5, so 1280 logical, and the column measures 1266 = 1280 - 2*5 - 2*2.
 -- `colresize` fractions are relative to exactly this width.
-local function usable_width(mon)
-    if not mon then
-        return nil
-    end
-
-    local scale = (mon.scale and mon.scale > 0) and mon.scale or 1
-
+local function gap_and_border()
     local gap = 5
     local gaps = hl.get_config("general.gaps_out")
     if type(gaps) == "table" and tonumber(gaps.left) then
@@ -135,12 +129,29 @@ local function usable_width(mon)
     end
 
     local border = tonumber(hl.get_config("general.border_size")) or 2
+    return gap, border
+end
+
+local function usable_width(mon)
+    if not mon then
+        return nil
+    end
+
+    local scale = (mon.scale and mon.scale > 0) and mon.scale or 1
+    local gap, border = gap_and_border()
 
     local usable = (mon.width / scale) - 2 * gap - 2 * border
     if usable <= 0 then
         return nil
     end
     return usable
+end
+
+-- Where the first column sits when the tape is not scrolled: the outer gap plus
+-- the border, measured from the left edge of the monitor.
+local function start_offset()
+    local gap, border = gap_and_border()
+    return gap + border
 end
 
 -- Left edge of the first column to right edge of the last.
@@ -151,6 +162,10 @@ local function span_of(cols)
     local last = cols[#cols]
     return (last.x + last.width) - cols[1].x
 end
+
+-- Declared here so the operations below can ask for a rebalance; defined once
+-- balance() exists.
+local schedule_balance
 
 -- Smallest column worth having, as a fraction of the monitor.
 local MIN_COLUMN = 0.08
@@ -260,6 +275,37 @@ local function apply_targets(targets)
     applying = false
 end
 
+-- Put the tape back at the left edge of the monitor.
+--
+-- Removing a column leaves the scroll offset where it was, so the columns end
+-- up floating in the middle of the screen even once their widths are right.
+-- Hyprland also centres content that is narrower than the monitor, which looks
+-- the same. `move` shifts the tape by a number of logical pixels: positive
+-- moves it right.
+local function align_start(ws, mon)
+    mon = mon or hl.get_active_monitor()
+    ws = ws or (mon and mon.active_workspace)
+    if not (ws and mon) or ws.special then
+        return
+    end
+
+    local usable = usable_width(mon)
+    local cols = columns_of(ws)
+    if not usable or #cols == 0 then
+        return
+    end
+
+    -- Wider than the monitor: scrolling is legitimate, leave it alone.
+    if span_of(cols) > usable + 3 then
+        return
+    end
+
+    local delta = start_offset() - (cols[1].x - (mon.x or 0))
+    if math.abs(delta) > 1 then
+        layout_msg(("move %+d"):format(delta))
+    end
+end
+
 -- Restore the invariant on a workspace: keep the columns' relative widths but
 -- scale them so they fill the monitor exactly.
 local function balance(ws, mon)
@@ -307,6 +353,28 @@ local function balance(ws, mon)
     end
 
     apply_targets(targets)
+end
+
+-- Anything that removes or adds a column has to be measured *after* Hyprland
+-- has actually done it: reading the geometry straight away still shows the old
+-- layout, so the widths look correct and nothing gets fixed. Two passes, since
+-- the offset can only be worked out once the widths are settled.
+local balance_pending = false
+
+function schedule_balance()
+    if balance_pending then
+        return
+    end
+    balance_pending = true
+
+    hl.timer(function()
+        balance_pending = false
+        balance()
+    end, { timeout = 60, type = "oneshot" })
+
+    hl.timer(function()
+        align_start()
+    end, { timeout = 160, type = "oneshot" })
 end
 
 -- Grow or shrink the focused column. Whatever it gains is taken from the other
@@ -464,6 +532,9 @@ local function new_column()
     else
         apply_targets(targets)
     end
+
+    -- A column appeared, which shifts the tape; put it back against the edge.
+    schedule_balance()
 end
 
 -- ---------------------------------------------------------------------------
@@ -517,7 +588,7 @@ hl.on("window.open", function(win)
     -- has to fill the monitor.
     if #tiled_windows(ws) < 2 then
         done()
-        return balance(ws, win.monitor)
+        return schedule_balance()
     end
 
     -- consume_or_expel expels instead of consuming when the window is not alone
@@ -534,7 +605,7 @@ hl.on("window.open", function(win)
 
     -- The window joined an existing column, so the count is unchanged, but the
     -- merge can still leave the widths short of the monitor.
-    balance(ws, win.monitor)
+    schedule_balance()
 end)
 
 -- Anything else that can change the columns: a window closing may empty a
@@ -544,12 +615,13 @@ for _, event in ipairs({
     "workspace.active",
     "workspace.move_to_monitor",
     "window.close",
+    "window.destroy",
     "window.move_to_workspace",
     "monitor.added",
     "monitor.removed",
     "monitor.layout_changed",
 }) do
-    hl.on(event, function() balance() end)
+    hl.on(event, schedule_balance)
 end
 
 -- Move the focused window into the column next to it.
@@ -607,7 +679,7 @@ local function move_between_columns(dir)
 
     -- Moving the last window out of a column removes it, and expelling adds
     -- one, so the widths have to be redistributed either way.
-    balance(ws, win.monitor)
+    schedule_balance()
 end
 
 local main_cycle = {} -- [workspace id] = { count = n, idx = i }
@@ -761,6 +833,8 @@ return {
     resize_column = resize_column,
     to_unit = to_unit,
     balance = balance,
+    align_start = align_start,
+    schedule_balance = schedule_balance,
     usable_width = usable_width,
     span_of = span_of,
     stable_order = stable_order,

@@ -54,8 +54,12 @@ Windows live in **columns** on an infinite horizontal tape (Hyprland's
   rather than growing the total; splitting a window out halves the column it
   came from; and anything that changes the columns (opening, closing, moving a
   window, a workspace landing on another monitor) ends with the widths
-  rebalanced. Relative sizes are preserved when rebalancing, so deliberately
-  uneven columns stay uneven.
+  rebalanced and the columns pulled back against the left edge. Relative sizes
+  are preserved when rebalancing, so deliberately uneven columns stay uneven.
+
+  Removing a column is measured a moment *after* the fact: reading the geometry
+  straight away still shows the column that is going away, so the layout looks
+  correct and nothing gets fixed.
 - `SUPER + H/J/K/L` moves focus within the desktop and wraps at the ends; it
   never steps onto another monitor, so the binds do not depend on how the
   monitors are arranged. Use the number keys to switch monitor.
