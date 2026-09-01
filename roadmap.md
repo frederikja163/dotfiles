@@ -28,10 +28,13 @@ if allColumnsSameWidth(desktop.columns) then
     column = desktop.addColumn()
     resizeColumnsToBeEvenWidth(desktop.column)
 else
-    # Width = half of selected columns width
+    # The source column is split in half: it keeps one half and the new
+    # column takes the other, so the total is unchanged
     column = desktop.addColumn()
 end
 ```
+The columns of a desktop always add up to exactly the monitor width, after
+every operation.
 M+n = move the focused window into a new column
 
 M+m = cycle windows through the main slot (the widest column). If the focused
@@ -42,8 +45,8 @@ config does not care how they are arranged)
 M+S+[jk] = move window up/down inside its column
 M+S+[hl] = move window into the neighbouring column
 M+A+[hl] = swap the whole column with its neighbour
-M+C+[hl] = resize the column (capped so the columns never extend past the
-monitor, which would make the view scroll sideways when moving focus)
+M+C+[hl] = resize the column. What it gains is taken from the other columns, so
+the columns always add up to exactly the monitor width
 M+C+[jk] = resize the window inside its column
 
 Each monitor has a number associated with it, [1-0]

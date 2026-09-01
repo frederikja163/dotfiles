@@ -48,13 +48,14 @@ Windows live in **columns** on an infinite horizontal tape (Hyprland's
   column is `SUPER+Q` then `SUPER+N`, not the other way round.
 - New column width: if all columns were equal, they are re-evened; otherwise the
   new column takes half the width of the column it came from.
-- Columns **never extend past the monitor**. Growing a column is capped at the
-  space that is actually free, and a new column takes the smaller of "half the
-  source column" and whatever room is left — falling back to evening all columns
-  out when there is none. An overflow arriving from elsewhere (a workspace moved
-  to a smaller monitor, a stray `colresize`) is corrected on the next workspace
-  switch or window close. This is what stops the tape scrolling sideways when
-  focus moves.
+- The columns of a desktop **always add up to exactly the monitor width** —
+  never less, so there is no dead space, and never more, so the view never
+  scrolls sideways when focus moves. Resizing takes from the other columns
+  rather than growing the total; splitting a window out halves the column it
+  came from; and anything that changes the columns (opening, closing, moving a
+  window, a workspace landing on another monitor) ends with the widths
+  rebalanced. Relative sizes are preserved when rebalancing, so deliberately
+  uneven columns stay uneven.
 - `SUPER + H/J/K/L` moves focus within the desktop and wraps at the ends; it
   never steps onto another monitor, so the binds do not depend on how the
   monitors are arranged. Use the number keys to switch monitor.
