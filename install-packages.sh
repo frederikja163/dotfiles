@@ -73,6 +73,25 @@ else
   chsh -s "$(command -v zsh)"
 fi
 
+# --- udev rules ------------------------------------------------------------
+
+# Wake-from-dock. See the comments in the rule for why this is needed.
+for rule in "$DOTFILES"/system/*.rules; do
+  [ -e "$rule" ] || continue
+  dest="/etc/udev/rules.d/$(basename "$rule")"
+
+  if sudo cmp -s "$rule" "$dest" 2>/dev/null; then
+    echo "==> udev: $(basename "$rule") already installed"
+  else
+    echo "==> udev: installing $(basename "$rule")"
+    sudo install -m 644 "$rule" "$dest"
+    sudo udevadm control --reload
+    # Re-run the rules against devices that are already plugged in, so this
+    # takes effect without a reboot.
+    sudo udevadm trigger --subsystem-match=usb --action=add
+  fi
+done
+
 # --- manual steps ----------------------------------------------------------
 
 cat <<'EOF'

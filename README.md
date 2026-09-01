@@ -10,6 +10,7 @@
 | `fuzzel`   | `~/.config/fuzzel`      | `fuzzel.ini`                      |
 | `zsh`      | `~/.zshenv`, `~/.config/zsh/` | oh-my-zsh setup, PATH       |
 | `bin`      | `~/.local/bin`          | small scripts, on `PATH`          |
+| `system`   | `/etc/udev/rules.d`     | udev rules (needs root)           |
 | `packages` | —                       | `pacman.txt`, `aur.txt`           |
 
 All of kitty, waybar and dunst use the catppuccin-mocha palette and
@@ -215,6 +216,28 @@ bob's binary is not on `PATH` by default. Add to your shell config:
 ```sh
 export PATH="$HOME/.local/share/bob/nvim-bin:$PATH"
 ```
+
+## Suspend
+
+This machine only supports **s2idle** (`cat /sys/power/mem_sleep` offers no
+`deep`), and hibernate is not possible with a 512M swapfile against 30G of RAM.
+
+Waking it:
+
+- a key on the **built-in keyboard** (`i8042/serio0`, wake-enabled)
+- **opening the lid**
+- a key on a **docked keyboard**, once `system/90-wake-from-dock.rules` is
+  installed. Without it the keyboard is wake-capable but the dock's hubs are
+  not, so the signal never arrives — docked with the lid shut there is no way
+  back in.
+
+Not the power button: `HandlePowerKey` is `poweroff`, so it shuts down rather
+than resuming.
+
+Suspending is deliberate only — from the power menu (`SUPER + Escape`) or by
+closing the lid. `hypr/hypridle.conf` locks and blanks the screen on idle but
+does **not** suspend, since an unattended suspend that cannot be woken from
+strands the machine.
 
 ## Tests
 
