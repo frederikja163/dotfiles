@@ -1,0 +1,153 @@
+// Waybar — https://github.com/Alexays/Waybar/wiki/Configuration
+// Two bars: a full one on the ultrawide, a lean one on the laptop panel.
+// Reload with:  killall -SIGUSR2 waybar
+[
+  {
+    "name": "ultrawide",
+    "output": "DP-4",
+    "layer": "top",
+    "position": "top",
+    "height": 34,
+    "spacing": 6,
+    // 3440px is wide enough that edge-anchored modules feel stranded, so the
+    // bar is inset and the clock is centred.
+    "margin-top": 6,
+    "margin-left": 12,
+    "margin-right": 12,
+
+    "modules-left": ["hyprland/workspaces", "hyprland/submap"],
+    "modules-center": ["clock"],
+    "modules-right": [
+      "privacy",
+      "idle_inhibitor",
+      "tray",
+      "pulseaudio",
+      "bluetooth",
+      "network",
+      "backlight",
+      "battery"
+    ],
+
+    "hyprland/workspaces": {
+      "on-click": "activate",
+      "format": "{name}"
+    },
+
+    "clock": {
+      "format": "{:%H:%M  %a %d %b}",
+      "tooltip-format": "<tt><small>{calendar}</small></tt>",
+      "calendar": {
+        "mode": "month",
+        "on-scroll": 1
+      }
+    },
+
+    // Shows an indicator while something reads the screen or microphone,
+    // e.g. a Teams call.
+    "privacy": {
+      "icon-size": 14,
+      "modules": [
+        { "type": "screenshare" },
+        { "type": "audio-in" }
+      ]
+    },
+
+    // Click to keep the screen awake during presentations.
+    "idle_inhibitor": {
+      "format": "{icon}",
+      "format-icons": { "activated": "", "deactivated": "" },
+      "tooltip-format-activated": "Idle inhibited",
+      "tooltip-format-deactivated": "Idle normal"
+    },
+
+    // Teams, JetBrains Toolbox and GlobalProtect all expect a tray. Without
+    // this module their icons are simply invisible under Hyprland.
+    "tray": {
+      "icon-size": 16,
+      "spacing": 8
+    },
+
+    "pulseaudio": {
+      "format": "{icon} {volume}%",
+      "format-muted": " muted",
+      "format-bluetooth": "{icon} {volume}%",
+      "format-icons": { "headphone": "", "default": ["", "", ""] },
+      "scroll-step": 5,
+      "on-click": "pavucontrol"
+    },
+
+    "bluetooth": {
+      "format": "",
+      "format-disabled": "",
+      "format-connected": " {num_connections}",
+      "tooltip-format-connected": "{device_enumerate}",
+      "on-click": "blueman-manager"
+    },
+
+    "network": {
+      "format-wifi": " {signalStrength}%",
+      "format-ethernet": "",
+      "format-disconnected": "",
+      "tooltip-format-wifi": "{essid} ({signalStrength}%)\n{ipaddr}",
+      "tooltip-format-ethernet": "{ifname}\n{ipaddr}"
+    },
+
+    "backlight": {
+      "device": "intel_backlight",
+      "format": "{icon} {percent}%",
+      "format-icons": ["", "", "", "", "", "", "", "", ""],
+      "on-scroll-up": "brightnessctl -e4 -n2 set 5%+",
+      "on-scroll-down": "brightnessctl -e4 -n2 set 5%-"
+    },
+
+    "battery": {
+      "bat": "BAT0",
+      "states": { "warning": 30, "critical": 15 },
+      "format": "{icon} {capacity}%",
+      "format-charging": " {capacity}%",
+      "format-plugged": " {capacity}%",
+      "format-icons": ["", "", "", "", ""],
+      "tooltip-format": "{timeTo} ({power}W)"
+    }
+  },
+
+  {
+    "name": "laptop",
+    "output": "eDP-1",
+    "layer": "top",
+    "position": "top",
+    "height": 30,
+    "spacing": 6,
+    "margin-top": 4,
+    "margin-left": 8,
+    "margin-right": 8,
+
+    // Narrower panel, so only the essentials. No tray here: a single tray
+    // avoids duplicate icons across both bars.
+    "modules-left": ["hyprland/workspaces"],
+    "modules-center": ["clock"],
+    "modules-right": ["pulseaudio", "backlight", "battery"],
+
+    "hyprland/workspaces": { "on-click": "activate", "format": "{name}" },
+    "clock": { "format": "{:%H:%M}" },
+    "pulseaudio": {
+      "format": "{icon} {volume}%",
+      "format-muted": " muted",
+      "format-icons": { "headphone": "", "default": ["", "", ""] },
+      "scroll-step": 5,
+      "on-click": "pavucontrol"
+    },
+    "backlight": {
+      "device": "intel_backlight",
+      "format": "{icon} {percent}%",
+      "format-icons": ["", "", "", "", "", "", "", "", ""]
+    },
+    "battery": {
+      "bat": "BAT0",
+      "states": { "warning": 30, "critical": 15 },
+      "format": "{icon} {capacity}%",
+      "format-charging": " {capacity}%",
+      "format-icons": ["", "", "", "", ""]
+    }
+  }
+]

@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Session/power menu, shown with fuzzel (SUPER + Escape).
+#
+# Destructive actions ask for confirmation, so a mistyped selection cannot end
+# the session by itself.
+set -euo pipefail
+
+lock() {
+  # Never stack lock screens.
+  pidof hyprlock >/dev/null || hyprlock &
+}
+
+confirm() {
+  local what="$1" answer
+  answer="$(printf 'No\nYes\n' | fuzzel --dmenu \
+    --prompt "$what?  " --lines 2 --width 30 --no-icons)" || return 1
+  [ "$answer" = "Yes" ]
+}
+
+choice="$(printf '%s\n' \
+  "  Lock" \
+  "  Suspend" \
+  "  Log out" \
+  "  Reboot" \
+  "  Shut down" \
+  | fuzzel --dmenu --prompt "power  " --lines 5 --width 24 --no-icons)" || exit 0
+
+# Strip the icon and padding, keep the action word.
+case "${choice##*  }" in
+  Lock)      lock ;;
+  Suspend)   lock; systemctl suspend ;;
+  "Log out") confirm "Log out" && hyprctl dispatch 'hl.dsp.exit()' ;;
+  Reboot)    confirm "Reboot"    && systemctl reboot ;;
+  "Shut down") confirm "Shut down" && systemctl poweroff ;;
+  *) exit 0 ;;
+esac

@@ -1,0 +1,5 @@
+# AUR packages. One per line, # starts a comment.
+# Installed with: yay -S --needed
+
+vscode-langservers-extracted   # html lsp (also css/json/eslint)
+jetbrains-toolbox              # installs/updates Rider; see README

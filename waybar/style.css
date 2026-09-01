@@ -1,0 +1,113 @@
+/* Waybar — catppuccin mocha, matching neovim and kitty. */
+
+@define-color base     #1e1e2e;
+@define-color mantle   #181825;
+@define-color surface0 #313244;
+@define-color surface1 #45475a;
+@define-color text     #cdd6f4;
+@define-color subtext0 #a6adc8;
+@define-color blue     #89b4fa;
+@define-color mauve    #cba6f7;
+@define-color green    #a6e3a1;
+@define-color yellow   #f9e2af;
+@define-color peach    #fab387;
+@define-color red      #f38ba8;
+
+* {
+  font-family: "JetBrainsMono Nerd Font";
+  font-size: 13px;
+  /* Waybar draws its own padding; zeroing this avoids doubled spacing. */
+  min-height: 0;
+  border: none;
+  border-radius: 0;
+}
+
+window#waybar {
+  background: @base;
+  color: @text;
+  border-radius: 10px;
+}
+
+/* Slightly translucent so hyprpaper shows through, like kitty. */
+window#waybar.laptop,
+window#waybar.ultrawide {
+  background: rgba(30, 30, 46, 0.92);
+}
+
+#workspaces button {
+  padding: 0 10px;
+  color: @subtext0;
+  background: transparent;
+}
+
+#workspaces button.active {
+  color: @base;
+  background: @mauve;
+  border-radius: 8px;
+}
+
+#workspaces button.urgent {
+  color: @base;
+  background: @red;
+  border-radius: 8px;
+}
+
+#workspaces button:hover {
+  background: @surface0;
+  border-radius: 8px;
+}
+
+#clock,
+#battery,
+#backlight,
+#network,
+#bluetooth,
+#pulseaudio,
+#tray,
+#privacy,
+#idle_inhibitor {
+  padding: 0 10px;
+  margin: 4px 2px;
+  background: @surface0;
+  border-radius: 8px;
+}
+
+#clock {
+  color: @text;
+  font-weight: bold;
+}
+
+#battery { color: @green; }
+#battery.warning  { color: @yellow; }
+#battery.critical { color: @red; }
+
+/* Only the critical state blinks, so it is impossible to miss. */
+@keyframes blink {
+  to { background: @red; color: @base; }
+}
+
+#battery.critical:not(.charging) {
+  animation: blink 1s linear infinite alternate;
+}
+
+#backlight  { color: @yellow; }
+#network    { color: @blue; }
+#bluetooth  { color: @blue; }
+#pulseaudio { color: @peach; }
+
+#pulseaudio.muted,
+#network.disconnected,
+#bluetooth.disabled {
+  color: @subtext0;
+}
+
+/* Stands out on purpose: it means the screen or mic is being captured. */
+#privacy {
+  color: @base;
+  background: @peach;
+}
+
+#idle_inhibitor.activated {
+  color: @base;
+  background: @yellow;
+}

@@ -27,11 +27,31 @@ vim.keymap.set('i', '<C-j>', '<C-o>j')
 vim.keymap.set('i', '<C-k>', '<C-o>k')
 vim.keymap.set('i', '<C-h>', '<C-o>h')
 vim.keymap.set('i', '<C-l>', '<C-o>l')
--- move window
+-- move window (kept as-is; these do not clash with Hyprland, which grabs SUPER)
 vim.keymap.set('n', '<C-j>', '<cmd>wincmd j<CR>')
 vim.keymap.set('n', '<C-k>', '<cmd>wincmd k<CR>')
 vim.keymap.set('n', '<C-h>', '<cmd>wincmd h<CR>')
 vim.keymap.set('n', '<C-l>', '<cmd>wincmd l<CR>')
+
+-- Window binds mirroring hypr/hyprland.lua, with <leader> standing in for SUPER:
+--   <leader>       + hjkl -> focus window
+--   <leader> SHIFT + hjkl -> move window in that direction
+--   <leader> CTRL  + hjkl -> resize window
+local resizeStep = 5
+
+local directions = {
+	{ key = 'h', focus = 'h', move = 'H', resize = 'vertical resize -' .. resizeStep },
+	{ key = 'j', focus = 'j', move = 'J', resize = 'resize +' .. resizeStep },
+	{ key = 'k', focus = 'k', move = 'K', resize = 'resize -' .. resizeStep },
+	{ key = 'l', focus = 'l', move = 'L', resize = 'vertical resize +' .. resizeStep },
+}
+
+for _, d in ipairs(directions) do
+	vim.keymap.set('n', '<leader>' .. d.key, '<cmd>wincmd ' .. d.focus .. '<CR>')
+	vim.keymap.set('n', '<leader>' .. d.key:upper(), '<cmd>wincmd ' .. d.move .. '<CR>')
+	vim.keymap.set('n', '<leader><C-' .. d.key .. '>', '<cmd>' .. d.resize .. '<CR>')
+end
+
 -- new window
 vim.keymap.set('n', '<leader>ws', '<cmd>wincmd s<CR>')
 vim.keymap.set('n', '<leader>wv', '<cmd>wincmd v<CR>')
@@ -47,7 +67,7 @@ vim.keymap.set('n', '<leader>fh', '<cmd>Pick help<CR>')
 vim.pack.add({ { src = "https://github.com/neovim/nvim-lspconfig" } })
 vim.lsp.enable({ "lua_ls", "clangd", "denols", "html", "ts_ls" })
 vim.keymap.set('n', '<leader>d', vim.diagnostic.open_float)
-vim.keymap.set('n', '<leader>lf', vim.lsp.buf.format)
+vim.keymap.set('n', '<leader>cf', vim.lsp.buf.format)
 vim.keymap.set('n', '<leader>ca', vim.lsp.buf.code_action)
 
 -- Theme

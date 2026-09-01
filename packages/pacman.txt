@@ -1,0 +1,56 @@
+# Official repo packages. One per line, # starts a comment.
+# Installed with: sudo pacman -S --needed
+
+# core
+git
+base-devel          # compiler toolchain, needed by treesitter auto_install
+curl
+unzip
+man-pages
+linux-headers       # required to build out-of-tree / DKMS modules
+
+# shell
+zsh
+
+# neovim
+bob                 # neovim version manager
+
+# cli tools used by mini.pick
+ripgrep
+fd
+
+# language servers enabled in neovim/init.lua
+lua-language-server
+clang               # clangd
+deno                # denols
+typescript-language-server
+
+# terminal + editor
+kitty
+opencode
+
+# hyprland desktop
+hyprland
+hyprpaper
+hyprlock                      # lock screen
+hypridle                      # idle timeouts: dim, lock, sleep
+fuzzel                        # launcher + dmenu; closes on focus loss
+hyprpolkitagent
+xdg-desktop-portal-hyprland   # screenshare, file pickers
+waybar
+dunst
+brightnessctl                 # used by the brightness keybinds in hypr/hyprland.lua
+playerctl                     # used by the media keybinds in hypr/hyprland.lua
+pavucontrol                   # opened by waybar's audio module
+blueman                       # opened by waybar's bluetooth module
+plasma-thunderbolt            # thunderbolt device management
+
+# fonts + icons
+ttf-jetbrains-mono-nerd       # icons for waybar / kitty / lspkind
+papirus-icon-theme            # notification icons, referenced by dunst/dunstrc
+
+# media codecs
+gst-libav
+gst-plugins-bad
+gst-plugins-ugly
+gst-plugin-va

@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Show a searchable list of Hyprland keybinds in fuzzel.
+#
+# The list is generated from `hyprctl binds`, i.e. from what the compositor has
+# actually loaded, so it can never drift out of sync with hypr/hyprland.lua.
+# Binds are labelled by their `description` option; any without one are skipped
+# (with a Lua config the dispatcher is reported as an opaque "__lua" callback,
+# which would be meaningless in a menu).
+#
+# Deliberately depends on nothing but hyprctl and awk, so it also works on a
+# freshly installed machine before any packages are set up.
+set -euo pipefail
+
+binds="$(
+  hyprctl binds | awk '
+    # Hyprland prints one indented "field: value" block per bind.
+    /^bind/            { mask = ""; key = ""; desc = ""; next }
+    /^\tmodmask:/      { mask = $2; next }
+    /^\tkey:/          { key  = $2; next }
+    /^\tdescription:/  {
+        # Descriptions contain spaces, so rebuild everything after the colon.
+        desc = $0
+        sub(/^\tdescription: /, "", desc)
+        next
+    }
+    # A blank line closes the block: emit it if it is usable.
+    /^$/ {
+        if (desc != "" && key != "") {
+            mods = ""
+            m = mask + 0
+            if (int(m / 64) % 2) mods = mods "SUPER + "
+            if (int(m /  8) % 2) mods = mods "ALT + "
+            if (int(m /  4) % 2) mods = mods "CTRL + "
+            if (int(m /  1) % 2) mods = mods "SHIFT + "
+            printf "%-28s %s\n", mods key, desc
+        }
+        mask = ""; key = ""; desc = ""
+    }
+  '
+)"
+
+if [ -z "$binds" ]; then
+  notify-send "hypr-keybinds" "No binds with descriptions found." 2>/dev/null
+  exit 1
+fi
+
+# --dmenu reads the options from stdin. Selecting an entry just closes the
+# popup; this is a reference list, not an action menu.
+#
+# --no-run-if-empty guards against an empty list, and the wider window fits the
+# "KEYS<pad>Description" layout. fuzzel exits on focus loss by default.
+printf '%s\n' "$binds" | fuzzel --dmenu \
+  --prompt "keybind  " \
+  --width 60 \
+  --lines 20 \
+  --no-run-if-empty \
+  --no-icons >/dev/null
