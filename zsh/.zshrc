@@ -30,3 +30,6 @@ export PATH="$HOME/.local/share/bob/nvim-bin:$PATH"
 
 # scripts from the dotfiles repo (bin/ is linked to ~/.local/bin)
 export PATH="$HOME/.local/bin:$PATH"
+
+# JetBrains Toolbox shell scripts (rider, etc.)
+export PATH="$XDG_DATA_HOME/JetBrains/Toolbox/scripts:$PATH"
