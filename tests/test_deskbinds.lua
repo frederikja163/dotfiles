@@ -1,0 +1,211 @@
+-- Standalone harness for deskbinds.lua: stubs the hl API, then drives the
+-- registered bind callbacks and asserts what they dispatch.
+
+-- Resolve the hyprland modules from this repo, overridable for testing a copy.
+local HYPR = os.getenv("HYPR_DIR") or "hypr"
+package.path = HYPR .. "/?.lua;" .. package.path
+
+local binds, dispatched, monitor_calls, world, events, renames, mod
+
+local function reset(w)
+    world = w
+    binds, dispatched, monitor_calls, events, renames = {}, {}, {}, {}, {}
+
+    _G.hl = {
+        bind = function(keys, fn, opts) binds[keys] = { fn = fn, opts = opts } end,
+        on = function(event, fn) events[event] = fn end,
+        timer = function(cb, opts) cb() end, -- fire immediately in tests
+        dispatch = function(d) table.insert(dispatched, d) end,
+        monitor = function(spec) table.insert(monitor_calls, spec) end,
+        exec_cmd = function(cmd) table.insert(dispatched, { exec = cmd }) end,
+        get_monitors = function() return world.monitors end,
+        get_workspaces = function() return world.workspaces end,
+        get_active_monitor = function()
+            for _, m in ipairs(world.monitors) do
+                if m.id == world.focused_monitor_id then return m end
+            end
+        end,
+        dsp = {
+            focus = function(a) return { kind = "focus", arg = a } end,
+            window = { move = function(a) return { kind = "move", arg = a } end },
+            workspace = { rename = function(a)
+                table.insert(renames, a)
+                return { kind = "rename", arg = a }
+            end },
+        },
+    }
+
+    package.loaded.deskbinds = nil
+    package.loaded.programs = nil
+    mod = require("deskbinds")
+end
+
+-- Build a world: two monitors; mon0 shows ws1, mon1 shows ws3.
+local function two_monitors(focused)
+    local mon0 = { id = 0, name = "eDP-1",  is_mirror = false }
+    local mon1 = { id = 1, name = "DP-4",   is_mirror = false }
+    local ws1  = { id = 1, special = false, monitor = mon0 }
+    local ws2  = { id = 2, special = false, monitor = mon0 }
+    local ws3  = { id = 3, special = false, monitor = mon1 }
+    local wsS  = { id = -99, special = true, monitor = mon0 }
+    mon0.active_workspace = ws1
+    mon1.active_workspace = ws3
+    return {
+        monitors = { mon0, mon1 },
+        workspaces = { ws1, ws2, ws3, wsS },
+        focused_monitor_id = focused,
+    }
+end
+
+local pass, fail = 0, 0
+local function check(label, got, want)
+    if got == want then
+        pass = pass + 1
+        print(("  ok   %-52s %s"):format(label, tostring(got)))
+    else
+        fail = fail + 1
+        print(("  FAIL %-52s got %s want %s"):format(label, tostring(got), tostring(want)))
+    end
+end
+
+local function last()
+    return dispatched[#dispatched]
+end
+
+-- Last dispatch of a given kind. Needed because creating a desktop is followed
+-- by rename dispatches from the renumbering pass.
+local function last_of(kind)
+    for i = #dispatched, 1, -1 do
+        if dispatched[i].kind == kind then
+            return dispatched[i]
+        end
+    end
+end
+
+local function bind_count()
+    local n = 0
+    for _ in pairs(binds) do n = n + 1 end
+    return n
+end
+
+print("scenario: monitor 1 (eDP-1) focused")
+reset(two_monitors(0))
+check("bind count (10 keys x 3 modifiers)", bind_count(), 30)
+
+binds["SUPER + 1"].fn()
+check("M+1 on focused mon -> next desktop id", last().arg.workspace, 2)
+
+binds["SUPER + 2"].fn()
+check("M+2 on other mon -> focus its workspace", last().arg.workspace, 3)
+
+binds["SUPER + SHIFT + 1"].fn()
+check("M+S+1 focused -> move to next desktop", last().arg.workspace, 2)
+check("M+S+1 uses move dispatcher", last().kind, "move")
+
+binds["SUPER + SHIFT + 2"].fn()
+check("M+S+2 other -> move to that monitor's ws", last().arg.workspace, 3)
+
+binds["SUPER + CTRL + 1"].fn()
+check("M+C+1 focused -> new desktop, lowest free id", last_of("focus").arg.workspace, 4)
+
+binds["SUPER + CTRL + 2"].fn()
+check("M+C+2 other -> mirror issued", #monitor_calls, 1)
+check("M+C+2 mirror target output", monitor_calls[1].output, "DP-4")
+check("M+C+2 mirrors the focused monitor", monitor_calls[1].mirror, "eDP-1")
+
+print("scenario: wrap-around, mon0 focused on its LAST desktop (ws2)")
+local w = two_monitors(0)
+w.monitors[1].active_workspace = w.workspaces[2] -- ws2, the highest on mon0
+reset(w)
+binds["SUPER + 1"].fn()
+check("M+1 wraps back to first desktop", last().arg.workspace, 1)
+
+print("scenario: monitor 2 (DP-4) focused, and it has only ONE desktop")
+reset(two_monitors(1))
+binds["SUPER + 2"].fn()
+check("M+2 with 1 desktop -> creates a second one", last_of("focus").arg.workspace, 4)
+check("...and it is a focus dispatch", last_of("focus").kind, "focus")
+binds["SUPER + 1"].fn()
+check("M+1 on other mon -> focus eDP-1 workspace", last().arg.workspace, 1)
+binds["SUPER + CTRL + 1"].fn()
+check("M+C+1 other -> mirror eDP-1 onto DP-4", monitor_calls[1].mirror, "DP-4")
+
+print("scenario: monitor with 2 desktops still cycles, does not create")
+local t = two_monitors(0) -- mon0 has ws1 + ws2
+reset(t)
+local before_ids = {}
+binds["SUPER + 1"].fn()
+check("M+1 with 2 desktops -> cycles to existing ws2", last().arg.workspace, 2)
+
+print("scenario: creating a second desktop picks the lowest free id")
+local q = two_monitors(1)
+-- ids 1,2,3,5 exist but 5 sits on mon0, so mon1 still has a single desktop
+-- and the lowest free id is 4
+table.insert(q.workspaces, { id = 5, special = false, monitor = q.monitors[1] })
+reset(q)
+binds["SUPER + 2"].fn()
+check("skips occupied ids, picks 4", last_of("focus").arg.workspace, 4)
+
+print("scenario: un-mirroring a mirrored monitor")
+local m = two_monitors(0)
+m.monitors[2].is_mirror = true
+reset(m)
+binds["SUPER + CTRL + 2"].fn()
+check("mirror cleared", monitor_calls[1].mirror, "")
+check("position restored to auto", monitor_calls[1].position, "auto")
+
+print("scenario: single monitor, pressing an absent monitor number")
+local s = two_monitors(0)
+s.monitors = { s.monitors[1] }
+reset(s)
+local before = #dispatched
+binds["SUPER + 5"].fn()
+check("M+5 with no monitor 5 -> no dispatch", #dispatched, before)
+
+print("scenario: per-monitor desktop numbering")
+-- mon0 owns ids 1 and 2; mon1 owns ids 3 and 5.
+-- Names must be "<monitor>.<desktop>" and globally unique, because waybar
+-- highlights every button whose name matches the focused workspace's name.
+local r = two_monitors(0)
+local mon1 = r.monitors[2]
+table.insert(r.workspaces, { id = 5, special = false, monitor = mon1, name = "5" })
+for _, w in ipairs(r.workspaces) do w.name = w.name or tostring(w.id) end
+reset(r)
+mod.renumber_desktops()
+
+local named = {}
+for _, ren in ipairs(renames) do named[ren.workspace] = ren.name end
+
+check("mon1 desktop1 (id 1) -> 1.1", named[1], "1.1")
+check("mon1 desktop2 (id 2) -> 1.2", named[2], "1.2")
+check("mon2 desktop1 (id 3) -> 2.1", named[3], "2.1")
+check("mon2 desktop2 (id 5) -> 2.2", named[5], "2.2")
+check("all four renamed", #renames, 4)
+
+-- The whole point: no two desktops may share a name.
+local seen, dupes = {}, 0
+for _, name in pairs(named) do
+    if seen[name] then dupes = dupes + 1 end
+    seen[name] = true
+end
+check("no duplicate names across monitors", dupes, 0)
+
+print("scenario: names already correct are left alone")
+local r2 = two_monitors(0)
+r2.workspaces[1].name = "1.1"
+r2.workspaces[2].name = "1.2"
+r2.workspaces[3].name = "2.1"
+r2.workspaces[4].name = "special"
+reset(r2)
+mod.renumber_desktops()
+check("no redundant renames", #renames, 0)
+
+print("scenario: renumber is wired to workspace events")
+check("workspace.created hooked", type(events["workspace.created"]), "function")
+check("workspace.active hooked", type(events["workspace.active"]), "function")
+check("workspace.removed hooked", type(events["workspace.removed"]), "function")
+check("monitor.added hooked", type(events["monitor.added"]), "function")
+
+print("")
+print(("%d passed, %d failed"):format(pass, fail))
+os.exit(fail == 0 and 0 or 1)

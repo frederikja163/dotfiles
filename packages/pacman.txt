@@ -8,6 +8,7 @@ curl
 unzip
 man-pages
 linux-headers       # required to build out-of-tree / DKMS modules
+lua                 # runs tests/run.sh
 
 # shell
 zsh

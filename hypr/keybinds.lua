@@ -18,7 +18,8 @@ local menu        = programs.menu
 hl.bind(mainMod .. " + Q", hl.dsp.exec_cmd(terminal), { description = "Open terminal" })
 local closeWindowBind = hl.bind(mainMod .. " + C", hl.dsp.window.close(), { description = "Close window" })
 -- closeWindowBind:set_enabled(false)
-hl.bind(mainMod .. " + M", hl.dsp.exec_cmd("command -v hyprshutdown >/dev/null 2>&1 && hyprshutdown || hyprctl dispatch 'hl.dsp.exit()'"), { description = "Exit Hyprland" })
+-- M+M is "swap with the biggest window", see columns.lua. Exiting Hyprland is
+-- handled by the power menu on M+Escape, which asks for confirmation.
 hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(fileManager), { description = "Open file manager" })
 hl.bind(mainMod .. " + V", hl.dsp.window.float({ action = "toggle" }), { description = "Toggle floating" })
 hl.bind(mainMod .. " + R", hl.dsp.exec_cmd(menu), { description = "Application launcher" })
@@ -39,13 +40,21 @@ hl.bind(mainMod .. " + Escape", hl.dsp.exec_cmd("power-menu"), { description = "
 --   mainMod + CTRL   + hjkl -> resize active window
 -- neovim/init.lua mirrors this scheme, using <leader> in place of SUPER.
 
+-- Horizontal resizing changes the *column* width, which is what left/right
+-- means in a column layout. Vertical resizing still resizes the window inside
+-- its column.
 local resizeStep = 60
 
+-- Vertical SHIFT binds swap the window with its neighbour inside the column.
+-- The horizontal ones are column operations (move between columns, swap whole
+-- columns) and live in columns.lua instead.
 local directions = {
-    { dir = "left",  keys = { "H", "left"  }, dx = -resizeStep, dy = 0           },
-    { dir = "down",  keys = { "J", "down"  }, dx = 0,           dy =  resizeStep },
-    { dir = "up",    keys = { "K", "up"    }, dx = 0,           dy = -resizeStep },
-    { dir = "right", keys = { "L", "right" }, dx =  resizeStep, dy = 0           },
+    { dir = "left",  keys = { "H", "left"  }, resize = hl.dsp.layout("colresize -0.05") },
+    { dir = "down",  keys = { "J", "down"  }, resize = hl.dsp.window.resize({ x = 0, y =  resizeStep, relative = true }),
+      swap = hl.dsp.window.swap({ direction = "down" }) },
+    { dir = "up",    keys = { "K", "up"    }, resize = hl.dsp.window.resize({ x = 0, y = -resizeStep, relative = true }),
+      swap = hl.dsp.window.swap({ direction = "up" }) },
+    { dir = "right", keys = { "L", "right" }, resize = hl.dsp.layout("colresize +0.05") },
 }
 
 for _, d in ipairs(directions) do
@@ -53,27 +62,22 @@ for _, d in ipairs(directions) do
         hl.bind(mainMod .. " + " .. key,
                 hl.dsp.focus({ direction = d.dir }),
                 { repeating = true, description = "Focus window " .. d.dir })
-        hl.bind(mainMod .. " + SHIFT + " .. key,
-                hl.dsp.window.swap({ direction = d.dir }),
-                { repeating = true, description = "Swap window " .. d.dir })
+        if d.swap then
+            hl.bind(mainMod .. " + SHIFT + " .. key,
+                    d.swap,
+                    { repeating = true, description = "Swap window " .. d.dir })
+        end
         hl.bind(mainMod .. " + CTRL + " .. key,
-                hl.dsp.window.resize({ x = d.dx, y = d.dy, relative = true }),
+                d.resize,
                 { repeating = true, description = "Resize window " .. d.dir })
     end
 end
 
 
 -- Workspaces
-
--- Switch workspaces with mainMod + [0-9]
--- Move active window to a workspace with mainMod + SHIFT + [0-9]
-for i = 1, 10 do
-    local key = i % 10 -- 10 maps to key 0
-    hl.bind(mainMod .. " + " .. key,             hl.dsp.focus({ workspace = i}),
-            { description = "Go to workspace " .. i })
-    hl.bind(mainMod .. " + SHIFT + " .. key,     hl.dsp.window.move({ workspace = i }),
-            { description = "Move window to workspace " .. i })
-end
+--
+-- The number keys 1..0 are not bound here. They address monitors and desktops
+-- instead, in deskbinds.lua.
 
 -- Special workspace (scratchpad)
 hl.bind(mainMod .. " + S",         hl.dsp.workspace.toggle_special("magic"),

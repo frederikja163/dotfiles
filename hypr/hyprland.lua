@@ -13,6 +13,8 @@
 --   input        keyboard, mouse, touchpad, gestures
 --   windowrules  window, layer and workspace rules
 --   keybinds     every bind, each with a description for the cheatsheet
+--   deskbinds    monitor + desktop binds on the number keys
+--   columns      column behaviour: new column, sizing, swap-biggest
 --   autostart    processes launched with the session
 
 require("monitors")
@@ -21,6 +23,8 @@ require("look")
 require("input")
 require("windowrules")
 require("keybinds")
+require("deskbinds")
+require("columns")
 
 -- Last, so anything it launches sees the environment set above.
 require("autostart")

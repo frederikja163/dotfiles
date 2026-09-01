@@ -40,6 +40,16 @@ window#waybar.ultrawide {
   background: transparent;
 }
 
+/* Shown on its monitor but not the focused one: the other screen's current
+   desktop. Declared before .active so the focused desktop, which carries both
+   classes, still wins. */
+#workspaces button.visible {
+  color: @text;
+  background: @surface1;
+  border-radius: 8px;
+}
+
+/* The one desktop that actually has focus. */
 #workspaces button.active {
   color: @base;
   background: @mauve;
