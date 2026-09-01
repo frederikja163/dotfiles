@@ -1,6 +1,7 @@
 resize on close apps
 suspend
 figure out keybindings
+duplicate windows (terminals)
 
 Github integration
 Desktop extension + monitor setups
@@ -33,8 +34,9 @@ else
     column = desktop.addColumn()
 end
 ```
-The columns of a desktop always add up to exactly the monitor width, after
-every operation.
+The columns of a desktop always add up to exactly the monitor width. This is a
+custom lua layout (hl.layout.register) that places every window itself, so the
+widths are exact by construction rather than corrected afterwards.
 M+n = move the focused window into a new column
 
 M+m = cycle windows through the main slot (the widest column). If the focused

@@ -35,43 +35,42 @@ Only removing `$HOME/.zshenv` requires root, by setting `ZDOTDIR` in
 
 ## Desktop model
 
-Windows live in **columns** on an infinite horizontal tape (Hyprland's
-`scrolling` layout). Each column stacks windows vertically.
+A desktop is a row of **columns**, each a vertical stack of windows.
+`hypr/columns.lua` is a custom Lua layout (`hl.layout.register`), so it decides
+where every window goes itself: `recalculate` divides the work area up and
+places each window. There is no scrolling tape and nothing to correct
+afterwards.
 
-- A new window always opens in the **currently focused column**. Hyprland first
-  puts it in a column of its own and scrolls the tape to reveal it; that scroll
-  is not undone when the column merges into its neighbour, which used to shove
-  the columns on the left off screen. `columns.lua` suppresses it with
-  `inhibit_scroll` from `window.open_early` — by `window.open` the tape has
-  already moved.
-- `SUPER + N` moves the focused window out into a **new column**. So creating a
-  column is `SUPER+Q` then `SUPER+N`, not the other way round.
-- New column width: if all columns were equal, they are re-evened; otherwise the
-  new column takes half the width of the column it came from.
-- The columns of a desktop **always add up to exactly the monitor width** —
-  never less, so there is no dead space, and never more, so the view never
-  scrolls sideways when focus moves. Resizing takes from the other columns
-  rather than growing the total; splitting a window out halves the column it
-  came from; and anything that changes the columns (opening, closing, moving a
-  window, a workspace landing on another monitor) ends with the widths
-  rebalanced and the columns pulled back against the left edge. Relative sizes
-  are preserved when rebalancing, so deliberately uneven columns stay uneven.
+The columns **always fill the monitor exactly** — by construction rather than by
+correction. Widths are fractions that add up to 1.0, `recalculate` divides
+`ctx.area` by them, and Hyprland's `place` inserts the gaps. Nothing can leave
+dead space or run off the edge.
 
-  Removing a column is measured a moment *after* the fact: reading the geometry
-  straight away still shows the column that is going away, so the layout looks
-  correct and nothing gets fixed.
-- `SUPER + H/J/K/L` moves focus within the desktop and wraps at the ends; it
-  never steps onto another monitor, so the binds do not depend on how the
-  monitors are arranged. Use the number keys to switch monitor.
-- `SUPER + SHIFT + H/L` moves the focused window into the neighbouring column,
-  and `SUPER + SHIFT + J/K` moves it up and down inside its own column.
-- `SUPER + ALT + H/L` swaps the whole column with its neighbour, and
-  `SUPER + CTRL + H/L` resizes the column within the bounds above.
-- `SUPER + M` cycles windows through the **main slot**, which is the widest
-  column. If the focused window is outside that column it moves into it;
-  otherwise each press pulls in the next window from elsewhere. Focus follows
-  the main slot, so the big window is always the focused one. Windows sharing
-  the main column are skipped, since swapping with a sibling changes nothing.
+| Bind | Action |
+| --- | --- |
+| `SUPER + H/J/K/L` | move focus, wrapping inside the desktop |
+| `SUPER + N` | split the focused window out into a new column |
+| `SUPER + SHIFT + H/L` | move the window into the neighbouring column |
+| `SUPER + SHIFT + J/K` | move the window up/down inside its column |
+| `SUPER + ALT + H/L` | swap the whole column with its neighbour |
+| `SUPER + CTRL + H/L` | widen/narrow the column |
+| `SUPER + CTRL + J/K` | make the window taller/shorter in its column |
+| `SUPER + M` | cycle windows through the widest column |
+
+- A new window joins the **currently focused column**, at the bottom. So
+  creating a column is `SUPER+Q` then `SUPER+N`.
+- Splitting halves the column it came from, unless all columns were equal, in
+  which case they are evened out again. Either way the total is unchanged.
+- Resizing takes the difference from the other columns in proportion, so
+  deliberately uneven columns stay uneven.
+- Focus never steps onto another monitor, so the binds do not depend on how the
+  monitors are arranged — use the number keys for that.
+- Swapping a column carries its width along, so a narrow column stays narrow
+  when moved to the other side.
+
+Windows are tracked by `stable_id`, which survives being moved about, and the
+state lives in memory only: after a config reload the windows of a desktop
+collapse into one column.
 
 Monitors are numbered by id — **1 = eDP-1** (laptop), **2 = DP-4** (ultrawide).
 The number keys are overloaded on whether that monitor is already focused:
@@ -132,7 +131,7 @@ resolves to `hypr/look.lua`.
 | `windowrules.lua` | window, layer and workspace rules                    |
 | `keybinds.lua`    | every bind, each with a `description`                |
 | `deskbinds.lua`   | monitor + desktop binds on the number keys           |
-| `columns.lua`     | column behaviour: new column, sizing, swap-biggest   |
+| `columns.lua`     | the column layout itself, and its binds              |
 | `autostart.lua`   | processes launched with the session                  |
 
 `programs.lua` is the only module that returns a value; `keybinds.lua` requires

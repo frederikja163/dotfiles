@@ -21,7 +21,7 @@ hl.config({
 
         -- Columns on an infinite horizontal tape. See columns.lua for the
         -- binds and the new-column sizing rule.
-        layout = "scrolling",
+        layout = "lua:columns",
     },
 
     decoration = {
@@ -97,32 +97,6 @@ hl.config({
 hl.config({
     master = {
         new_status = "master",
-    },
-})
-
--- See https://wiki.hypr.land/Configuring/Layouts/Scrolling-Layout/ for more
-hl.config({
-    scrolling = {
-        -- A lone column fills the screen.
-        fullscreen_on_one_column = true,
-
-        -- Width a brand new column gets before columns.lua resizes it.
-        column_width = 0.5,
-
-        -- New columns appear to the right and the tape scrolls that way.
-        direction = "right",
-
-        -- 1 = fit the focused column into view rather than centring it, which
-        -- wastes less space on the 3440px ultrawide.
-        focus_fit_method = 1,
-        follow_focus = true,
-
-        -- Widths cycled by `colresize +conf` / `-conf`.
-        explicit_column_widths = "0.333, 0.5, 0.667, 1.0",
-
-        -- Focus and column swaps wrap at the ends of the tape.
-        wrap_focus = true,
-        wrap_swapcol = true,
     },
 })
 

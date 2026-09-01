@@ -33,59 +33,8 @@ hl.bind(mainMod .. " + slash", hl.dsp.exec_cmd("hypr-keybinds"), { description =
 hl.bind(mainMod .. " + Escape", hl.dsp.exec_cmd("power-menu"), { description = "Power menu" })
 
 
--- Focus, swap and resize
--- Vim-style directional binds (hjkl), with arrow keys as aliases.
---   mainMod          + hjkl -> move focus
---   mainMod + SHIFT  + hjkl -> swap window in that direction
---   mainMod + CTRL   + hjkl -> resize active window
--- neovim/init.lua mirrors this scheme, using <leader> in place of SUPER.
-
--- Horizontal resizing changes the *column* width, which is what left/right
--- means in a column layout. Vertical resizing still resizes the window inside
--- its column.
-local resizeStep = 60
-
--- Vertical SHIFT binds swap the window with its neighbour inside the column.
--- The horizontal ones are column operations (move between columns, swap whole
--- columns) and live in columns.lua instead.
---
--- Horizontal CTRL binds resize the column and are in columns.lua, because they
--- have to know how much room is left on the monitor.
---
--- Focus uses the scrolling layout's own `focus` rather than
--- focus({ direction = ... }). The latter steps onto the neighbouring monitor
--- once it runs out of windows, which ties the binds to how the monitors happen
--- to be arranged; the layout version wraps within the workspace instead.
--- Monitors are switched deliberately with the number keys, see deskbinds.lua.
-local directions = {
-    { dir = "left",  keys = { "H", "left"  }, focus = "l" },
-    { dir = "down",  keys = { "J", "down"  }, focus = "d",
-      resize = hl.dsp.window.resize({ x = 0, y =  resizeStep, relative = true }),
-      swap = hl.dsp.window.swap({ direction = "down" }) },
-    { dir = "up",    keys = { "K", "up"    }, focus = "u",
-      resize = hl.dsp.window.resize({ x = 0, y = -resizeStep, relative = true }),
-      swap = hl.dsp.window.swap({ direction = "up" }) },
-    { dir = "right", keys = { "L", "right" }, focus = "r" },
-}
-
-for _, d in ipairs(directions) do
-    for _, key in ipairs(d.keys) do
-        hl.bind(mainMod .. " + " .. key,
-                hl.dsp.layout("focus " .. d.focus),
-                { repeating = true, description = "Focus window " .. d.dir })
-        if d.swap then
-            hl.bind(mainMod .. " + SHIFT + " .. key,
-                    d.swap,
-                    { repeating = true, description = "Swap window " .. d.dir })
-        end
-        if d.resize then
-            hl.bind(mainMod .. " + CTRL + " .. key,
-                    d.resize,
-                    { repeating = true, description = "Resize window " .. d.dir })
-        end
-    end
-end
-
+-- Focus, move and resize all belong to the layout, which knows where the
+-- columns are, so they live in columns.lua.
 
 -- Workspaces
 --
