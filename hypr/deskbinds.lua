@@ -19,15 +19,40 @@
 local programs = require("programs")
 local mainMod = programs.mainMod
 
--- Monitors in a stable order, so the numbering does not shuffle between calls.
-local function ordered_monitors()
-    local mons = hl.get_monitors() or {}
-    table.sort(mons, function(a, b) return a.id < b.id end)
-    return mons
+-- Monitors we have set to mirror another one: [name] = { id = n, source = name }
+--
+-- This bookkeeping is necessary because a mirroring monitor disappears from
+-- hl.get_monitors() entirely -- hl.get_monitor(name) returns nil for it too, so
+-- there is no way to ask Hyprland about it. Without remembering it, its number
+-- would stop working and the mirror could never be switched off again.
+-- (`hyprctl monitors all` does list it, but calling hyprctl from inside the
+-- config deadlocks: the compositor is busy running this Lua.)
+local mirrored = {}
+
+-- Monitor slots in a stable order, one per number key. Mirroring monitors are
+-- spliced back in by id so the numbers of the others do not shift.
+--
+-- A slot is { name, id, monitor = HL.Monitor|nil, source = name|nil }, where
+-- monitor is nil exactly when the slot is currently mirroring (source is set).
+local function monitor_slots()
+    local slots = {}
+
+    for _, m in ipairs(hl.get_monitors() or {}) do
+        table.insert(slots, { name = m.name, id = m.id, monitor = m })
+        -- It is live again, so any stale mirror note is wrong.
+        mirrored[m.name] = nil
+    end
+
+    for name, info in pairs(mirrored) do
+        table.insert(slots, { name = name, id = info.id, source = info.source })
+    end
+
+    table.sort(slots, function(a, b) return a.id < b.id end)
+    return slots
 end
 
 local function monitor_for(index)
-    return ordered_monitors()[index]
+    return monitor_slots()[index]
 end
 
 -- Regular (non-special) workspaces living on a monitor, lowest id first.
@@ -96,8 +121,9 @@ local function renumber_desktops()
     end
     renaming = true
 
-    for mon_index, mon in ipairs(ordered_monitors()) do
-        for index, ws in ipairs(desktops_on(mon)) do
+    for mon_index, slot in ipairs(monitor_slots()) do
+        local mon = slot.monitor
+        for index, ws in ipairs(mon and desktops_on(mon) or {}) do
             local want = ("%d.%d"):format(mon_index, index)
             if ws.name ~= want then
                 hl.dispatch(hl.dsp.workspace.rename({ workspace = ws.id, name = want }))
@@ -150,29 +176,43 @@ local function move_window_to(ws)
     end
 end
 
--- Extend/duplicate. Mirroring is a monitor property rather than a dispatcher,
--- so this re-issues hl.monitor() at runtime. Wrapped because that is the one
--- part of this file not proven by existing config.
-local function toggle_mirror(target, focused)
-    if not (target and focused) then
+-- Toggle duplicate/extend for a monitor slot.
+--
+-- Mirroring is a monitor property rather than a dispatcher, so it re-issues
+-- hl.monitor(). `mirror = ""` is what switches it back off; the monitor then
+-- reappears in hl.get_monitors().
+local function toggle_mirror(slot, focused)
+    if not slot then
         return
     end
 
     local ok, err
-    if target.is_mirror then
-        -- Back to extending: clear the mirror and let it lay out normally.
+    if slot.source then
+        -- Currently duplicating: go back to extending.
         ok, err = pcall(hl.monitor, {
-            output   = target.name,
+            output   = slot.name,
             mode     = "preferred",
             position = "auto",
             scale    = "auto",
             mirror   = "",
         })
+        if ok then
+            mirrored[slot.name] = nil
+        end
     else
+        if not focused or focused.name == slot.name then
+            return -- nothing to duplicate onto
+        end
+
         ok, err = pcall(hl.monitor, {
-            output = target.name,
+            output = slot.name,
             mirror = focused.name,
         })
+        if ok then
+            -- Remember it: from here on Hyprland will not report this monitor
+            -- at all, so this table is the only record that it exists.
+            mirrored[slot.name] = { id = slot.id, source = focused.name }
+        end
     end
 
     if not ok then
@@ -181,59 +221,66 @@ local function toggle_mirror(target, focused)
     end
 end
 
--- Is this monitor the focused one?
-local function is_focused(mon)
+-- Is this slot the focused monitor? A mirroring slot never is: it has no
+-- monitor object of its own.
+local function is_focused(slot)
     local active = hl.get_active_monitor()
-    return active and mon and active.id == mon.id
+    return active and slot and slot.monitor and active.id == slot.monitor.id
 end
 
 for n = 1, 10 do
     local key = tostring(n % 10) -- 10 is bound to the "0" key
 
     hl.bind(mainMod .. " + " .. key, function()
-        local mon = monitor_for(n)
-        if not mon then
-            return -- no such monitor, do nothing
+        local slot = monitor_for(n)
+        if not slot or not slot.monitor then
+            -- No such monitor, or it is duplicating another one and so has
+            -- nothing of its own to focus.
+            return
         end
 
-        if is_focused(mon) then
+        if is_focused(slot) then
             -- Only one desktop here: there is nothing to cycle to, so make a
             -- second one rather than doing nothing.
-            if #desktops_on(mon) < 2 then
+            if #desktops_on(slot.monitor) < 2 then
                 new_desktop_here()
             else
-                focus_workspace(next_desktop(mon))
+                focus_workspace(next_desktop(slot.monitor))
             end
         else
-            focus_workspace(mon.active_workspace)
+            focus_workspace(slot.monitor.active_workspace)
         end
     end, { description = "Monitor " .. n .. ": focus, or next/new desktop if focused" })
 
     hl.bind(mainMod .. " + SHIFT + " .. key, function()
-        local mon = monitor_for(n)
-        if not mon then
+        local slot = monitor_for(n)
+        if not slot or not slot.monitor then
             return
         end
 
-        if is_focused(mon) then
-            move_window_to(next_desktop(mon))
+        if is_focused(slot) then
+            move_window_to(next_desktop(slot.monitor))
         else
-            move_window_to(mon.active_workspace)
+            move_window_to(slot.monitor.active_workspace)
         end
     end, { description = "Monitor " .. n .. ": move window there, or to next desktop" })
 
     hl.bind(mainMod .. " + CTRL + " .. key, function()
-        local mon = monitor_for(n)
-        if not mon then
+        local slot = monitor_for(n)
+        if not slot then
             return
         end
 
-        if is_focused(mon) then
+        -- Duplicating already: this key switches it back off, which has to work
+        -- even though Hyprland no longer reports the monitor.
+        if slot.source then
+            toggle_mirror(slot, hl.get_active_monitor())
+        elseif is_focused(slot) then
             new_desktop_here()
         else
-            toggle_mirror(mon, hl.get_active_monitor())
+            toggle_mirror(slot, hl.get_active_monitor())
         end
-    end, { description = "Monitor " .. n .. ": toggle mirror, or new desktop if focused" })
+    end, { description = "Monitor " .. n .. ": toggle duplicate, or new desktop if focused" })
 end
 
 -- Keep the per-monitor numbering correct as desktops and monitors come and go.
@@ -258,5 +305,6 @@ return {
     renumber_desktops = renumber_desktops,
     schedule_renumber = schedule_renumber,
     desktops_on = desktops_on,
-    ordered_monitors = ordered_monitors,
+    monitor_slots = monitor_slots,
+    toggle_mirror = toggle_mirror,
 }

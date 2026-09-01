@@ -16,9 +16,25 @@ local function reset(w)
         on = function(event, fn) events[event] = fn end,
         timer = function(cb, opts) cb() end, -- fire immediately in tests
         dispatch = function(d) table.insert(dispatched, d) end,
-        monitor = function(spec) table.insert(monitor_calls, spec) end,
+        monitor = function(spec)
+            table.insert(monitor_calls, spec)
+            -- Mimic Hyprland: setting mirror hides the monitor, clearing it
+            -- brings it back.
+            for _, m in ipairs(world.monitors) do
+                if m.name == spec.output then
+                    m.mirroring = (spec.mirror ~= nil and spec.mirror ~= "") and spec.mirror or nil
+                end
+            end
+        end,
         exec_cmd = function(cmd) table.insert(dispatched, { exec = cmd }) end,
-        get_monitors = function() return world.monitors end,
+        get_monitors = function()
+            -- Hyprland drops a mirroring monitor from this list entirely.
+            local out = {}
+            for _, m in ipairs(world.monitors) do
+                if not m.mirroring then table.insert(out, m) end
+            end
+            return out
+        end,
         get_workspaces = function() return world.workspaces end,
         get_active_monitor = function()
             for _, m in ipairs(world.monitors) do
@@ -146,13 +162,43 @@ reset(q)
 binds["SUPER + 2"].fn()
 check("skips occupied ids, picks 4", last_of("focus").arg.workspace, 4)
 
-print("scenario: un-mirroring a mirrored monitor")
+print("scenario: duplicate then un-duplicate with the same key")
 local m = two_monitors(0)
-m.monitors[2].is_mirror = true
 reset(m)
 binds["SUPER + CTRL + 2"].fn()
-check("mirror cleared", monitor_calls[1].mirror, "")
-check("position restored to auto", monitor_calls[1].position, "auto")
+check("first press duplicates onto the focused monitor", monitor_calls[1].mirror, "eDP-1")
+check("target is the other monitor", monitor_calls[1].output, "DP-4")
+
+-- Hyprland now hides DP-4 from get_monitors(); the slot must survive anyway.
+local slots = mod.monitor_slots()
+check("slot 2 still exists while duplicating", slots[2] and slots[2].name, "DP-4")
+check("and is flagged as duplicating", slots[2] and slots[2].source, "eDP-1")
+check("get_monitors no longer reports it", #hl.get_monitors(), 1)
+
+binds["SUPER + CTRL + 2"].fn()
+check("second press clears the mirror", monitor_calls[2].mirror, "")
+check("position restored to auto", monitor_calls[2].position, "auto")
+check("monitor is live again", #hl.get_monitors(), 2)
+check("slot no longer flagged", mod.monitor_slots()[2].source, nil)
+
+print("scenario: numbering does not shift when a monitor duplicates")
+local three = two_monitors(0)
+local mon3 = { id = 2, name = "HDMI-1", active_workspace = nil }
+local ws9 = { id = 9, special = false, monitor = mon3, name = "9" }
+mon3.active_workspace = ws9
+table.insert(three.monitors, mon3)
+table.insert(three.workspaces, ws9)
+reset(three)
+binds["SUPER + CTRL + 2"].fn() -- duplicate the middle monitor
+local s2 = mod.monitor_slots()
+check("slot 1 unchanged", s2[1].name, "eDP-1")
+check("slot 2 is still the duplicating monitor", s2[2].name, "DP-4")
+check("slot 3 did NOT move up", s2[3].name, "HDMI-1")
+
+print("scenario: plain M+n on a duplicating monitor does nothing")
+local before = #dispatched
+binds["SUPER + 2"].fn()
+check("no dispatch", #dispatched, before)
 
 print("scenario: single monitor, pressing an absent monitor number")
 local s = two_monitors(0)

@@ -64,11 +64,20 @@ The number keys are overloaded on whether that monitor is already focused:
 | --- | --- | --- |
 | `SUPER + n` | focus it | next desktop, wrapping — or a new one if it is the only desktop |
 | `SUPER + SHIFT + n` | move window to it | move window to next desktop |
-| `SUPER + CTRL + n` | mirror it onto the focused one | new desktop, focused |
+| `SUPER + CTRL + n` | duplicate/extend toggle | new desktop, focused |
 
 Empty desktops are removed by Hyprland automatically. There are no direct
 `SUPER + 1..9` desktop binds any more; cycle with `SUPER + n` on the focused
 monitor instead.
+
+A monitor that is duplicating another **disappears from `hl.get_monitors()`**,
+and `hl.get_monitor(name)` returns nil for it, so Hyprland cannot be asked about
+it at all. `deskbinds.lua` therefore remembers which monitors it has set to
+duplicate: without that, the monitor's number would stop responding and the
+duplicate could never be switched off. Remembered monitors are spliced back into
+the numbering by id, so the other monitors keep their numbers. (`hyprctl
+monitors all` does list them, but calling `hyprctl` from inside the config
+deadlocks — the compositor is busy running the Lua.)
 
 Desktops are **numbered per monitor**. Hyprland's own workspace ids are global,
 so the second monitor can own ids 2 and 3. `deskbinds.lua` renames every desktop

@@ -45,7 +45,9 @@ Each monitor has a number associated with it, [1-0]
 \#f = focused monitor
 M+#n = focus
 M+S+#n = move window
-M+C+#n = toggle extend/duplicate with focused monitor
+M+C+#n = toggle extend/duplicate with focused monitor (works both ways: a
+duplicating monitor vanishes from Hyprland's monitor list, so deskbinds.lua
+remembers it in order to switch it back)
 M+#f = next desktop on monitor (loops back to first desktop, or creates a second
 one if the monitor only has a single desktop)
 M+s+#f = move window to next desktop on monitor
