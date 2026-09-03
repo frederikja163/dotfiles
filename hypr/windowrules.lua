@@ -35,19 +35,6 @@ hl.window_rule({
     float = true,
 })
 
--- The per-desktop dropdown terminals (bin/desk-quake). They live on a special
--- workspace so they overlay the columns, and float so they can be a strip
--- across the top rather than filling the screen.
-hl.window_rule({
-    name  = "quake-terminal",
-    -- Matching is full-string, so "^quake-" never matches "quake-1".
-    match = { class = "quake-.*" },
-
-    float = true,
-    size  = "100% 40%",
-    move  = "0 0",
-})
-
 -- Layer rules also return a handle.
 -- local overlayLayerRule = hl.layer_rule({
 --     name  = "no-anim-overlay",
