@@ -47,15 +47,33 @@ correction. Widths are fractions that add up to 1.0, `recalculate` divides
 `ctx.area` by them, and Hyprland's `place` inserts the gaps. Nothing can leave
 dead space or run off the edge.
 
+**Modifiers mean one thing each:** `SHIFT` moves · `CTRL` changes geometry ·
+`ALT` scopes up from the window to its whole column.
+
 | Bind | Action |
 | --- | --- |
-| `SUPER + H/J/K/L` | move focus, wrapping inside the desktop |
+| `SUPER + H/J/K/L` | focus, wrapping inside the desktop |
 | `SUPER + SHIFT + H/L` | move the window into the neighbouring column |
 | `SUPER + SHIFT + J/K` | move the window up/down inside its column |
-| `SUPER + ALT + H/L` | swap the whole column with its neighbour |
-| `SUPER + CTRL + H/L` | widen/narrow the column |
-| `SUPER + CTRL + J/K` | make the window taller/shorter in its column |
+| `SUPER + CTRL + H/J/K/L` | resize the window (sideways is its column) |
+| `SUPER + ALT + SHIFT + H/L` | move the whole column |
 | `SUPER + M` | cycle windows through the widest column |
+
+Numbers address screens, with one rule: **act on screen *n*, or on your own
+desktops if you are already there.**
+
+| Bind | another screen | your own screen |
+| --- | --- | --- |
+| `SUPER + <n>` | go there | next desktop |
+| `SUPER + SHIFT + <n>` | move window there | move window to next desktop |
+| `SUPER + ALT + SHIFT + <n>` | move column there | move column to next desktop |
+| `SUPER + CTRL + <n>` | duplicate onto it | new desktop |
+
+Apps and window state: `Q` terminal · `R` launcher · `E` files · `C` close ·
+`V` float · `Escape` power menu · `/` this list.
+
+Arrow keys mirror `HJKL` everywhere, but are bound without descriptions so they
+do not double every entry in the cheatsheet.
 
 - On a desktop with a **single column**, a new window starts a **second
   column** — one column means the desktop is not really split up yet. Once
@@ -269,9 +287,11 @@ trying in a nested instance:
 HYPR_SANDBOX=1 Hyprland -c hypr/hyprland.lua
 ```
 
-`HYPR_SANDBOX=1` skips autostart — `hypridle` would otherwise lock or suspend
-the *host* session — and switches the modifier to ALT, because the host
-compositor grabs every SUPER combination before the nested one sees it.
+`HYPR_SANDBOX=1` skips autostart, since `hypridle` and a second waybar would
+act on the *host* session. The modifier stays SUPER: the host grabs those
+combinations so the binds are not pressable by hand, but nested testing goes
+through `hyprctl dispatch`, and swapping the modifier to ALT used to collapse
+`SUPER+ALT+SHIFT` onto `ALT+SHIFT` and hide real collisions.
 
 Editing `hypr/` applies immediately: `~/.config/hypr` is a symlink into this
 repo and Hyprland reloads on change. To work on the config without that, copy it

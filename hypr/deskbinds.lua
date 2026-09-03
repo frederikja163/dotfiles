@@ -17,6 +17,7 @@
 -- monitor is done by focusing the workspace it currently shows.
 
 local programs = require("programs")
+local columns = require("columns")
 local mainMod = programs.mainMod
 
 -- Monitors we have set to mirror another one: [name] = { id = n, source = name }
@@ -271,7 +272,7 @@ for n = 1, 10 do
         else
             focus_workspace(slot.monitor.active_workspace)
         end
-    end, { description = "Monitor " .. n .. ": focus, or next/new desktop if focused" })
+    end, { description = "Screen " .. n .. ": go there, or next desktop if already there" })
 
     hl.bind(mainMod .. " + SHIFT + " .. key, function()
         local slot = monitor_for(n)
@@ -284,7 +285,7 @@ for n = 1, 10 do
         else
             move_window_to(slot.monitor.active_workspace)
         end
-    end, { description = "Monitor " .. n .. ": move window there, or to next desktop" })
+    end, { description = "Screen " .. n .. ": move window there" })
 
     hl.bind(mainMod .. " + CTRL + " .. key, function()
         local slot = monitor_for(n)
@@ -301,7 +302,28 @@ for n = 1, 10 do
         else
             toggle_mirror(slot, hl.get_active_monitor())
         end
-    end, { description = "Monitor " .. n .. ": toggle duplicate, or new desktop if focused" })
+    end, { description = "Screen " .. n .. ": duplicate onto it, or new desktop if already there" })
+
+    -- ALT scopes the move up from the window to its whole column.
+    hl.bind(mainMod .. " + ALT + SHIFT + " .. key, function()
+        local slot = monitor_for(n)
+        if not slot or not slot.monitor then
+            return
+        end
+
+        local target = is_focused(slot) and next_desktop(slot.monitor)
+                       or slot.monitor.active_workspace
+        if not target then
+            return
+        end
+
+        local win = hl.get_active_window()
+        if not win or win.floating or not win.workspace then
+            return
+        end
+
+        columns.move_column_to_workspace(win.workspace.id, target.id, win.stable_id)
+    end, { description = "Screen " .. n .. ": move column there" })
 end
 
 -- Keep the per-monitor numbering correct as desktops and monitors come and go.

@@ -1,10 +1,11 @@
 -- Default applications, shared by autostart.lua and keybinds.lua.
 -- Returned as a table so the other modules can require it.
 
--- When running nested for testing (HYPR_SANDBOX=1) the host Hyprland grabs
--- every SUPER combination before the nested instance can see it, so the
--- sandbox uses ALT instead and the binds become testable.
-local mainMod = os.getenv("HYPR_SANDBOX") == "1" and "ALT" or "SUPER"
+-- SUPER everywhere, including a nested test instance. Swapping it to ALT there
+-- used to make binds pressable by hand, but it also collapsed
+-- mainMod + ALT + SHIFT onto plain ALT + SHIFT, hiding real collisions. Nested
+-- testing goes through `hyprctl dispatch` anyway, which does not need a key.
+local mainMod = "SUPER"
 
 return {
     terminal    = "kitty",

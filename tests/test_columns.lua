@@ -352,6 +352,41 @@ check("one column now", #st.columns, 1)
 near("both rows equal", h[1], 0.5)
 near("heights total 1", h[1] + h[2], 1.0)
 
+print("handing a column to another workspace")
+-- Windows arrive one at a time, so the destination is told what is coming and
+-- groups them as they turn up.
+st = build({ { 1, 2 }, { 3 } })
+st.focused = 1
+local dst = C.new_state()
+dst.columns = { { ids = { 9 }, heights = { 1.0 }, width = 1.0 } }
+dst.adopting = { [1] = true, [2] = true }
+
+C.reconcile(dst, { 9, 1 }, 9)          -- first window lands
+check("first arrival makes one new column", shape(dst), "9 | 1")
+C.reconcile(dst, { 9, 1, 2 }, 9)       -- second lands
+check("second joins the same column", shape(dst), "9 | 1+2")
+near("widths total 1", width_total(dst), 1.0)
+check("adoption is finished", dst.adopting, nil)
+
+print("...a late arrival is not mistaken for a new window")
+dst = C.new_state()
+dst.columns = { { ids = { 9 }, heights = { 1.0 }, width = 1.0 } }
+dst.adopting = { [1] = true, [2] = true }
+C.reconcile(dst, { 9, 1 }, 9)
+C.reconcile(dst, { 9, 1 }, 9)          -- a reconcile with nothing new
+check("the outstanding window is still expected", dst.adopting ~= nil, true)
+C.reconcile(dst, { 9, 1, 2 }, 9)
+check("and still joins the column when it lands", shape(dst), "9 | 1+2")
+
+print("...without adoption they would be placed normally")
+dst = C.new_state()
+dst.columns = { { ids = { 9 }, heights = { 1.0 }, width = 1.0 } }
+dst.focused = 9
+C.reconcile(dst, { 9, 1 }, 9)
+check("a lone column splits instead", shape(dst), "9 | 1")
+C.reconcile(dst, { 9, 1, 2 }, 9)
+check("then stacks on the focused column", shape(dst), "9+2 | 1")
+
 print("")
 print(("%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)

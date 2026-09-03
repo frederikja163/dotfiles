@@ -220,6 +220,31 @@ local function insert(st, id)
     add_to_column(st.columns[target], id, st.focused)
 end
 
+-- Windows handed over from another workspace arrive one at a time. They are
+-- remembered in st.adopting so that each one joins a single shared column as it
+-- turns up, instead of being placed as an unrelated new window.
+local function adopt(st, id)
+    local ci = st.adopt_anchor and locate(st, st.adopt_anchor)
+
+    if ci then
+        local col = st.columns[ci]
+        table.insert(col.ids, id)
+        table.insert(col.heights, 1 / #col.ids)
+        normalize_heights(col)
+    else
+        table.insert(st.columns, { ids = { id }, heights = { 1.0 }, width = 1 })
+        st.adopt_anchor = id
+    end
+
+    st.adopting[id] = nil
+    if next(st.adopting) == nil then
+        st.adopting = nil
+        st.adopt_anchor = nil
+    end
+
+    normalize_widths(st)
+end
+
 local function remove(st, id)
     local ci, wi = locate(st, id)
     if not ci then
@@ -270,7 +295,11 @@ local function reconcile(st, ids, active)
     -- New.
     for _, id in ipairs(ids) do
         if not known[id] then
-            insert(st, id)
+            if st.adopting and st.adopting[id] then
+                adopt(st, id)
+            else
+                insert(st, id)
+            end
         end
     end
 
@@ -560,6 +589,72 @@ local function neighbour(st, id, dir)
     return col.ids[math.min(wi, #col.ids)]
 end
 
+-- Hand the focused window's whole column over to another workspace.
+--
+-- Windows have to be moved one at a time, so the destination is seeded with the
+-- column first: otherwise each arrival would be treated as a new window and be
+-- scattered by the usual placement rules. Focus follows a moved window, so it
+-- is put back on the window that had it once they have all arrived.
+--
+-- Returns true if a column was moved.
+local function move_column_to_workspace(from_ws, to_ws, focused_id)
+    if not (from_ws and to_ws) or from_ws == to_ws then
+        return false
+    end
+
+    local src = state[from_ws]
+    if not src then
+        return false
+    end
+
+    local ci = locate(src, focused_id)
+    if not ci then
+        return false
+    end
+
+    local ids = {}
+    for i, wid in ipairs(src.columns[ci].ids) do
+        ids[i] = wid
+    end
+
+    -- stable ids are what the layout works in, but the dispatcher wants a
+    -- window selector.
+    local address = {}
+    for _, w in ipairs(hl.get_windows() or {}) do
+        if w.stable_id then
+            address[w.stable_id] = w.address
+        end
+    end
+
+    -- Tell the destination what is coming. Seeding it with a real column
+    -- instead would be worse than useless: the first arrival triggers a
+    -- reconcile there, which would drop every window that has not landed yet --
+    -- and, if that column shared this table, shorten the list being iterated
+    -- below.
+    local dst = for_workspace(to_ws)
+    dst.adopting = {}
+    dst.adopt_anchor = nil
+    for _, wid in ipairs(ids) do
+        dst.adopting[wid] = true
+    end
+
+    table.remove(src.columns, ci)
+    normalize_widths(src)
+
+    for _, wid in ipairs(ids) do
+        local a = address[wid]
+        if a then
+            hl.dispatch(hl.dsp.window.move({ workspace = to_ws, window = "address:" .. a }))
+        end
+    end
+
+    if address[focused_id] then
+        hl.dispatch(hl.dsp.focus({ window = "address:" .. address[focused_id] }))
+    end
+
+    return true
+end
+
 -- Cycle windows through the widest column, keeping the focus on it.
 local function cycle_main(st, id)
     if #st.columns < 2 then
@@ -727,11 +822,21 @@ hl.layout.register("columns", {
 -- Keybinds
 ----------------------------------------------------------------------------
 
--- No bind for "newcol": moving a window past the last column with
--- mainMod + SHIFT + h/l already puts it in a column of its own. The message is
--- still there for `hyprctl dispatch 'hl.dsp.layout("newcol")'`.
+-- Modifiers have one meaning each:
+--
+--   SHIFT  move the thing
+--   CTRL   change its geometry
+--   ALT    scope up: the whole column rather than one window
+--
+-- Only the letter keys carry a description, so the arrow aliases do not
+-- duplicate every entry in the SUPER + / cheatsheet.
+--
+-- There is no bind for "newcol": moving a window past the last column with
+-- SHIFT + h/l already gives it a column of its own. The message is still there
+-- for `hyprctl dispatch 'hl.dsp.layout("newcol")'`.
+
 hl.bind(mainMod .. " + M", hl.dsp.layout("cyclemain"),
-        { description = "Cycle window through the main (widest) column" })
+        { description = "Column: cycle windows through the widest one" })
 
 local horizontal = {
     { keys = { "H", "left"  }, dir = "prev", label = "left",  step = -0.05, focus = "l" },
@@ -739,18 +844,25 @@ local horizontal = {
 }
 
 for _, h in ipairs(horizontal) do
-    for _, key in ipairs(h.keys) do
+    for i, key in ipairs(h.keys) do
+        local named = i == 1 -- the arrow aliases stay out of the cheatsheet
+
         hl.bind(mainMod .. " + " .. key, hl.dsp.layout("focus " .. h.focus),
-                { repeating = true, description = "Focus window " .. h.label })
+                { repeating = true,
+                  description = named and ("Window: focus " .. h.label) or nil })
 
         hl.bind(mainMod .. " + SHIFT + " .. key, hl.dsp.layout("movecol " .. h.dir),
-                { repeating = true, description = "Move window to the column " .. h.label })
+                { repeating = true,
+                  description = named and ("Window: move to the column " .. h.label) or nil })
 
-        hl.bind(mainMod .. " + ALT + " .. key, hl.dsp.layout("swapcol " .. h.dir),
-                { repeating = true, description = "Swap column with the one to the " .. h.label })
+        hl.bind(mainMod .. " + ALT + SHIFT + " .. key, hl.dsp.layout("swapcol " .. h.dir),
+                { repeating = true,
+                  description = named and ("Column: move " .. h.label) or nil })
 
+        -- Widening a window is widening its column, so this is a window action.
         hl.bind(mainMod .. " + CTRL + " .. key, hl.dsp.layout(("colresize %.2f"):format(h.step)),
-                { repeating = true, description = "Resize column " .. h.label })
+                { repeating = true,
+                  description = named and ("Window: resize " .. h.label) or nil })
     end
 end
 
@@ -760,15 +872,20 @@ local vertical = {
 }
 
 for _, v in ipairs(vertical) do
-    for _, key in ipairs(v.keys) do
+    for i, key in ipairs(v.keys) do
+        local named = i == 1
+
         hl.bind(mainMod .. " + " .. key, hl.dsp.layout("focus " .. v.focus),
-                { repeating = true, description = "Focus window " .. v.label })
+                { repeating = true,
+                  description = named and ("Window: focus " .. v.label) or nil })
 
         hl.bind(mainMod .. " + SHIFT + " .. key, hl.dsp.layout("movewin " .. v.dir),
-                { repeating = true, description = "Move window " .. v.label .. " in its column" })
+                { repeating = true,
+                  description = named and ("Window: move " .. v.label .. " in its column") or nil })
 
         hl.bind(mainMod .. " + CTRL + " .. key, hl.dsp.layout(("rowresize %.2f"):format(v.step)),
-                { repeating = true, description = "Resize window " .. v.label })
+                { repeating = true,
+                  description = named and ("Window: resize " .. v.label) or nil })
     end
 end
 
@@ -787,6 +904,7 @@ return {
     resize_column = resize_column,
     resize_row = resize_row,
     cycle_main = cycle_main,
+    move_column_to_workspace = move_column_to_workspace,
     neighbour = neighbour,
     MIN = MIN,
 }
