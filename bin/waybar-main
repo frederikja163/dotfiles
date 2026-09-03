@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# Run waybar on the main monitor, and only there.
+#
+# "Main" is simply the largest monitor by pixel area. That is deterministic,
+# needs no configuration, and does not depend on connector names, which differ
+# between machines and even between plug-ins (DP-4 became DP-5 after a redock).
+#
+# waybar has no command line option for the output -- only -b/--bar to pick a
+# bar by name -- so the monitor has to come from the config. Rather than name
+# monitors in the repo, this writes a copy with "output" filled in and runs
+# waybar against that. waybar/config.jsonc itself stays machine independent.
+#
+# If the monitor cannot be worked out, waybar runs against the config as-is,
+# which puts a bar on every monitor: worse, but never no bar at all.
+#
+# Safe to run repeatedly: it replaces any waybar that is already running.
+set -uo pipefail
+
+CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/waybar/config.jsonc"
+GENERATED="${XDG_RUNTIME_DIR:-/tmp}/waybar-main.jsonc"
+
+main_monitor() {
+    hyprctl monitors 2>/dev/null | awk '
+        /^Monitor /            { name = $2 }
+        /^\t[0-9]+x[0-9]+@/    {
+            split($1, mode, "@")
+            split(mode[1], px, "x")
+            area = px[1] * px[2]
+            if (area > best) { best = area; winner = name }
+        }
+        END { if (winner != "") print winner }
+    '
+}
+
+# Copy the config with "output" set. Comments are stripped, so the parser has to
+# know not to treat // inside a string as one.
+write_config() {
+    python3 - "$CONFIG" "$GENERATED" "$1" <<'PY'
+import json, sys
+
+src, dst, monitor = sys.argv[1:4]
+raw = open(src).read()
+
+out, in_string, escaped, i = [], False, False, 0
+while i < len(raw):
+    c = raw[i]
+    if in_string:
+        out.append(c)
+        if escaped:
+            escaped = False
+        elif c == "\\":
+            escaped = True
+        elif c == '"':
+            in_string = False
+    elif c == '"':
+        in_string = True
+        out.append(c)
+    elif c == "/" and i + 1 < len(raw) and raw[i + 1] == "/":
+        while i < len(raw) and raw[i] != "\n":
+            i += 1
+        continue
+    else:
+        out.append(c)
+    i += 1
+
+config = json.loads("".join(out))
+config["output"] = monitor
+json.dump(config, open(dst, "w"), indent=2)
+PY
+}
+
+pkill -x waybar 2>/dev/null
+# Give it a moment to release its layer surfaces, or the new bar can land on a
+# monitor that is still occupied.
+sleep 0.3
+
+monitor="$(main_monitor)"
+
+if [ -n "$monitor" ] && write_config "$monitor"; then
+    exec waybar -c "$GENERATED"
+fi
+
+echo "waybar-main: no single monitor picked, showing the bar on all of them" >&2
+exec waybar

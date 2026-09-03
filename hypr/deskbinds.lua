@@ -189,8 +189,9 @@ end
 -- running a nested Hyprland for testing: the host's bar gets reloaded too.
 local function reload_waybar()
     hl.timer(function()
-        hl.exec_cmd("sh -c 'pkill -USR2 -x waybar; sleep 1; " ..
-                    "pgrep -x waybar >/dev/null || waybar >/dev/null 2>&1 &'")
+        -- Restart rather than reload: duplicating can change which monitor is
+        -- the largest, and bin/waybar-main puts the bar on that one.
+        hl.exec_cmd("waybar-main")
     end, { timeout = 300, type = "oneshot" })
 end
 

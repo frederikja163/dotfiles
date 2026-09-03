@@ -95,9 +95,9 @@ the numbering by id, so the other monitors keep their numbers. (`hyprctl
 monitors all` does list them, but calling `hyprctl` from inside the config
 deadlocks — the compositor is busy running the Lua.)
 
-Toggling duplication also refreshes waybar (`pkill -USR2 -x waybar`), since its
-bars are keyed by monitor name and its workspace buttons by desktop name, both
-of which change when a monitor comes or goes.
+Toggling duplication also restarts waybar via `bin/waybar-main`, since
+duplicating can change which monitor is the largest, and the workspace buttons
+are keyed by desktop name, which is renumbered when a monitor comes or goes.
 
 Desktops are **numbered per monitor**. Hyprland's own workspace ids are global,
 so the second monitor can own ids 2 and 3. `deskbinds.lua` renames every desktop
@@ -140,12 +140,21 @@ it so the terminal and launcher are named in one place.
 
 ## Desktop notes
 
-Waybar runs **two bars**, configured by monitor name in `waybar/config.jsonc`:
-a full one on `DP-4` (ultrawide) and a lean one on `eDP-1` (laptop panel).
-Rename these if the hardware changes — `hyprctl monitors` lists them.
+Waybar runs **one bar, on the main monitor**, where "main" is just the largest
+by pixel area. `waybar/config.jsonc` deliberately has no `output` key, so it
+names no monitors and works unchanged on any machine; `bin/waybar-main` works
+out the monitor and starts waybar against a generated copy of the config with
+`output` filled in. waybar has no command line option for this — only `-b` to
+pick a bar by name — hence the generated copy.
 
-Waybar and hyprpaper are autostarted from `hypr/hyprland.lua`. dunst is
-dbus-activated and needs no autostart entry.
+Connector names are not stable (`DP-4` became `DP-5` after a redock), which is
+why nothing keys off them. If the monitor cannot be determined, the bar appears
+on every monitor rather than not at all.
+
+`hypr/autostart.lua` starts it, and restarts it on `monitor.added`/`removed`, so
+the bar follows the main monitor across docking and undocking.
+
+hyprpaper is autostarted too. dunst is dbus-activated and needs no entry.
 
 **SUPER + /** shows a searchable list of every keybind, via `bin/hypr-keybinds`.
 The list is generated from `hyprctl binds`, so it reflects what the compositor
@@ -176,7 +185,7 @@ Reloading without a logout:
 
 ```sh
 hyprctl reload              # hyprland
-killall -SIGUSR2 waybar     # waybar
+waybar-main                 # waybar (restarts it on the main monitor)
 dunstctl reload             # dunst
 # kitty: ctrl+shift+f5
 ```

@@ -22,16 +22,11 @@
   border-radius: 0;
 }
 
+/* Slightly translucent so hyprpaper shows through, like kitty. */
 window#waybar {
-  background: @base;
+  background: rgba(30, 30, 46, 0.92);
   color: @text;
   border-radius: 10px;
-}
-
-/* Slightly translucent so hyprpaper shows through, like kitty. */
-window#waybar.laptop,
-window#waybar.ultrawide {
-  background: rgba(30, 30, 46, 0.92);
 }
 
 #workspaces button {

@@ -1,176 +1,172 @@
 // Waybar — https://github.com/Alexays/Waybar/wiki/Configuration
-// Two bars: a full one on the ultrawide, a lean one on the laptop panel.
+//
+// One bar, with no "output" key, so it does not depend on monitor names and
+// works unchanged on any machine. bin/waybar-main starts it on whichever
+// monitor is the main one here; without that it would appear on every monitor.
+//
 // Reload with:  killall -SIGUSR2 waybar
-[
-  {
-    "name": "ultrawide",
-    "output": "DP-4",
-    "layer": "top",
-    "position": "top",
-    "height": 34,
-    "spacing": 6,
-    // 3440px is wide enough that edge-anchored modules feel stranded, so the
-    // bar is inset and the clock is centred.
-    "margin-top": 6,
-    "margin-left": 12,
-    "margin-right": 12,
-
-    "modules-left": ["hyprland/workspaces", "hyprland/submap"],
-    "modules-center": ["clock"],
-    "modules-right": [
-      "privacy",
-      "idle_inhibitor",
-      "tray",
-      "pulseaudio",
-      "bluetooth",
-      "network",
-      "backlight",
-      "battery"
-    ],
-
-    "hyprland/workspaces": {
-      "on-click": "activate",
-      // Desktops are named "<monitor>.<desktop>" by hypr/deskbinds.lua so the
-      // names stay globally unique (waybar highlights every button whose name
-      // matches the focused workspace, ignoring which monitor it is on). The
-      // map below turns them back into a plain per-monitor number for display.
-      "format": "{icon}",
-      "format-icons": {
-        "1.1": "1", "1.2": "2", "1.3": "3", "1.4": "4", "1.5": "5", "1.6": "6", "1.7": "7", "1.8": "8", "1.9": "9",
-        "2.1": "1", "2.2": "2", "2.3": "3", "2.4": "4", "2.5": "5", "2.6": "6", "2.7": "7", "2.8": "8", "2.9": "9",
-        "3.1": "1", "3.2": "2", "3.3": "3", "3.4": "4", "3.5": "5", "3.6": "6", "3.7": "7", "3.8": "8", "3.9": "9",
-        "4.1": "1", "4.2": "2", "4.3": "3", "4.4": "4", "4.5": "5", "4.6": "6", "4.7": "7", "4.8": "8", "4.9": "9"
-      }
-    },
-
-    "clock": {
-      "format": "{:%H:%M  %a %d %b}",
-      "tooltip-format": "<tt><small>{calendar}</small></tt>",
-      "calendar": {
-        "mode": "month",
-        "on-scroll": 1
-      }
-    },
-
-    // Shows an indicator while something reads the screen or microphone,
-    // e.g. a Teams call.
-    "privacy": {
-      "icon-size": 14,
-      "modules": [
-        { "type": "screenshare" },
-        { "type": "audio-in" }
-      ]
-    },
-
-    // Click to keep the screen awake during presentations.
-    "idle_inhibitor": {
-      "format": "{icon}",
-      "format-icons": { "activated": "", "deactivated": "" },
-      "tooltip-format-activated": "Idle inhibited",
-      "tooltip-format-deactivated": "Idle normal"
-    },
-
-    // Teams, JetBrains Toolbox and GlobalProtect all expect a tray. Without
-    // this module their icons are simply invisible under Hyprland.
-    "tray": {
-      "icon-size": 16,
-      "spacing": 8
-    },
-
-    "pulseaudio": {
-      "format": "{icon} {volume}%",
-      "format-muted": " muted",
-      "format-bluetooth": "{icon} {volume}%",
-      "format-icons": { "headphone": "", "default": ["", "", ""] },
-      "scroll-step": 5,
-      "on-click": "pavucontrol"
-    },
-
-    "bluetooth": {
-      "format": "",
-      "format-disabled": "",
-      "format-connected": " {num_connections}",
-      "tooltip-format-connected": "{device_enumerate}",
-      "on-click": "blueman-manager"
-    },
-
-    "network": {
-      "format-wifi": " {signalStrength}%",
-      "format-ethernet": "",
-      "format-disconnected": "",
-      "tooltip-format-wifi": "{essid} ({signalStrength}%)\n{ipaddr}",
-      "tooltip-format-ethernet": "{ifname}\n{ipaddr}"
-    },
-
-    "backlight": {
-      "device": "intel_backlight",
-      "format": "{icon} {percent}%",
-      "format-icons": ["", "", "", "", "", "", "", "", ""],
-      "on-scroll-up": "brightnessctl -e4 -n2 set 5%+",
-      "on-scroll-down": "brightnessctl -e4 -n2 set 5%-"
-    },
-
-    "battery": {
-      "bat": "BAT0",
-      "states": { "warning": 30, "critical": 15 },
-      "format": "{icon} {capacity}%",
-      "format-charging": " {capacity}%",
-      "format-plugged": " {capacity}%",
-      "format-icons": ["", "", "", "", ""],
-      "tooltip-format": "{timeTo} ({power}W)"
+{
+  "name": "main",
+  "layer": "top",
+  "position": "top",
+  "height": 34,
+  "spacing": 6,
+  "margin-top": 6,
+  "margin-left": 8,
+  "margin-right": 8,
+  "modules-left": [
+    "hyprland/workspaces",
+    "hyprland/submap"
+  ],
+  "modules-center": [
+    "clock"
+  ],
+  "modules-right": [
+    "privacy",
+    "idle_inhibitor",
+    "tray",
+    "pulseaudio",
+    "bluetooth",
+    "network",
+    "backlight",
+    "battery"
+  ],
+  "hyprland/workspaces": {
+    "on-click": "activate",
+    "format": "{icon}",
+    "format-icons": {
+      "1.1": "1",
+      "1.2": "2",
+      "1.3": "3",
+      "1.4": "4",
+      "1.5": "5",
+      "1.6": "6",
+      "1.7": "7",
+      "1.8": "8",
+      "1.9": "9",
+      "2.1": "1",
+      "2.2": "2",
+      "2.3": "3",
+      "2.4": "4",
+      "2.5": "5",
+      "2.6": "6",
+      "2.7": "7",
+      "2.8": "8",
+      "2.9": "9",
+      "3.1": "1",
+      "3.2": "2",
+      "3.3": "3",
+      "3.4": "4",
+      "3.5": "5",
+      "3.6": "6",
+      "3.7": "7",
+      "3.8": "8",
+      "3.9": "9",
+      "4.1": "1",
+      "4.2": "2",
+      "4.3": "3",
+      "4.4": "4",
+      "4.5": "5",
+      "4.6": "6",
+      "4.7": "7",
+      "4.8": "8",
+      "4.9": "9"
     }
   },
-
-  {
-    "name": "laptop",
-    "output": "eDP-1",
-    "layer": "top",
-    "position": "top",
-    "height": 30,
-    "spacing": 6,
-    "margin-top": 4,
-    "margin-left": 8,
-    "margin-right": 8,
-
-    // Narrower panel, so only the essentials. No tray here: a single tray
-    // avoids duplicate icons across both bars.
-    "modules-left": ["hyprland/workspaces"],
-    "modules-center": ["clock"],
-    "modules-right": ["pulseaudio", "backlight", "battery"],
-
-    "hyprland/workspaces": {
-      "on-click": "activate",
-      // Desktops are named "<monitor>.<desktop>" by hypr/deskbinds.lua so the
-      // names stay globally unique (waybar highlights every button whose name
-      // matches the focused workspace, ignoring which monitor it is on). The
-      // map below turns them back into a plain per-monitor number for display.
-      "format": "{icon}",
-      "format-icons": {
-        "1.1": "1", "1.2": "2", "1.3": "3", "1.4": "4", "1.5": "5", "1.6": "6", "1.7": "7", "1.8": "8", "1.9": "9",
-        "2.1": "1", "2.2": "2", "2.3": "3", "2.4": "4", "2.5": "5", "2.6": "6", "2.7": "7", "2.8": "8", "2.9": "9",
-        "3.1": "1", "3.2": "2", "3.3": "3", "3.4": "4", "3.5": "5", "3.6": "6", "3.7": "7", "3.8": "8", "3.9": "9",
-        "4.1": "1", "4.2": "2", "4.3": "3", "4.4": "4", "4.5": "5", "4.6": "6", "4.7": "7", "4.8": "8", "4.9": "9"
-      }
-    },
-    "clock": { "format": "{:%H:%M}" },
-    "pulseaudio": {
-      "format": "{icon} {volume}%",
-      "format-muted": " muted",
-      "format-icons": { "headphone": "", "default": ["", "", ""] },
-      "scroll-step": 5,
-      "on-click": "pavucontrol"
-    },
-    "backlight": {
-      "device": "intel_backlight",
-      "format": "{icon} {percent}%",
-      "format-icons": ["", "", "", "", "", "", "", "", ""]
-    },
-    "battery": {
-      "bat": "BAT0",
-      "states": { "warning": 30, "critical": 15 },
-      "format": "{icon} {capacity}%",
-      "format-charging": " {capacity}%",
-      "format-icons": ["", "", "", "", ""]
+  "clock": {
+    "format": "{:%H:%M  %a %d %b}",
+    "tooltip-format": "<tt><small>{calendar}</small></tt>",
+    "calendar": {
+      "mode": "month",
+      "on-scroll": 1
     }
+  },
+  "privacy": {
+    "icon-size": 14,
+    "modules": [
+      {
+        "type": "screenshare"
+      },
+      {
+        "type": "audio-in"
+      }
+    ]
+  },
+  "idle_inhibitor": {
+    "format": "{icon}",
+    "format-icons": {
+      "activated": "",
+      "deactivated": ""
+    },
+    "tooltip-format-activated": "Idle inhibited",
+    "tooltip-format-deactivated": "Idle normal"
+  },
+  "tray": {
+    "icon-size": 16,
+    "spacing": 8
+  },
+  "pulseaudio": {
+    "format": "{icon} {volume}%",
+    "format-muted": " muted",
+    "format-bluetooth": "{icon} {volume}%",
+    "format-icons": {
+      "headphone": "",
+      "default": [
+        "",
+        "",
+        ""
+      ]
+    },
+    "scroll-step": 5,
+    "on-click": "pavucontrol"
+  },
+  "bluetooth": {
+    "format": "",
+    "format-disabled": "",
+    "format-connected": " {num_connections}",
+    "tooltip-format-connected": "{device_enumerate}",
+    "on-click": "blueman-manager"
+  },
+  "network": {
+    "format-wifi": " {signalStrength}%",
+    "format-ethernet": "",
+    "format-disconnected": "",
+    "tooltip-format-wifi": "{essid} ({signalStrength}%)\n{ipaddr}",
+    "tooltip-format-ethernet": "{ifname}\n{ipaddr}"
+  },
+  "backlight": {
+    "device": "intel_backlight",
+    "format": "{icon} {percent}%",
+    "format-icons": [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    "on-scroll-up": "brightnessctl -e4 -n2 set 5%+",
+    "on-scroll-down": "brightnessctl -e4 -n2 set 5%-"
+  },
+  "battery": {
+    "bat": "BAT0",
+    "states": {
+      "warning": 30,
+      "critical": 15
+    },
+    "format": "{icon} {capacity}%",
+    "format-charging": " {capacity}%",
+    "format-plugged": " {capacity}%",
+    "format-icons": [
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    "tooltip-format": "{timeTo} ({power}W)"
   }
-]
+}
