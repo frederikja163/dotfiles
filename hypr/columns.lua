@@ -144,24 +144,31 @@ local function drop_empty(st)
     normalize_widths(st)
 end
 
--- Add a window. New windows join the focused column, at the bottom.
+-- Add a window.
+--
+-- With nothing there yet it becomes the first column. With exactly one column
+-- it starts a second one: a lone column means the desktop is not really split
+-- up yet, so the useful thing is to put the new window beside what is already
+-- there rather than stacking on top of it. Once there are two or more columns
+-- the split is deliberate, and new windows join the focused column at the
+-- bottom.
 local function insert(st, id)
-    local target = st.focused and select(1, locate(st, id and st.focused))
-
-    -- locate() needs the focused id, not the new one.
-    target = nil
-    if st.focused then
-        target = select(1, locate(st, st.focused))
-    end
-
-    if not target then
-        target = #st.columns > 0 and #st.columns or nil
-    end
-
-    if not target then
+    if #st.columns == 0 then
         st.columns[1] = { ids = { id }, heights = { 1.0 }, width = 1.0 }
         return
     end
+
+    if #st.columns == 1 then
+        st.columns[1].width = 0.5
+        table.insert(st.columns, { ids = { id }, heights = { 1.0 }, width = 0.5 })
+        return
+    end
+
+    local target
+    if st.focused then
+        target = select(1, locate(st, st.focused))
+    end
+    target = target or #st.columns
 
     local col = st.columns[target]
     table.insert(col.ids, id)

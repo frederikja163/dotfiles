@@ -58,8 +58,10 @@ dead space or run off the edge.
 | `SUPER + CTRL + J/K` | make the window taller/shorter in its column |
 | `SUPER + M` | cycle windows through the widest column |
 
-- A new window joins the **currently focused column**, at the bottom. So
-  creating a column is `SUPER+Q` then `SUPER+N`.
+- On a desktop with a **single column**, a new window starts a **second
+  column** — one column means the desktop is not really split up yet. Once
+  there are two or more, the split is deliberate and new windows join the
+  **focused column**, at the bottom. `SUPER+N` splits one out by hand.
 - Splitting halves the column it came from, unless all columns were equal, in
   which case they are evened out again. Either way the total is unchanged.
 - Resizing takes the difference from the other columns in proportion, so

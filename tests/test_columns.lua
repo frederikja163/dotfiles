@@ -79,6 +79,28 @@ C.reconcile(st, { 1, 2, 3, 4 }, 3)
 check("window 4 joined the focused column", shape(st), "1+2 | 3+4")
 near("widths still total 1", width_total(st), 1.0)
 
+print("reconcile: a second window splits the lone column")
+st = build({ { 1 } })
+st.focused = 1
+C.reconcile(st, { 1, 2 }, 1)
+check("two columns now, not a stack", shape(st), "1 | 2")
+near("evenly split", st.columns[1].width, 0.5)
+near("widths total 1", width_total(st), 1.0)
+
+print("reconcile: that holds even if the lone column has several windows")
+st = build({ { 1, 2, 3 } })
+st.focused = 2
+C.reconcile(st, { 1, 2, 3, 4 }, 2)
+check("the new window gets its own column", shape(st), "1+2+3 | 4")
+near("widths total 1", width_total(st), 1.0)
+
+print("reconcile: with two columns already, new windows join the focused one")
+st = build({ { 1 }, { 2 } })
+st.focused = 2
+C.reconcile(st, { 1, 2, 3 }, 2)
+check("joined the focused column", shape(st), "1 | 2+3")
+check("still two columns", #st.columns, 2)
+
 print("reconcile: the first window creates the one column")
 st = C.new_state()
 C.reconcile(st, { 7 }, 7)
