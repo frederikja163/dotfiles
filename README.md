@@ -10,7 +10,7 @@
 | `fuzzel`   | `~/.config/fuzzel`      | `fuzzel.ini`                      |
 | `zsh`      | `~/.zshenv`, `~/.config/zsh/` | oh-my-zsh setup, PATH       |
 | `bin`      | `~/.local/bin`          | small scripts, on `PATH`          |
-| `system`   | `/etc/udev/rules.d`     | udev rules (needs root)           |
+| `system`   | `/etc`                  | system config (needs root)        |
 | `packages` | —                       | `pacman.txt`, `aur.txt`           |
 
 All of kitty, waybar and dunst use the catppuccin-mocha palette and
@@ -219,25 +219,27 @@ export PATH="$HOME/.local/share/bob/nvim-bin:$PATH"
 
 ## Suspend
 
-This machine only supports **s2idle** (`cat /sys/power/mem_sleep` offers no
-`deep`), and hibernate is not possible with a 512M swapfile against 30G of RAM.
+**Disabled, deliberately.** This machine only supports s2idle (`cat
+/sys/power/mem_sleep` offers no `deep`), and resuming from it left the laptop's
+own panel permanently black. Hibernate is not an option either: a 512M swapfile
+against 30G of RAM.
 
-Waking it:
+Every route in is closed:
 
-- a key on the **built-in keyboard** (`i8042/serio0`, wake-enabled)
-- **opening the lid**
-- a key on a **docked keyboard**, once `system/90-wake-from-dock.rules` is
-  installed. Without it the keyboard is wake-capable but the dock's hubs are
-  not, so the signal never arrives — docked with the lid shut there is no way
-  back in.
+| Route | Behaviour |
+| --- | --- |
+| lid close | locks the session (`system/90-no-suspend.conf`) |
+| sleep key | ignored |
+| idle | `hypr/hypridle.conf` dims, locks and blanks, never suspends |
+| power menu | has no Suspend entry |
 
-Not the power button: `HandlePowerKey` is `poweroff`, so it shuts down rather
-than resuming.
+The power button still powers off, which is what a long press should do.
 
-Suspending is deliberate only — from the power menu (`SUPER + Escape`) or by
-closing the lid. `hypr/hypridle.conf` locks and blanks the screen on idle but
-does **not** suspend, since an unattended suspend that cannot be woken from
-strands the machine.
+To undo this: delete `/etc/systemd/logind.conf.d/90-no-suspend.conf`, restart
+`systemd-logind`, and add a `Suspend` entry back to `bin/power-menu`. Worth
+knowing first that waking only worked from the built-in keyboard or the lid --
+a keyboard behind the Dell dock could not do it, because the dock's USB hubs
+have `wakeup=disabled` and the wake signal never travels up.
 
 ## Tests
 

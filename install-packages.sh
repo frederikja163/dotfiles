@@ -73,24 +73,31 @@ else
   chsh -s "$(command -v zsh)"
 fi
 
-# --- udev rules ------------------------------------------------------------
+# --- system config ---------------------------------------------------------
 
-# Wake-from-dock. See the comments in the rule for why this is needed.
-for rule in "$DOTFILES"/system/*.rules; do
-  [ -e "$rule" ] || continue
-  dest="/etc/udev/rules.d/$(basename "$rule")"
+# Files in system/ belong under /etc, so they need root. See the comments in
+# each for what it does and why.
+install_system_file() {
+  local src="$1" dest="$2"
 
-  if sudo cmp -s "$rule" "$dest" 2>/dev/null; then
-    echo "==> udev: $(basename "$rule") already installed"
-  else
-    echo "==> udev: installing $(basename "$rule")"
-    sudo install -m 644 "$rule" "$dest"
-    sudo udevadm control --reload
-    # Re-run the rules against devices that are already plugged in, so this
-    # takes effect without a reboot.
-    sudo udevadm trigger --subsystem-match=usb --action=add
+  if sudo cmp -s "$src" "$dest" 2>/dev/null; then
+    echo "==> $(basename "$dest") already installed"
+    return 1
   fi
-done
+
+  echo "==> installing $(basename "$dest")"
+  sudo install -Dm 644 "$src" "$dest"
+  return 0
+}
+
+if [ -e "$DOTFILES/system/90-no-suspend.conf" ]; then
+  if install_system_file "$DOTFILES/system/90-no-suspend.conf" \
+                         /etc/systemd/logind.conf.d/90-no-suspend.conf; then
+    # logind re-reads its config on restart. Restarting it does not end the
+    # session, but it does briefly drop its inhibitor locks.
+    sudo systemctl restart systemd-logind
+  fi
+fi
 
 # --- manual steps ----------------------------------------------------------
 
