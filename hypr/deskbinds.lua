@@ -30,6 +30,29 @@ local mainMod = programs.mainMod
 -- config deadlocks: the compositor is busy running this Lua.)
 local mirrored = {}
 
+-- Which screen a desktop belongs to: [workspace id] = screen identity.
+--
+-- Unplugging a screen makes Hyprland move its desktops onto whatever is left,
+-- and plugging it back in does not send them home again, so they pile up on one
+-- screen. Remembering where each one came from lets them be put back.
+--
+-- Keyed on the monitor description, not its name: a screen comes back under a
+-- different connector (DP-4 became DP-5 after a redock, HEADLESS-1 came back as
+-- HEADLESS-2), so a name is worthless for recognising it again. Descriptions
+-- are stable and include the serial: "Dell Inc. DELL P3424WE DVYH6T3".
+local function identity(mon)
+    if not mon then
+        return nil
+    end
+    local d = mon.description
+    if type(d) == "string" and d ~= "" then
+        return d
+    end
+    return mon.name -- headless outputs have no description
+end
+
+local home = {}
+
 -- Monitor slots in a stable order, one per number key. Mirroring monitors are
 -- spliced back in by id so the numbers of the others do not shift.
 --
@@ -125,6 +148,9 @@ local function renumber_desktops()
     for mon_index, slot in ipairs(monitor_slots()) do
         local mon = slot.monitor
         for index, ws in ipairs(mon and desktops_on(mon) or {}) do
+            if mon and not home[ws.id] then
+                home[ws.id] = identity(mon)
+            end
             local want = ("%d.%d"):format(mon_index, index)
             if ws.name ~= want then
                 hl.dispatch(hl.dsp.workspace.rename({ workspace = ws.id, name = want }))
@@ -194,6 +220,26 @@ local function reload_waybar()
         -- the largest, and bin/waybar-main puts the bar on that one.
         hl.exec_cmd("waybar-main")
     end, { timeout = 300, type = "oneshot" })
+end
+
+-- Send every desktop back to the screen it belongs to.
+--
+-- Called when a screen appears: its desktops were pushed elsewhere while it was
+-- gone, and nothing brings them back on its own.
+local function restore_homes()
+    -- Where each remembered screen is plugged in right now.
+    local where = {}
+    for _, m in ipairs(hl.get_monitors() or {}) do
+        where[identity(m)] = m.name
+    end
+
+    for _, ws in ipairs(hl.get_workspaces() or {}) do
+        local belongs = home[ws.id]
+        local target = belongs and where[belongs]
+        if target and not ws.special and ws.monitor and ws.monitor.name ~= target then
+            hl.dispatch(hl.dsp.workspace.move({ workspace = ws.id, monitor = target }))
+        end
+    end
 end
 
 -- Toggle duplicate/extend for a monitor slot.
@@ -304,6 +350,26 @@ for n = 1, 10 do
         end
     end, { description = "Screen " .. n .. ": duplicate onto it, or new desktop if already there" })
 
+    -- CTRL is the screen itself: with SHIFT that is a screen-sized move, so the
+    -- whole desktop goes across. Doing this by hand also changes where the
+    -- desktop belongs, so it stays there after a replug.
+    hl.bind(mainMod .. " + CTRL + SHIFT + " .. key, function()
+        local slot = monitor_for(n)
+        if not slot or not slot.monitor or is_focused(slot) then
+            return -- no such screen, it is duplicating, or it is already here
+        end
+
+        local mon = hl.get_active_monitor()
+        local ws = mon and mon.active_workspace
+        if not ws or ws.special then
+            return
+        end
+
+        home[ws.id] = identity(slot.monitor)
+        hl.dispatch(hl.dsp.workspace.move({ workspace = ws.id, monitor = slot.monitor.name }))
+        schedule_renumber()
+    end, { description = "Screen " .. n .. ": move this whole desktop there" })
+
     -- ALT scopes the move up from the window to its whole column.
     hl.bind(mainMod .. " + ALT + SHIFT + " .. key, function()
         local slot = monitor_for(n)
@@ -339,6 +405,16 @@ for _, event in ipairs({
     hl.on(event, schedule_renumber)
 end
 
+-- A screen coming back gets its own desktops back. Deferred, because the
+-- monitor is not usable the instant the event fires, and the desktops have to
+-- be moved before they are renumbered.
+hl.on("monitor.added", function()
+    hl.timer(function()
+        restore_homes()
+        schedule_renumber()
+    end, { timeout = 500, type = "oneshot" })
+end)
+
 -- These two fire during config load, where creating a timer would crash, so
 -- they rename straight away.
 hl.on("config.reloaded", renumber_desktops)
@@ -349,5 +425,7 @@ return {
     schedule_renumber = schedule_renumber,
     desktops_on = desktops_on,
     monitor_slots = monitor_slots,
+    restore_homes = restore_homes,
+    identity = identity,
     toggle_mirror = toggle_mirror,
 }

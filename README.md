@@ -68,6 +68,7 @@ desktops if you are already there.**
 | `SUPER + SHIFT + <n>` | move window there | move window to next desktop |
 | `SUPER + ALT + SHIFT + <n>` | move column there | move column to next desktop |
 | `SUPER + CTRL + <n>` | duplicate onto it | new desktop |
+| `SUPER + CTRL + SHIFT + <n>` | move this whole desktop there | — |
 
 Apps and window state: `Q` terminal · `R` launcher · `E` files · `C` close ·
 `V` float · `Escape` power menu · `/` this list.
@@ -105,6 +106,18 @@ The number keys are overloaded on whether that monitor is already focused:
 Empty desktops are removed by Hyprland automatically. There are no direct
 `SUPER + 1..9` desktop binds any more; cycle with `SUPER + n` on the focused
 monitor instead.
+
+Desktops remember which screen they belong to. Unplugging a screen makes
+Hyprland pile its desktops onto whatever is left, and plugging it back in does
+not send them home, so `deskbinds.lua` does it: on `monitor.added` every desktop
+returns to the screen it came from.
+
+Screens are recognised by their **description**, not their connector name —
+`DP-4` came back as `DP-5` after a redock, so a name is worthless for
+recognising the same panel. Descriptions are stable and include the serial
+(`Dell Inc. DELL P3424WE DVYH6T3`). Moving a desktop by hand with
+`SUPER + CTRL + SHIFT + <n>` also updates where it belongs, so it stays put
+across replugs.
 
 A monitor that is duplicating another **disappears from `hl.get_monitors()`**,
 and `hl.get_monitor(name)` returns nil for it, so Hyprland cannot be asked about

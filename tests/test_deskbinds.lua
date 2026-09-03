@@ -5,13 +5,16 @@
 local HYPR = os.getenv("HYPR_DIR") or "hypr"
 package.path = HYPR .. "/?.lua;" .. package.path
 
-local binds, dispatched, monitor_calls, world, events, renames, execs, mod
+local binds, dispatched, monitor_calls, world, events, renames, execs, moves, mod
 
 local function reset(w)
     world = w
-    binds, dispatched, monitor_calls, events, renames, execs = {}, {}, {}, {}, {}, {}
+    binds, dispatched, monitor_calls, events, renames, execs, moves =
+        {}, {}, {}, {}, {}, {}, {}
 
     _G.hl = {
+        -- deskbinds requires columns, which registers the layout on load.
+        layout = { register = function() end },
         bind = function(keys, fn, opts) binds[keys] = { fn = fn, opts = opts } end,
         on = function(event, fn) events[event] = fn end,
         timer = function(cb, opts) cb() end, -- fire immediately in tests
@@ -42,24 +45,36 @@ local function reset(w)
             end
         end,
         dsp = {
+            layout = function(m) return { kind = "layout", arg = m } end,
+            no_op = function() return { kind = "no_op" } end,
             focus = function(a) return { kind = "focus", arg = a } end,
-            window = { move = function(a) return { kind = "move", arg = a } end },
-            workspace = { rename = function(a)
-                table.insert(renames, a)
-                return { kind = "rename", arg = a }
-            end },
+            window = {
+                move = function(a) return { kind = "move", arg = a } end,
+                swap = function(a) return { kind = "swap", arg = a } end,
+            },
+            workspace = {
+                rename = function(a)
+                    table.insert(renames, a)
+                    return { kind = "rename", arg = a }
+                end,
+                move = function(a)
+                    table.insert(moves, a)
+                    return { kind = "wsmove", arg = a }
+                end,
+            },
         },
     }
 
     package.loaded.deskbinds = nil
     package.loaded.programs = nil
+    package.loaded.columns = nil
     mod = require("deskbinds")
 end
 
 -- Build a world: two monitors; mon0 shows ws1, mon1 shows ws3.
 local function two_monitors(focused)
-    local mon0 = { id = 0, name = "eDP-1",  is_mirror = false }
-    local mon1 = { id = 1, name = "DP-4",   is_mirror = false }
+    local mon0 = { id = 0, name = "eDP-1", description = "BOE 0x0DBB", is_mirror = false }
+    local mon1 = { id = 1, name = "DP-4",  description = "Dell DELL P3424WE DVYH6T3", is_mirror = false }
     local ws1  = { id = 1, special = false, monitor = mon0 }
     local ws2  = { id = 2, special = false, monitor = mon0 }
     local ws3  = { id = 3, special = false, monitor = mon1 }
@@ -98,15 +113,20 @@ local function last_of(kind)
     end
 end
 
+-- Only the number keys belong to deskbinds; columns.lua is loaded alongside it
+-- and registers its own.
 local function bind_count()
     local n = 0
-    for _ in pairs(binds) do n = n + 1 end
+    for keys in pairs(binds) do
+        if keys:match("%d$") then n = n + 1 end
+    end
     return n
 end
 
 print("scenario: monitor 1 (eDP-1) focused")
 reset(two_monitors(0))
-check("bind count (10 keys x 3 modifiers)", bind_count(), 30)
+-- plain, SHIFT, CTRL, CTRL+SHIFT, ALT+SHIFT on each of 10 keys
+check("bind count (10 keys x 5 modifier combinations)", bind_count(), 50)
 
 binds["SUPER + 1"].fn()
 check("M+1 on focused mon -> next desktop id", last().arg.workspace, 2)
@@ -253,6 +273,42 @@ check("workspace.created hooked", type(events["workspace.created"]), "function")
 check("workspace.active hooked", type(events["workspace.active"]), "function")
 check("workspace.removed hooked", type(events["workspace.removed"]), "function")
 check("monitor.added hooked", type(events["monitor.added"]), "function")
+
+print("scenario: a screen is recognised by description, not connector name")
+local r = two_monitors(0)
+reset(r)
+check("description wins", mod.identity(r.monitors[2]), "Dell DELL P3424WE DVYH6T3")
+check("falls back to the name when there is no description",
+      mod.identity({ name = "HEADLESS-1", description = "" }), "HEADLESS-1")
+
+print("scenario: desktops go home after a replug, even under a new connector")
+local w = two_monitors(0)
+reset(w)
+mod.renumber_desktops()          -- records where each desktop belongs
+
+-- Unplug: Hyprland shoves DP-4's desktop onto the laptop screen.
+local mon0, mon1 = w.monitors[1], w.monitors[2]
+w.workspaces[3].monitor = mon0
+w.monitors = { mon0 }
+mod.restore_homes()
+check("nothing moves while that screen is unplugged", #moves, 0)
+
+-- Replug: the same panel comes back on a different connector.
+mon1.name = "DP-7"
+w.monitors = { mon0, mon1 }
+moves = {}
+mod.restore_homes()
+check("the desktop is sent home", #moves, 1)
+check("...to the right workspace", moves[1] and moves[1].workspace, 3)
+check("...addressed by its new connector name", moves[1] and moves[1].monitor, "DP-7")
+
+print("scenario: desktops already in the right place are left alone")
+local q = two_monitors(0)
+reset(q)
+mod.renumber_desktops()
+moves = {}
+mod.restore_homes()
+check("no moves", #moves, 0)
 
 print("")
 print(("%d passed, %d failed"):format(pass, fail))
