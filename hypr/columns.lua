@@ -727,9 +727,9 @@ hl.layout.register("columns", {
 -- Keybinds
 ----------------------------------------------------------------------------
 
-hl.bind(mainMod .. " + N", hl.dsp.layout("newcol"),
-        { description = "Move window to a new column" })
-
+-- No bind for "newcol": moving a window past the last column with
+-- mainMod + SHIFT + h/l already puts it in a column of its own. The message is
+-- still there for `hyprctl dispatch 'hl.dsp.layout("newcol")'`.
 hl.bind(mainMod .. " + M", hl.dsp.layout("cyclemain"),
         { description = "Cycle window through the main (widest) column" })
 

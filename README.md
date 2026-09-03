@@ -50,7 +50,6 @@ dead space or run off the edge.
 | Bind | Action |
 | --- | --- |
 | `SUPER + H/J/K/L` | move focus, wrapping inside the desktop |
-| `SUPER + N` | split the focused window out into a new column |
 | `SUPER + SHIFT + H/L` | move the window into the neighbouring column |
 | `SUPER + SHIFT + J/K` | move the window up/down inside its column |
 | `SUPER + ALT + H/L` | swap the whole column with its neighbour |
@@ -61,7 +60,8 @@ dead space or run off the edge.
 - On a desktop with a **single column**, a new window starts a **second
   column** — one column means the desktop is not really split up yet. Once
   there are two or more, the split is deliberate and new windows join the
-  **focused column**, at the bottom. `SUPER+N` splits one out by hand.
+  **focused column**, at the bottom. To split one out again, move it past the
+  last column with `SUPER + SHIFT + H/L`, which gives it a column of its own.
 - Splitting halves the column it came from, unless all columns were equal, in
   which case they are evened out again. Either way the total is unchanged.
 - Resizing takes the difference from the other columns in proportion, so
