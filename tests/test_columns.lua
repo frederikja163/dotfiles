@@ -310,6 +310,48 @@ end
 check(("survived %d random operations"):format(ops_run), ops_run, 400)
 near("widths still total exactly 1", width_total(st), 1.0)
 
+print("row heights: a second window takes half the column, not a third")
+st = build({ { 1 } })
+st.focused = 1
+C.reconcile(st, { 1, 2 }, 1)   -- lone column, so this splits into two columns
+st = build({ { 1 }, { 9 } })   -- two columns, so the next window stacks
+st.focused = 1
+C.reconcile(st, { 1, 9, 2 }, 1)
+local h = st.columns[1].heights
+check("two windows in the column", #st.columns[1].ids, 2)
+near("first row is half", h[1], 0.5)
+near("second row is half", h[2], 0.5)
+near("heights total 1", h[1] + h[2], 1.0)
+
+print("row heights: a third window makes it thirds")
+st = build({ { 1, 2 }, { 9 } })
+st.focused = 2
+C.reconcile(st, { 1, 2, 9, 3 }, 2)
+h = st.columns[1].heights
+check("three windows", #st.columns[1].ids, 3)
+near("each row a third", h[1], 1/3)
+near("heights total 1", h[1] + h[2] + h[3], 1.0)
+
+print("row heights: uneven column splits the focused row in half")
+st = build({ { 1, 2 }, { 9 } })
+st.columns[1].heights = { 0.8, 0.2 }
+st.focused = 1
+C.reconcile(st, { 1, 2, 9, 3 }, 1)
+h = st.columns[1].heights
+near("focused row halved", h[1], 0.4)
+near("new row takes the other half", h[2], 0.4)
+near("the untouched row is unchanged", h[3], 0.2)
+near("heights total 1", h[1] + h[2] + h[3], 1.0)
+check("new window sits below the focused one", st.columns[1].ids[2], 3)
+
+print("row heights: a window moved into a column shares evenly")
+st = build({ { 1 }, { 2 } })
+C.move_to_column(st, 2, "prev")
+h = st.columns[1].heights
+check("one column now", #st.columns, 1)
+near("both rows equal", h[1], 0.5)
+near("heights total 1", h[1] + h[2], 1.0)
+
 print("")
 print(("%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)

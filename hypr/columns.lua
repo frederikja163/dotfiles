@@ -144,6 +144,53 @@ local function drop_empty(st)
     normalize_widths(st)
 end
 
+-- Put a window into a column, sized the way new columns are sized.
+--
+--   all rows the same height -> even them out again
+--   otherwise                -> the focused row gives up half its height
+--
+-- The window lands directly below the focused one, so it appears where the
+-- attention already is. Naively appending a row of 1/n and rescaling is what
+-- made a second window take a third of the column instead of half.
+local function add_to_column(col, id, focused)
+    local even = true
+    for i = 2, #col.heights do
+        if math.abs(col.heights[i] - col.heights[1]) > 0.005 then
+            even = false
+            break
+        end
+    end
+
+    local at
+    for i, wid in ipairs(col.ids) do
+        if wid == focused then
+            at = i
+            break
+        end
+    end
+
+    local position = at and (at + 1) or (#col.ids + 1)
+    table.insert(col.ids, position, id)
+
+    if even then
+        local n = #col.ids
+        col.heights = {}
+        for i = 1, n do
+            col.heights[i] = 1 / n
+        end
+        return
+    end
+
+    if at then
+        local half = col.heights[at] / 2
+        col.heights[at] = half
+        table.insert(col.heights, at + 1, half)
+    else
+        table.insert(col.heights, position, 1 / #col.ids)
+        normalize_heights(col)
+    end
+end
+
 -- Add a window.
 --
 -- With nothing there yet it becomes the first column. With exactly one column
@@ -170,10 +217,7 @@ local function insert(st, id)
     end
     target = target or #st.columns
 
-    local col = st.columns[target]
-    table.insert(col.ids, id)
-    table.insert(col.heights, 1 / #col.ids)
-    normalize_heights(col)
+    add_to_column(st.columns[target], id, st.focused)
 end
 
 local function remove(st, id)
@@ -358,10 +402,7 @@ local function move_to_column(st, id, dir)
         table.remove(col.heights, wi)
     end
 
-    local into = st.columns[target]
-    table.insert(into.ids, id)
-    table.insert(into.heights, 1 / #into.ids)
-    normalize_heights(into)
+    add_to_column(st.columns[target], id, nil)
 
     if #col.ids == 0 then
         -- The column it left is gone; its width goes back into the pot.
@@ -734,6 +775,7 @@ end
 -- Exported for tests: all of these work on a plain state table.
 return {
     new_state = new_state,
+    add_to_column = add_to_column,
     to_unit = to_unit,
     locate = locate,
     reconcile = reconcile,
