@@ -259,6 +259,45 @@ bob's binary is not on `PATH` by default. Add to your shell config:
 export PATH="$HOME/.local/share/bob/nvim-bin:$PATH"
 ```
 
+## Desktops as project contexts
+
+Each desktop has a **working directory**, normally a git worktree. Everything
+launched there starts in it — terminal, file manager, IDE — so a desktop is a
+project rather than just a place to put windows.
+
+| Bind | Action |
+| --- | --- |
+| `` SUPER + ` `` | this desktop's dropdown terminal |
+| `SUPER + W` | point the desktop at another worktree |
+| `SUPER + I` | open the IDE that suits the project |
+
+The directory lives in `$XDG_RUNTIME_DIR/desk/<workspace id>/cwd`, so any
+process can read it. The dropdown terminal *reports* its own location from a
+`chpwd` hook in `zsh/.zshrc` rather than being scraped from `/proc`: `cd` in it
+and the whole desktop follows. Only that terminal counts, so an ordinary
+terminal wandering off does not relocate the desktop.
+
+| Script | Role |
+| --- | --- |
+| `bin/desk-dir` | read or set a desktop's directory |
+| `bin/desk-run` | run a command in it — every launcher bind goes through this |
+| `bin/desk-quake` | the dropdown terminal, one per desktop |
+| `bin/desk-ide` | `*.sln`/`*.csproj` → Rider, otherwise nvim |
+| `bin/desk-worktree` | fuzzel picker over `git worktree list` |
+| `bin/desk-status` | what waybar shows: `dotfiles (main)` |
+
+This lives in scripts rather than the Lua config because the config **cannot
+call `hyprctl`** — the compositor is blocked running the Lua, so it deadlocks.
+Scripts are separate processes and have no such problem.
+
+A new desktop inherits the directory of the one it was made from. Workspace ids
+are recycled, so the files of desktops that no longer exist are pruned;
+otherwise a new desktop could silently inherit a dead one's project.
+
+The dropdown terminal is a floating window on a special workspace named after
+the desktop, sized by a rule in `hypr/windowrules.lua`. Note that rule matching
+is **full-string**: `^quake-` never matches `quake-1`, it has to be `quake-.*`.
+
 ## Suspend
 
 **Disabled, deliberately.** This machine only supports s2idle (`cat

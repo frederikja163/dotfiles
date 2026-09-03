@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Print the working directory of a desktop.
+#
+# Each desktop is a project context: a directory, usually a git worktree, that
+# everything launched there starts in. The directory is kept in a file per
+# desktop so that any process can read it:
+#
+#   $XDG_RUNTIME_DIR/desk/<workspace id>/cwd
+#
+# The quake terminal writes that file from a chpwd hook (see zsh/.zshrc), so
+# cd-ing in it moves the whole desktop.
+#
+#   desk-dir            directory of the focused desktop
+#   desk-dir <id>       directory of a specific desktop
+#   desk-dir --set DIR  set the focused desktop's directory
+#   desk-dir --id       print the focused desktop's id
+set -uo pipefail
+
+DESK_ROOT="${XDG_RUNTIME_DIR:-/tmp}/desk"
+
+current_desk() {
+    hyprctl activeworkspace -j 2>/dev/null |
+        sed -n 's/.*"id"[[:space:]]*:[[:space:]]*\(-\?[0-9]*\).*/\1/p' | head -1
+}
+
+dir_of() {
+    local id="$1" file="$DESK_ROOT/$1/cwd" dir
+    [ -n "$id" ] || return 1
+
+    if [ -r "$file" ]; then
+        dir="$(cat "$file")"
+        # A directory can disappear underneath us: a worktree gets removed, a
+        # branch is deleted. Falling back beats launching nothing.
+        [ -d "$dir" ] && { printf '%s\n' "$dir"; return 0; }
+    fi
+    return 1
+}
+
+set_dir() {
+    local id="$1" dir="$2"
+    [ -n "$id" ] || return 1
+    [ -d "$dir" ] || return 1
+
+    mkdir -p "$DESK_ROOT/$id"
+    printf '%s\n' "$dir" > "$DESK_ROOT/$id/cwd"
+}
+
+case "${1:-}" in
+    --id)
+        current_desk
+        ;;
+    --set)
+        [ $# -ge 2 ] || { echo "desk-dir --set needs a directory" >&2; exit 1; }
+        set_dir "$(current_desk)" "$2" || exit 1
+        ;;
+    "")
+        dir_of "$(current_desk)" || printf '%s\n' "$HOME"
+        ;;
+    *)
+        dir_of "$1" || printf '%s\n' "$HOME"
+        ;;
+esac

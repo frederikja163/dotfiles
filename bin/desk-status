@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# What the focused desktop is working on, for waybar.
+#
+# Prints the directory's name, and the git branch when it is a repository, so
+# the bar says "dotfiles (main)" rather than just a workspace number.
+set -uo pipefail
+
+dir="$(desk-dir)"
+name="$(basename "$dir")"
+
+[ "$dir" = "$HOME" ] && name="~"
+
+branch="$(git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+
+if [ -n "$branch" ]; then
+    printf '%s (%s)\n' "$name" "$branch"
+else
+    printf '%s\n' "$name"
+fi

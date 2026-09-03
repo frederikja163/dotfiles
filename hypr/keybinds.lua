@@ -15,14 +15,27 @@ local menu        = programs.menu
 
 -- Applications and window actions
 
-hl.bind(mainMod .. " + Q", hl.dsp.exec_cmd(terminal), { description = "App: terminal" })
+-- Launchers go through desk-run, so they start in the desktop's directory.
+hl.bind(mainMod .. " + Q", hl.dsp.exec_cmd("desk-run " .. terminal),
+        { description = "App: terminal" })
 local closeWindowBind = hl.bind(mainMod .. " + C", hl.dsp.window.close(), { description = "Window: close" })
 -- closeWindowBind:set_enabled(false)
 -- M+M is "swap with the biggest window", see columns.lua. Exiting Hyprland is
 -- handled by the power menu on M+Escape, which asks for confirmation.
-hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(fileManager), { description = "App: file manager" })
+hl.bind(mainMod .. " + E", hl.dsp.exec_cmd("desk-run " .. fileManager),
+        { description = "App: file manager" })
 hl.bind(mainMod .. " + V", hl.dsp.window.float({ action = "toggle" }), { description = "Window: toggle floating" })
-hl.bind(mainMod .. " + R", hl.dsp.exec_cmd(menu), { description = "App: launcher" })
+hl.bind(mainMod .. " + R", hl.dsp.exec_cmd("desk-run " .. menu),
+        { description = "App: launcher" })
+
+-- The desktop as a project context: a directory, usually a git worktree, that
+-- everything here starts in. See bin/desk-dir.
+hl.bind(mainMod .. " + grave", hl.dsp.exec_cmd("desk-quake"),
+        { description = "Desktop: dropdown terminal" })
+hl.bind(mainMod .. " + W", hl.dsp.exec_cmd("desk-worktree"),
+        { description = "Desktop: switch worktree" })
+hl.bind(mainMod .. " + I", hl.dsp.exec_cmd("desk-ide"),
+        { description = "Desktop: open the IDE for this project" })
 
 -- Keybind cheatsheet (this popup)
 hl.bind(mainMod .. " + slash", hl.dsp.exec_cmd("hypr-keybinds"), { description = "App: this keybind list" })

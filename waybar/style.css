@@ -8,6 +8,7 @@
 @define-color subtext0 #a6adc8;
 @define-color blue     #89b4fa;
 @define-color mauve    #cba6f7;
+@define-color lavender #b4befe;
 @define-color green    #a6e3a1;
 @define-color yellow   #f9e2af;
 @define-color peach    #fab387;
@@ -62,6 +63,7 @@ window#waybar {
   border-radius: 8px;
 }
 
+#custom-desk,
 #clock,
 #battery,
 #backlight,
@@ -80,6 +82,11 @@ window#waybar {
 #clock {
   color: @text;
   font-weight: bold;
+}
+
+/* What the focused desktop is working on: directory and git branch. */
+#custom-desk {
+  color: @lavender;
 }
 
 #battery { color: @green; }

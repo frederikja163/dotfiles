@@ -172,6 +172,10 @@ end
 -- renumber_desktops directly instead.
 local renumber_pending = false
 
+-- Defined further down, next to the rest of the directory handling, but
+-- referenced here: a plain local would still be nil when the timer fires.
+local prune_directories
+
 local function schedule_renumber()
     if renumber_pending then
         return
@@ -181,6 +185,7 @@ local function schedule_renumber()
     hl.timer(function()
         renumber_pending = false
         renumber_desktops()
+        prune_directories()
     end, { timeout = 50, type = "oneshot" })
 end
 
@@ -190,10 +195,76 @@ local function focus_workspace(ws)
     end
 end
 
+-- Workspace ids are recycled, so a desktop can be handed an id that some
+-- earlier desktop used. Its directory file would then be inherited by
+-- accident, putting a brand new desktop in a project it never chose. Files for
+-- desktops that no longer exist are dropped.
+function prune_directories()
+    local root = (os.getenv("XDG_RUNTIME_DIR") or "/tmp") .. "/desk"
+
+    local live = {}
+    for _, ws in ipairs(hl.get_workspaces() or {}) do
+        live[tostring(ws.id)] = true
+    end
+
+    local listing = io.popen(("ls -1 '%s' 2>/dev/null"):format(root))
+    if not listing then
+        return
+    end
+
+    local stale = {}
+    for entry in listing:lines() do
+        -- Only ever touch entries that look like a workspace id. These names
+        -- are fed to rm -rf, so anything unexpected is left alone.
+        if entry:match("^%-?%d+$") and not live[entry] then
+            table.insert(stale, entry)
+        end
+    end
+    listing:close()
+
+    for _, entry in ipairs(stale) do
+        os.execute(("rm -rf '%s/%s'"):format(root, entry))
+    end
+end
+
+-- A desktop is a project context with a working directory (see bin/desk-dir),
+-- kept in a file per desktop. A new desktop starts on the same project as the
+-- one it was made from, which is nearly always what is wanted: a second desktop
+-- next to a repository is for that repository.
+local function inherit_directory(from_id, to_id)
+    if not (from_id and to_id) then
+        return
+    end
+
+    local root = (os.getenv("XDG_RUNTIME_DIR") or "/tmp") .. "/desk"
+
+    local source = io.open(("%s/%d/cwd"):format(root, from_id), "r")
+    if not source then
+        return
+    end
+    local dir = source:read("l")
+    source:close()
+    if not dir or dir == "" then
+        return
+    end
+
+    os.execute(("mkdir -p '%s/%d'"):format(root, to_id))
+    local target = io.open(("%s/%d/cwd"):format(root, to_id), "w")
+    if target then
+        target:write(dir, "\n")
+        target:close()
+    end
+end
+
 -- Focusing an id that does not exist yet creates the desktop on the focused
 -- monitor, so this only works for the monitor that currently has focus.
 local function new_desktop_here()
-    hl.dispatch(hl.dsp.focus({ workspace = unused_desktop_id() }))
+    local mon = hl.get_active_monitor()
+    local from = mon and mon.active_workspace and mon.active_workspace.id
+    local id = unused_desktop_id()
+
+    inherit_directory(from, id)
+    hl.dispatch(hl.dsp.focus({ workspace = id }))
     schedule_renumber()
 end
 
@@ -426,6 +497,9 @@ return {
     desktops_on = desktops_on,
     monitor_slots = monitor_slots,
     restore_homes = restore_homes,
+    new_desktop_here = new_desktop_here,
+    inherit_directory = inherit_directory,
+    prune_directories = prune_directories,
     identity = identity,
     toggle_mirror = toggle_mirror,
 }

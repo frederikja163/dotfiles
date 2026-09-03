@@ -16,6 +16,7 @@
   "margin-right": 8,
   "modules-left": [
     "hyprland/workspaces",
+    "custom/desk",
     "hyprland/submap"
   ],
   "modules-center": [
@@ -168,5 +169,12 @@
       ""
     ],
     "tooltip-format": "{timeTo} ({power}W)"
+  },
+  "custom/desk": {
+    "exec": "desk-status",
+    "interval": 2,
+    "format": "  {}",
+    "tooltip": false,
+    "max-length": 40
   }
 }

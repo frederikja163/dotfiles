@@ -33,3 +33,16 @@ export PATH="$HOME/.local/bin:$PATH"
 
 # JetBrains Toolbox shell scripts (rider, etc.)
 export PATH="$XDG_DATA_HOME/JetBrains/Toolbox/scripts:$PATH"
+
+# --- desktop working directory ---------------------------------------------
+# Each desktop is a project context with a directory (see bin/desk-dir). A
+# terminal started by desk-run carries DESK_ID, and the quake terminal reports
+# where it is, so cd-ing in it moves the whole desktop: anything launched there
+# afterwards starts in the same place.
+if [[ -n ${DESK_ID:-} ]]; then
+    chpwd() {
+        local dir="${XDG_RUNTIME_DIR:-/tmp}/desk/$DESK_ID"
+        mkdir -p "$dir"
+        print -r -- "$PWD" > "$dir/cwd"
+    }
+fi
