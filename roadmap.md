@@ -1,11 +1,11 @@
-suspend
-figure out keybindings
-duplicate windows (terminals)
+Each desktop has a workspace and a quake terminal. Super+q opens in that workspace.
+Create reload script i can call from any terminal anywhere.
 
 Github integration
 Desktop extension + monitor setups
 Auto update config with notification
 Machine specific settings
+ - Monitor picking
 
 # Work laptop
 fredandr

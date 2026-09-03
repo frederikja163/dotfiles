@@ -16,9 +16,10 @@ zsh
 # neovim
 bob                 # neovim version manager
 
-# cli tools used by mini.pick
-ripgrep
-fd
+# cli tools
+ripgrep             # used by mini.pick
+fd                  # used by mini.pick
+fzf                 # solution picker in bin/ide
 
 # language servers enabled in neovim/init.lua
 lua-language-server

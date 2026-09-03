@@ -24,6 +24,32 @@ mkdir -p "${ZSH_COMPDUMP:h}"
 
 source "$ZSH/oh-my-zsh.sh"
 
+# --- prompt pinned to the bottom --------------------------------------------
+# A terminal fills from the top, so a fresh window leaves the prompt at row 1
+# with the whole screen empty below it. Pad with blank lines before drawing the
+# prompt until the cursor sits on the last row; from then on the screen is full
+# and output scrolls the older lines upwards on its own, which is the wanted
+# behaviour: new lines appear at the bottom and everything else moves up.
+#
+# Padding only happens while there is unused space below the cursor — a new
+# window, or right after `clear` — so it is a no-op for the rest of the session.
+_prompt_to_bottom() {
+  [[ -t 1 && $TERM != dumb ]] || return
+
+  # DSR 6: ask the terminal for the cursor position. It answers on stdin with
+  # ESC [ <row> ; <col> R. Bail out on anything that does not reply in time
+  # rather than swallowing the user's keystrokes.
+  local reply row
+  print -n $'\e[6n'
+  read -s -d 'R' -t 0.5 reply || return
+  row=${${reply#*$'\e['}%%;*}
+  [[ $row == <-> ]] || return
+
+  (( row < LINES )) && print -n ${(pl:$((LINES - row))::\n:):-}
+}
+autoload -Uz add-zsh-hook
+add-zsh-hook precmd _prompt_to_bottom
+
 # --- path ------------------------------------------------------------------
 # bob-managed neovim
 export PATH="$HOME/.local/share/bob/nvim-bin:$PATH"
