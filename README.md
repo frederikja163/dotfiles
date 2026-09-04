@@ -55,6 +55,7 @@ programs of those names do.
 | `waybar-main`   | starts waybar on every monitor, full bar on the largest       |
 | `ide`           | `SUPER + I`: Rider if the directory holds a solution, else nvim |
 | `terminal-cwd`  | the working directory of a terminal's shell, given its pid    |
+| `dotfiles-check` | says at login if this repo is behind its remote               |
 
 ## Keys
 

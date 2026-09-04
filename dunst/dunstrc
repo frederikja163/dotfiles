@@ -93,3 +93,12 @@
 [vpn-critical]
     appname = "GlobalProtect|NetworkManager"
     urgency = critical
+
+# The dotfiles reminder fires once at login, exactly when you are looking
+# somewhere else. It waits to be dismissed rather than the ten seconds an
+# ordinary notification gets, since the whole point is to still be there when
+# you next look at the screen. Not urgency=critical: it is a reminder to pull,
+# not something red.
+[dotfiles-update]
+    appname = "dotfiles"
+    timeout = 0

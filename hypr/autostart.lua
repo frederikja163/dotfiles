@@ -21,6 +21,11 @@ hl.on("hyprland.start", function ()
     -- Idle timeouts: dim, lock, displays off, suspend (see hypridle.conf)
     hl.exec_cmd("hypridle")
 
+    -- Say if this repo is behind its remote (see bin/dotfiles-check). It waits
+    -- for the network itself, and stays quiet unless there is something to
+    -- report, so it costs nothing at login.
+    hl.exec_cmd("dotfiles-check")
+
     -- dunst is started on demand over dbus, so it needs no entry here.
 end)
 

@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Say, once per login, if this repo has commits waiting on the remote.
+#
+# Started from hypr/autostart.lua. It is a reminder, not a sync: nothing is
+# pulled, because pulling relinks configs under a running session and that is a
+# decision to take deliberately rather than at login.
+#
+# Silent unless there is something to say. Offline, on a detached HEAD, on a
+# branch with no upstream, or with the remote unreachable, it exits without a
+# word -- a notification that fires whenever the wifi is slow is one that gets
+# ignored.
+set -uo pipefail
+
+# The repo is wherever this script really lives: bin/ is a symlink from
+# ~/.local/bin, so the link has to be resolved before taking the parent.
+REPO="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)" || exit 1
+
+# The session is up before the network is. Overridable so the tests do not wait.
+sleep "${DOTFILES_CHECK_DELAY:-30}"
+
+cd "$REPO" || exit 1
+
+# Nothing may ask a question: there is no terminal to answer at, and a prompt
+# would hang this script for the rest of the session.
+export GIT_TERMINAL_PROMPT=0
+
+branch="$(git symbolic-ref --quiet --short HEAD)" || exit 0
+remote="$(git config "branch.$branch.remote")" || exit 0
+merge="$(git config "branch.$branch.merge")" || exit 0
+
+# Over https rather than the configured ssh url, deliberately.
+#
+# There is no ssh-agent in the graphical session and the key has a passphrase,
+# so ssh cannot authenticate without a terminal to ask at -- an ssh fetch here
+# fails every time, and the "stay quiet on failure" rule above would hide that
+# forever. This repo is public, so https needs no credentials at all. A private
+# repo would go back to being silent, correctly.
+url="$(git remote get-url "$remote" 2>/dev/null)" || exit 0
+case "$url" in
+    git@*:*)
+        # host:path -> host/path, done before the scheme is prefixed so the
+        # substitution cannot land on the colon in "https:".
+        rest="${url#git@}"
+        url="https://${rest/://}"
+        ;;
+    ssh://git@*)
+        url="https://${url#ssh://git@}"
+        ;;
+esac
+
+timeout 60 git fetch --quiet "$url" "$merge" 2>/dev/null || exit 0
+
+behind="$(git rev-list --count "HEAD..FETCH_HEAD" 2>/dev/null)" || exit 0
+[ "${behind:-0}" -gt 0 ] || exit 0
+
+if [ "$behind" -eq 1 ]; then
+    summary="dotfiles: 1 commit behind"
+else
+    summary="dotfiles: $behind commits behind"
+fi
+
+# --app-name is what dunst matches its rule on, see dunst/dunstrc.
+notify-send \
+    --app-name=dotfiles \
+    --urgency=normal \
+    "$summary" \
+    "$remote has changes. Pull in $REPO when convenient."
