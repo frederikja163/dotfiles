@@ -15,6 +15,7 @@
 --   keybinds     every bind, each with a description for the cheatsheet
 --   deskbinds    monitor + desktop binds on the number keys
 --   columns      column behaviour: new column, sizing, swap-biggest
+--   quake        drop-down terminal, one per desktop
 --   autostart    processes launched with the session
 
 require("monitors")
@@ -25,6 +26,7 @@ require("windowrules")
 require("keybinds")
 require("deskbinds")
 require("columns")
+require("quake")
 
 -- Last, so anything it launches sees the environment set above.
 require("autostart")
