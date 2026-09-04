@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# Apply the dotfiles to the running session: hyprctl reload, then everything a
+# reload leaves behind.
+#
+# hyprctl reload re-reads hypr/ (the Lua modules, monitors placement,
+# windowrules, keybinds) and re-applies the PATH environment.lua exports to
+# processes started afterwards. What it cannot touch lives outside the
+# compositor: waybar keeps its own config and process, hyprpaper and hypridle
+# read their conf only once at startup, dunst has its own daemon. So one
+# command here is the full "I edited something, put it live" step; nothing is
+# left to remember.
+#
+# hyprlock is not here on purpose: it has no daemon, the next lock reads
+# hyprlock.conf fresh. And nothing covers a kernel-ish change to PATH exports
+# -- prestidigitation there wants a proper session restart, this only re-feeds
+# the exports to new processes.
+#
+# Two cautions about the world this runs in.
+#
+# In the sandbox (HYPR_SANDBOX=1) anything hyprctl touches is the *host*
+# session, so asking it to reload here would rearrange the desktop the user is
+# sitting in. Same reason bin/waybar-main spawns nothing while nested: this
+# refuses to run at all when the marker is set.
+#
+# The daemons are restarted only if they are already running, and killed by
+# pid rather than pkill, so a user who stopped hypridle (or a process whose
+# name matched a pattern) does not find it back on at the next reload.
+#
+# The work itself runs detached: waybar lives as long as the session, and
+# waiting on it would hold the shell's prompt until the next reboot. This
+# returns the moment the jobs are launched, and each step that fails raises a
+# notification on its own -- there is no waybar to hold the screen output
+# after the shell has its prompt back.
+set -uo pipefail
+
+if [ "${HYPR_SANDBOX:-}" = "1" ]; then
+    printf 'reload: refusing to run inside the sandbox (would reload the host session)\n' >&2
+    exit 1
+fi
+
+for c in hyprctl waybar-main dunstctl notify-send; do
+    command -v "$c" >/dev/null || {
+        printf 'reload: %s is not on PATH\n' "$c" >&2
+        notify-send "reload" "$c missing" 2>/dev/null
+        exit 1
+    }
+done
+
+# A config that is only read at startup: restart the daemon -- if it is
+# running at all -- so the edited conf gets read. Kill whichever pids
+# pgrep finds and start it again, detached so it outlives this shell.
+restart_if_running() {
+    local name="$1" pids pid
+    pids="$(pgrep -x "$name")" || return 0
+    for pid in $pids; do
+        kill "$pid" 2>/dev/null || true
+    done
+    sleep 0.2
+    if ! command -v "$name" >/dev/null; then
+        return 1
+    fi
+    nohup "$name" >>/dev/null 2>&1 &
+    return 0
+}
+
+(
+    step() {
+        local label="$1"; shift
+        if "$@"; then
+            return 0
+        fi
+        notify-send "reload" "failed: $label" 2>/dev/null
+    }
+
+    step "hyprland"  hyprctl reload
+    step "waybar"    waybar-main
+    step "hyprpaper" restart_if_running hyprpaper
+    step "hypridle"  restart_if_running hypridle
+
+    # dunst is started on demand over dbus (see autostart.lua), so it may not
+    # be running at all; that is not a failure.
+    if pgrep -x dunst >/dev/null; then
+        step "dunst" dunstctl reload
+    fi
+) >/dev/null 2>&1 &
+
+exit 0

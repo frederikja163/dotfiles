@@ -141,14 +141,21 @@ redock — and go home when it is plugged back in.
 ./install-packages.sh      # packages + neovim (Arch, needs sudo)
 ./install.sh               # symlink configs; backs up anything it displaces
 
-hyprctl reload             # hyprland, including PATH changes
-waybar-main                # waybar
-dunstctl reload            # dunst
+reload                     # apply the dotfiles to the running session
                            # kitty: ctrl+shift+f5
 
 ./tests/run.sh             # Lua tests, then Hyprland --verify-config
 ./tests/sandbox.sh start   # a nested Hyprland, hidden, to try things in
 ```
+
+`reload` (see `bin/reload`) runs the `hyprctl reload`, then restarts waybar and
+re-reads hyprpaper's and hypridle's conf — both only at startup — and reloads
+dunst. It runs detached, so it never holds the terminal, restarts a daemon only
+if it is already running, refuses to act under `HYPR_SANDBOX=1`, and raises a
+notification for a step that failed.
+`hyprlock.conf` is picked up at the next lock, and a change to the `PATH`
+exports in `environment.lua` needs a full session restart to be certain —
+`reload` only re-exports them to processes started afterwards.
 
 Both install scripts are safe to re-run and skip whatever is already done.
 
