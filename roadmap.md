@@ -1,6 +1,10 @@
+# Bugs
+New desktop name after first two
+Re-use desktops/quake terminals. Close them instead
+
+# Features
 Github integration
 Desktop extension + monitor setups
-Auto update config with notification
 Machine specific settings
  - Monitor picking
 
