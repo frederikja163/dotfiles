@@ -10,6 +10,7 @@ local programs = require("programs")
 local mainMod     = programs.mainMod
 local terminal    = programs.terminal
 local fileManager = programs.fileManager
+local browser     = programs.browser
 local menu        = programs.menu
 
 
@@ -39,6 +40,7 @@ local closeWindowBind = hl.bind(mainMod .. " + C", hl.dsp.window.close(), { desc
 -- M+M is "swap with the biggest window", see columns.lua. Exiting Hyprland is
 -- handled by the power menu on M+Escape, which asks for confirmation.
 hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(fileManager), { description = "App: file manager" })
+hl.bind(mainMod .. " + W", hl.dsp.exec_cmd(browser),      { description = "App: browser" })
 
 -- bin/ide: Rider if the directory holds a .NET solution, nvim otherwise. Given
 -- the desktop's directory, so it opens whatever that desktop is for. It brings
@@ -47,7 +49,18 @@ hl.bind(mainMod .. " + I", function()
     local directory = require("quake").directory() or os.getenv("HOME") or "."
     hl.dispatch(hl.dsp.exec_cmd(("ide '%s'"):format(directory:gsub("'", "'\\''"))))
 end, { description = "App: editor (where this desktop is)" })
-hl.bind(mainMod .. " + V", hl.dsp.window.float({ action = "toggle" }), { description = "Window: toggle floating" })
+
+-- opencode is a TUI, so it gets a terminal of its own on this desktop — the
+-- same trick as SUPER+Q, just with a program to run once kitty is there. Its
+-- desktop directory is the one thing a keybind-launched process does not get
+-- from the shell, hence the explicit --directory.
+hl.bind(mainMod .. " + O", function()
+    local directory = require("quake").directory() or os.getenv("HOME") or "."
+    hl.dispatch(hl.dsp.exec_cmd(
+        ("%s --directory '%s' opencode"):format(terminal, directory:gsub("'", "'\\''"))))
+end, { description = "App: opencode (where this desktop is)" })
+hl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.float({ action = "toggle" }), { description = "Window: toggle floating" })
+hl.bind(mainMod .. " + F", hl.dsp.window.fullscreen({ action = "toggle" }), { description = "Window: toggle fullscreen" })
 hl.bind(mainMod .. " + R", hl.dsp.exec_cmd(menu), { description = "App: launcher" })
 
 -- Keybind cheatsheet (this popup)
