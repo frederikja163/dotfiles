@@ -47,10 +47,17 @@ echo "all good"
 # only by running a nested instance so far: window.swap takes target= with an
 # "address:" prefix (not window=), window.at/size are {x=,y=} tables rather than
 # arrays, `consume` pulls from the next column instead of pushing to the
-# previous one, and creating an hl.timer during config load segfaults. Test
-# behaviour changes against a nested Hyprland:
+# previous one, creating an hl.timer during config load segfaults, timers are
+# only ever oneshot (type="repeating" never fires), workspace.toggle_special
+# takes a bare name as a positional argument and silently ignores a table, and
+# percentages in a size rule are ignored where monitor_w/monitor_h work.
 #
-#   HYPR_SANDBOX=1 Hyprland -c hypr/hyprland.lua
+# Test behaviour changes against a nested Hyprland:
 #
-# HYPR_SANDBOX makes autostart a no-op (hypridle would lock the host session)
-# and switches the modifier to ALT, since the host grabs SUPER.
+#   ./tests/sandbox.sh start
+#   ./tests/sandbox.sh hyprctl clients -j
+#   ./tests/sandbox.sh stop
+#
+# That parks it in a special workspace, which is outside the desktop model and
+# so cannot be reached or shown by accident. It never draws while it is hidden,
+# but it runs: use hyprctl and what the config writes out, not your eyes.

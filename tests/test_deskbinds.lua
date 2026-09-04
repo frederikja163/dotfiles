@@ -47,7 +47,25 @@ local function reset(w)
         dsp = {
             layout = function(m) return { kind = "layout", arg = m } end,
             no_op = function() return { kind = "no_op" } end,
-            focus = function(a) return { kind = "focus", arg = a } end,
+            focus = function(a)
+                -- Focusing an id that does not exist creates that desktop, on
+                -- the focused monitor, exactly as Hyprland does.
+                if type(a.workspace) == "number" then
+                    local exists = false
+                    for _, ws in ipairs(world.workspaces) do
+                        if ws.id == a.workspace then exists = true end
+                    end
+                    if not exists then
+                        local mon
+                        for _, m in ipairs(world.monitors) do
+                            if m.id == world.focused_monitor_id then mon = m end
+                        end
+                        table.insert(world.workspaces,
+                            { id = a.workspace, special = false, monitor = mon })
+                    end
+                end
+                return { kind = "focus", arg = a }
+            end,
             window = {
                 move = function(a) return { kind = "move", arg = a } end,
                 swap = function(a) return { kind = "swap", arg = a } end,
@@ -309,6 +327,79 @@ mod.renumber_desktops()
 moves = {}
 mod.restore_homes()
 check("no moves", #moves, 0)
+
+-- quake.lua names a desktop after the directory its terminal is sitting in.
+-- Waybar shows the workspace name whenever its format-icons has no entry, so
+-- the label only has to end up in the name.
+print("scenario: desktops that have something to call themselves")
+reset(two_monitors(0))
+mod.set_labeller(function(ws)
+    return ({ [1] = "dotfiles", [3] = "runner" })[ws.id]
+end)
+mod.renumber_desktops()
+local by_ws = {}
+for _, ren in ipairs(renames) do by_ws[ren.workspace] = ren.name end
+check("the labelled one takes its name", by_ws[1], "dotfiles")
+check("the other labelled one too", by_ws[3], "runner")
+check("an unlabelled desktop stays a number", by_ws[2], "1.2")
+
+-- Names must stay unique across monitors: waybar matches the active workspace
+-- by name alone, so a shared name lights up two buttons at once.
+print("scenario: two desktops open on the same directory")
+reset(two_monitors(0))
+mod.set_labeller(function() return "dotfiles" end)
+mod.renumber_desktops()
+by_ws = {}
+for _, ren in ipairs(renames) do by_ws[ren.workspace] = ren.name end
+check("the first keeps the plain name", by_ws[1], "dotfiles")
+check("the next carries its number too", by_ws[2], "dotfiles 1.2")
+check("and so does one on another screen", by_ws[3], "dotfiles 2.1")
+
+print("scenario: no labeller at all")
+reset(two_monitors(0))
+mod.renumber_desktops()
+by_ws = {}
+for _, ren in ipairs(renames) do by_ws[ren.workspace] = ren.name end
+check("everything is numbered as before", by_ws[1], "1.1")
+
+-- A desktop is created by focusing something that does not exist yet, and it is
+-- called whatever it was asked for until something renames it. Asking for the
+-- name means there is never a number on the bar to correct.
+-- Created by id and renamed at once. Asking for "name:" instead would work and
+-- would hand the desktop a negative id, which sorts ahead of every other
+-- desktop and renumbers the lot.
+print("scenario: a new desktop is born with its name")
+local n = two_monitors(0)
+reset(n)
+n.workspaces[1].name = "~"
+n.workspaces[2].name = "~ 1.2"
+n.workspaces[3].name = "~ 2.1"
+mod.set_labeller(function() return "~" end)
+dispatched, renames = {}, {}
+mod.new_desktop_here()
+check("created by id", last_of("focus").arg.workspace, 4)
+check("and named straight away", renames[1] and renames[1].name, "~ 1.3")
+check("the same desktop that was created", renames[1] and renames[1].workspace, 4)
+
+print("scenario: a new desktop when the plain name is free")
+local m = two_monitors(0)
+reset(m)
+m.workspaces[1].name = "1.1"
+m.workspaces[2].name = "1.2"
+m.workspaces[3].name = "2.1"
+mod.set_labeller(function() return "~" end)
+dispatched, renames = {}, {}
+mod.new_desktop_here()
+check("takes the plain name", renames[1] and renames[1].name, "~")
+
+print("scenario: no labeller, so nothing to name it")
+reset(two_monitors(0))
+dispatched, renames = {}, {}
+mod.new_desktop_here()
+check("created by id", last_of("focus").arg.workspace, 4)
+-- The renumbering pass still numbers it afterwards; what matters is that
+-- creating it did not name it first.
+check("nothing named it on the way in", renames[1] and renames[1].workspace, 1)
 
 print("")
 print(("%d passed, %d failed"):format(pass, fail))

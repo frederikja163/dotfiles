@@ -136,6 +136,16 @@ end
 --
 -- Waybar turns these into plain 1, 2, 3 for display via format-icons, see
 -- waybar/config.jsonc. Everything here still addresses workspaces by id.
+--
+-- A desktop that has something better to call itself says so through this hook
+-- -- quake.lua names one after the directory its terminal is sitting in, so the
+-- bar reads "dotfiles" rather than "2". Waybar shows the workspace name for
+-- anything its format-icons does not cover, so nothing is needed at that end.
+--
+-- Returns a name, or nil to leave the desktop numbered. Set through
+-- set_labeller, below, once schedule_renumber exists to be called.
+local labeller = nil
+
 local renaming = false
 
 local function renumber_desktops()
@@ -145,13 +155,28 @@ local function renumber_desktops()
     end
     renaming = true
 
+    -- Names have to stay unique across monitors, so a label that is already
+    -- spoken for keeps its number alongside it. Two desktops open on the same
+    -- directory is unusual but not wrong, and sharing a name would light both
+    -- their buttons up at once.
+    local taken = {}
+
     for mon_index, slot in ipairs(monitor_slots()) do
         local mon = slot.monitor
         for index, ws in ipairs(mon and desktops_on(mon) or {}) do
             if mon and not home[ws.id] then
                 home[ws.id] = identity(mon)
             end
-            local want = ("%d.%d"):format(mon_index, index)
+
+            local number = ("%d.%d"):format(mon_index, index)
+            local want   = number
+
+            local label = labeller and labeller(ws)
+            if label and label ~= "" then
+                want = taken[label] and (label .. " " .. number) or label
+            end
+            taken[want] = true
+
             if ws.name ~= want then
                 hl.dispatch(hl.dsp.workspace.rename({ workspace = ws.id, name = want }))
             end
@@ -184,6 +209,49 @@ local function schedule_renumber()
     end, { timeout = 50, type = "oneshot" })
 end
 
+-- The name a brand-new desktop on this monitor should be born with.
+--
+-- The name has to be settled before the desktop exists, so the labeller is
+-- called with a desktop that has no id yet and is expected to answer with
+-- whatever it calls one it knows nothing about.
+--
+-- Unique, because two desktops sharing a name light up each other's buttons on
+-- the bar, and because the renaming pass would only have to undo it.
+local function name_for_new_desktop(mon)
+    if not labeller then
+        return nil
+    end
+
+    local label = labeller({})
+    if not label or label == "" then
+        return nil
+    end
+
+    local used = {}
+    for _, ws in ipairs(hl.get_workspaces() or {}) do
+        if ws.name then
+            used[ws.name] = true
+        end
+    end
+    if not used[label] then
+        return label
+    end
+
+    -- Taken, so fall back to the same "<label> <monitor>.<desktop>" the
+    -- renumbering pass would settle on anyway.
+    for mon_index, slot in ipairs(monitor_slots()) do
+        if slot.monitor and mon and slot.monitor.id == mon.id then
+            -- Not +1: this runs after the desktop has been created, so it is
+            -- already in the count, and it sorts last because its id is the
+            -- highest. Adding one named it "1.3" for the ~100ms until the
+            -- renumbering pass corrected it to "1.2".
+            local candidate = ("%s %d.%d"):format(label, mon_index, #desktops_on(mon))
+            return not used[candidate] and candidate or nil
+        end
+    end
+    return nil
+end
+
 local function focus_workspace(ws)
     if ws then
         hl.dispatch(hl.dsp.focus({ workspace = ws.id }))
@@ -192,8 +260,25 @@ end
 
 -- Focusing an id that does not exist yet creates the desktop on the focused
 -- monitor, so this only works for the monitor that currently has focus.
+--
+-- Created by id and renamed in the same breath, rather than left to the
+-- deferred pass, which would show the bare id on the bar for the ~80ms until it
+-- ran. The desktop exists by the time the focus dispatch returns, so there is
+-- nothing to wait for.
+--
+-- Asking for the name directly -- "name:~" -- looks tidier and is a trap.
+-- Hyprland numbers named workspaces from -1337 downwards, and those negative
+-- ids sort ahead of every ordinary desktop, so a new desktop would insert
+-- itself before the ones already there and quietly renumber them.
 local function new_desktop_here()
-    hl.dispatch(hl.dsp.focus({ workspace = unused_desktop_id() }))
+    local id = unused_desktop_id()
+    hl.dispatch(hl.dsp.focus({ workspace = id }))
+
+    local name = name_for_new_desktop(hl.get_active_monitor())
+    if name then
+        hl.dispatch(hl.dsp.workspace.rename({ workspace = id, name = name }))
+    end
+
     schedule_renumber()
 end
 
@@ -420,7 +505,18 @@ end)
 hl.on("config.reloaded", renumber_desktops)
 hl.on("hyprland.start", renumber_desktops)
 
+-- Set by quake.lua, which knows what each desktop is being used for.
+--
+-- Deliberately does not renumber: this is called while the config is still
+-- loading, and creating a timer there segfaults Hyprland outright. The
+-- hyprland.start hook below does the first pass, by which time this is set.
+local function set_labeller(fn)
+    labeller = fn
+end
+
 return {
+    set_labeller = set_labeller,
+    new_desktop_here = new_desktop_here,
     renumber_desktops = renumber_desktops,
     schedule_renumber = schedule_renumber,
     desktops_on = desktops_on,

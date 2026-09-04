@@ -59,6 +59,14 @@ dead space or run off the edge.
 | `SUPER + ALT + SHIFT + H/L` | move the whole column |
 | `SUPER + M` | cycle windows through the widest column |
 
+Apps open where the desktop is — the directory of its quake terminal.
+
+| Bind | Action |
+| --- | --- |
+| ``SUPER + ` `` | drop the desktop's quake terminal down, or put it away |
+| `SUPER + Q` | a terminal in the same directory, with its own history |
+| `SUPER + I` | `bin/ide`: Rider if there is a solution there, else nvim |
+
 Numbers address screens, with one rule: **act on screen *n*, or on your own
 desktops if you are already there.**
 
@@ -132,17 +140,31 @@ Toggling duplication also restarts waybar via `bin/waybar-main`, since
 duplicating can change which monitor is the largest, and the workspace buttons
 are keyed by desktop name, which is renumbered when a monitor comes or goes.
 
-Desktops are **numbered per monitor**. Hyprland's own workspace ids are global,
-so the second monitor can own ids 2 and 3. `deskbinds.lua` renames every desktop
-to `<monitor>.<desktop>` — `1.1`, `2.1`, `2.2` — and `waybar/config.jsonc` maps
-those to a plain `1`, `2`, `3` for display via `format-icons`.
+Desktops are **named after what you are doing on them**, not numbered: the
+directory the desktop's quake terminal is sitting in, so the bar reads
+`dotfiles` rather than `2`. A terminal that has not been taken anywhere is `~`,
+and so is a desktop with no terminal at all.
 
-The names are deliberately unique across monitors rather than just `1`, `2`.
-Waybar marks a button active when its name equals the *globally* focused
-workspace's name, with no monitor check (`workspaces.cpp`, `isActiveByName`), so
-two monitors each owning a desktop named `1` makes both highlight at once. It
-resolves a workspace's monitor by name too, which also misattributes the
-`hosting-monitor` class.
+`quake.lua` finds the directory and `deskbinds.lua` owns the naming, joined by a
+hook so the dependency only runs one way. Waybar needs no say in it: when its
+`format-icons` has no entry for a workspace it falls back to showing the
+workspace's own name (`workspace.cpp`, `selectIcon`), which is exactly what is
+wanted.
+
+A desktop is **born with its name**. Creating one means focusing a workspace
+that does not exist yet, and Hyprland calls it whatever it was asked for — ask
+for an id and the bar shows `7` until something renames it. Asking by name
+instead means there is nothing to correct and no number ever flashes up. The
+catch is that `name:` goes to an existing workspace of that name rather than
+making a second one, so the name has to be known-unique before it is asked for.
+
+Names must be unique for waybar's sake too. It marks a button active when its
+name equals the *globally* focused workspace's name, with no monitor check
+(`workspaces.cpp`, `isActiveByName`), so two desktops sharing a name highlight
+at once; it resolves a workspace's monitor by name as well, which misattributes
+the `hosting-monitor` class. Two desktops open on the same directory therefore
+read `dotfiles` and `dotfiles 1.2`, falling back to the `<monitor>.<desktop>`
+coordinate that every desktop used to carry.
 
 In the bar, the focused desktop uses `.active` (solid) and the other monitor's
 current desktop uses `.visible` (muted), so only one looks selected.
@@ -173,12 +195,18 @@ it so the terminal and launcher are named in one place.
 
 ## Desktop notes
 
-Waybar runs **one bar, on the main monitor**, where "main" is just the largest
-by pixel area. `waybar/config.jsonc` deliberately has no `output` key, so it
-names no monitors and works unchanged on any machine; `bin/waybar-main` works
-out the monitor and starts waybar against a generated copy of the config with
-`output` filled in. waybar has no command line option for this — only `-b` to
-pick a bar by name — hence the generated copy.
+Waybar runs **on every monitor**: the full bar on the main one, where "main" is
+just the largest by pixel area, and a bar carrying nothing but the workspaces on
+each of the others. `waybar/config.jsonc` deliberately has no `output` key, so
+it names no monitors and works unchanged on any machine; `bin/waybar-main` works
+out which monitor is which and starts waybar against a generated copy holding
+both bars with their `output` filled in. waybar has no command line option for
+this — only `-b` to pick a bar by name — hence the generated copy.
+
+The short bar is derived from the same config rather than written out again, so
+the modules are described once. The workspace module is left at its default of
+showing only the workspaces of the output it is on, which is what lets one
+description serve every monitor.
 
 Connector names are not stable (`DP-4` became `DP-5` after a redock), which is
 why nothing keys off them. If the monitor cannot be determined, the bar appears
@@ -217,8 +245,8 @@ hl.bind(mainMod .. " + Q", hl.dsp.exec_cmd(terminal), { description = "Open term
 Reloading without a logout:
 
 ```sh
-hyprctl reload              # hyprland
-waybar-main                 # waybar (restarts it on the main monitor)
+hyprctl reload              # hyprland (PATH changes included: env is re-applied)
+waybar-main                 # waybar (restarts the bars on every monitor)
 dunstctl reload             # dunst
 # kitty: ctrl+shift+f5
 ```

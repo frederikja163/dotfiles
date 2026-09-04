@@ -26,11 +26,15 @@ local function reset()
 
     local next_address = 0
 
+    -- What bin/terminal-cwd would answer for a terminal, by pid.
+    world.cwds = {}
+
     function world.appear(ws_name)
         next_address = next_address + 1
         local win = {
             class = "quake",
             address = ("0x%x"):format(next_address),
+            pid = next_address,
             workspace = { name = ws_name },
         }
         table.insert(world.windows, win)
@@ -49,6 +53,11 @@ local function reset()
     end
 
     _G.hl = {
+        -- quake requires deskbinds (for the naming hook), which requires
+        -- columns, and both register things as they load.
+        layout = { register = function() end },
+        get_monitors = function() return {} end,
+        get_workspaces = function() return {} end,
         bind = function(keys, fn, opts) world.binds = world.binds or {}; world.binds[keys] = fn end,
         on = function(event, fn) events[event] = fn end,
         -- Fired immediately, except the backstop that clears a stuck spawn --
@@ -94,7 +103,10 @@ local function reset()
                     world.focused = a.window
                 end }
             end,
+            no_op = function() return { kind = "no_op", apply = function() end } end,
+            layout = function(m) return { kind = "layout", apply = function() end } end,
             window = {
+                swap = function(a) return { kind = "swap", apply = function() end } end,
                 move = function(a)
                     return { kind = "move", arg = a, apply = function()
                         table.insert(moved, a)
@@ -106,6 +118,8 @@ local function reset()
 
     package.loaded.quake = nil
     package.loaded.programs = nil
+    package.loaded.deskbinds = nil
+    package.loaded.columns = nil
     mod = require("quake")
 end
 
@@ -114,6 +128,17 @@ end
 local function switch_to(id)
     world.desktop = { id = id, name = "1." .. id, special = false }
     events["workspace.active"]()
+end
+
+-- quake shells out to bin/terminal-cwd to find where a terminal is sitting.
+local real_popen = io.popen
+io.popen = function(cmd)
+    local pid = tonumber(cmd:match("terminal%-cwd (%d+)"))
+    if not pid then
+        return real_popen(cmd)
+    end
+    local cwd = world.cwds[pid] or ""
+    return { read = function() return cwd .. "\n" end, close = function() end }
 end
 
 local pass, fail = 0, 0
@@ -175,6 +200,60 @@ switch_to(2)                         -- moved on before it appeared
 world.appear("special:quake-1")      -- it turns up now
 check("does not steal the keyboard", world.focused, nil)
 
+print("scenario: the desktop is named after the terminal's directory")
+reset()
+world.cwds[1] = "/home/fredandr/dotfiles"
+mod.toggle()
+check("named after where the shell is", mod.label_for(1), "dotfiles")
+-- The name has to survive a cd, which is only noticed through the title.
+world.cwds[1] = "/home/fredandr/Projects/runner"
+events["window.title"]({ class = "quake", pid = 1,
+                         workspace = { name = "special:quake-1" } })
+check("follows a cd", mod.label_for(1), "runner")
+
+print("scenario: a terminal that has not been taken anywhere")
+reset()
+world.cwds[1] = os.getenv("HOME")
+mod.toggle()
+check("called ~ rather than a number", mod.label_for(1), "~")
+reset()
+world.cwds[1] = "/"
+mod.toggle()
+check("and the root is called /", mod.label_for(1), "/")
+
+print("scenario: a directory that cannot be read")
+reset()
+world.cwds[1] = nil                  -- terminal-cwd fails, prints nothing
+mod.toggle()
+check("falls back to ~, never a number", mod.label_for(1), "~")
+
+print("scenario: a desktop with no terminal at all")
+reset()
+check("is called ~ too", mod.label_for(1), "~")
+
+print("scenario: the terminal goes away")
+reset()
+world.cwds[1] = "/home/fredandr/dotfiles"
+mod.toggle()
+check("named", mod.label_for(1), "dotfiles")
+world.close("special:quake-1")
+events["window.close"]({ class = "quake", pid = 1,
+                         workspace = { name = "special:quake-1" } })
+check("back to ~", mod.label_for(1), "~")
+
+-- SUPER+Q opens a second terminal in the same place, so it needs the path
+-- rather than the label.
+print("scenario: where the desktop is")
+reset()
+check("nowhere, with no terminal", mod.directory(), nil)
+world.cwds[1] = "/home/fredandr/Projects/runner"
+mod.toggle()
+check("the terminal's directory, in full", mod.directory(),
+      "/home/fredandr/Projects/runner")
+check("while the name is only the last part", mod.label_for(1), "runner")
+switch_to(2)
+check("and it is per desktop", mod.directory(), nil)
+
 print("scenario: the terminal is closed by hand")
 reset()
 mod.toggle()
@@ -183,6 +262,19 @@ world.special = nil
 mod.toggle()
 check("a new one is started", #execs, 2)
 check("and shown", special_name(), "quake-1")
+
+print("scenario: hyprctl reload, with the terminals still open")
+reset()
+world.cwds[1] = "/home/fredandr/dotfiles"
+mod.toggle()
+check("named before the reload", mod.label_for(1), "dotfiles")
+local windows_after_reload = world.windows
+reset()                              -- the config is re-run from scratch
+world.windows = windows_after_reload -- but the terminal is still there
+world.cwds[1] = "/home/fredandr/dotfiles"
+check("forgotten the moment the file is re-run", mod.label_for(1), "~")
+events["config.reloaded"]()
+check("read back rather than waited for", mod.label_for(1), "dotfiles")
 
 print("scenario: hyprctl reload, which forgets every table in this file")
 reset()

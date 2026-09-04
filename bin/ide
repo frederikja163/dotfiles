@@ -1,10 +1,24 @@
 #!/usr/bin/env bash
-# Open the current directory in whichever editor suits it: Rider if there is a
-# .NET solution here, nvim otherwise.
+# Open a directory in whichever editor suits it: Rider if there is a .NET
+# solution in it, nvim otherwise. Defaults to the current directory, and takes
+# one as an argument so SUPER+I can pass the directory its desktop is in.
 #
 # Rider is a GUI app, so it is detached and the script returns immediately;
 # nvim is a terminal app, so it replaces this shell and keeps the terminal.
 set -uo pipefail
+
+# Where this script is, resolved before anything cds, so it can start itself
+# again in a terminal further down.
+#
+# Through `command -v` first: started from a keybind it is found on PATH and $0
+# is the bare word "ide", which readlink would resolve against the wrong
+# directory and hand back nothing.
+SELF="$(command -v -- "$0" 2>/dev/null || printf '%s' "$0")"
+SELF="$(readlink -f -- "$SELF")"
+
+if [ $# -gt 0 ]; then
+    cd "$1" || exit 1
+fi
 
 # nullglob so a pattern that matches nothing disappears instead of being passed
 # through literally. .slnx wins outright: a repo part-way through the migration
@@ -13,26 +27,42 @@ shopt -s nullglob
 solutions=(*.slnx)
 [ ${#solutions[@]} -eq 0 ] && solutions=(*.sln)
 
+# fzf and nvim both need a terminal, and started from a keybind there is none.
+# Rather than give up on them, start again inside one.
+#
+# Only when it is actually needed: opening Rider wants no terminal, and bringing
+# one up regardless would flash a window that closes again immediately. So this
+# is decided after counting the solutions, not before.
+#
+# Both ends have to be a terminal, and neither test alone will do. A program
+# started by the compositor inherits the VT the session was started on -- stdin
+# is /dev/tty2 and /dev/tty opens quite happily -- so by those tests it looks
+# interactive, and nvim goes and draws on a console nobody is looking at. Only
+# stdout gives it away, as the compositor pipes that.
+if [ ${#solutions[@]} -ne 1 ] && { [ ! -t 0 ] || [ ! -t 1 ]; }; then
+    exec kitty --directory "$PWD" "$SELF"
+fi
+
 if [ ${#solutions[@]} -gt 0 ]; then
-    # Two of the same kind is a real ambiguity: ask, rather than guess. With no
-    # terminal to ask at -- a keybind, a script -- fall back to the first one
-    # and say so, because opening something beats opening nothing.
+    # Two of the same kind is a real ambiguity: ask, rather than guess. There is
+    # always a terminal to ask at by this point.
     if [ ${#solutions[@]} -gt 1 ]; then
-        # fzf draws on /dev/tty rather than stdout, so a pipe either side of it
-        # is fine -- but opening /dev/tty is what fails when there is no
-        # terminal at all, so that is what decides whether it can be asked.
-        # Redirections are applied left to right, so stderr has to be dropped
-        # before the open is attempted or bash reports it.
-        if : 2>/dev/null </dev/tty; then
-            choice=$(printf '%s\n' "${solutions[@]}" |
-                fzf --prompt='solution> ' --layout=reverse --height='~40%')
-            # Empty on escape, ctrl-c, or ctrl-d.
-            [ -n "$choice" ] || { echo "ide: nothing picked" >&2; exit 1; }
-            solutions=("$choice")
-        else
-            echo "ide: ${#solutions[@]} solutions here, opening ${solutions[0]}" >&2
-        fi
+        choice=$(printf '%s\n' "${solutions[@]}" |
+            fzf --prompt='solution> ' --layout=reverse --height='~40%')
+        # Empty on escape, ctrl-c, or ctrl-d.
+        [ -n "$choice" ] || { echo "ide: nothing picked" >&2; exit 1; }
+        solutions=("$choice")
     fi
+    # Checked rather than left to fail: Rider is launched detached with its
+    # output thrown away, so a missing command would exit 127 into the void and
+    # look exactly like nothing happening. Started from a keybind stderr goes
+    # nowhere either, hence the notification.
+    if ! command -v rider >/dev/null; then
+        echo "ide: rider is not on PATH" >&2
+        notify-send "ide" "rider is not on PATH" 2>/dev/null
+        exit 1
+    fi
+
     # A new session, so closing the terminal does not take Rider with it. -f
     # forks and returns straight away, which a plain "&" only almost does: the
     # child can still be signalled in the gap before it execs.

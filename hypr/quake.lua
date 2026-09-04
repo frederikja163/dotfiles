@@ -14,7 +14,8 @@
 -- also brings the terminal back when you return to a desktop you left it open
 -- on.
 
-local programs = require("programs")
+local programs  = require("programs")
+local deskbinds = require("deskbinds")
 
 local mainMod  = programs.mainMod
 local terminal = programs.terminal
@@ -85,7 +86,9 @@ end
 -- workspace belongs to something else and is left alone.
 local function showing()
     local sp = hl.get_active_special_workspace()
-    return sp and sp.name and sp.name:match("^special:(quake%-%d+)$")
+    -- The id may be negative: Hyprland numbers named workspaces downwards from
+    -- -1337, so "quake--1337" is a perfectly ordinary name here.
+    return sp and sp.name and sp.name:match("^special:(quake%-%-?%d+)$")
 end
 
 -- Has this desktop got a terminal? Asked of Hyprland every time rather than
@@ -114,6 +117,152 @@ local function focus_terminal(desktop_id)
         hl.dispatch(hl.dsp.focus({ window = "address:" .. win.address }))
     end
 end
+
+-- What each desktop is called on the bar: [desktop id] = directory name, or nil
+-- while it is still just a number.
+--
+-- A desktop is whatever you are working on in it, and the terminal is where
+-- that gets decided, so the directory its shell is sitting in is the honest
+-- name for it. deskbinds.lua owns desktop names and asks for these through the
+-- hook it exposes.
+local labels = {}
+
+local HOME = os.getenv("HOME") or ""
+
+-- What home is called, and what a desktop with no terminal is called.
+local HOME_LABEL = "~"
+
+local function cwd_of(win)
+    if not win or not win.pid then
+        return nil
+    end
+
+    -- bin/terminal-cwd, because the shell holds the directory rather than the
+    -- terminal. This shells out from the compositor, so it is kept to one call
+    -- per terminal per burst of changes, below.
+    local pipe = io.popen(("terminal-cwd %d 2>/dev/null"):format(win.pid))
+    if not pipe then
+        return nil
+    end
+    local cwd = (pipe:read("*a") or ""):gsub("%s+$", "")
+    pipe:close()
+
+    return cwd ~= "" and cwd or nil
+end
+
+local function directory_of(win)
+    local cwd = cwd_of(win)
+    if not cwd then
+        return nil -- nothing to go on, so the desktop falls back to "~"
+    end
+
+    -- Home and root are written the way a shell writes them; everything else is
+    -- the last part of the path, which is what you would call the project.
+    if cwd == HOME then
+        return HOME_LABEL
+    end
+    if cwd == "/" then
+        return "/"
+    end
+    return cwd:match("([^/]+)/*$")
+end
+
+-- Which desktop a terminal belongs to, read back out of its workspace name.
+local function desktop_of(win)
+    local ws = win and win.workspace and win.workspace.name
+    local id = ws and ws:match("^special:quake%-(%-?%d+)$")
+    return id and tonumber(id)
+end
+
+local relabelling = {}
+
+local function relabel(desktop_id)
+    if relabelling[desktop_id] then
+        return -- a burst of title changes is one directory to look up, not ten
+    end
+    relabelling[desktop_id] = true
+
+    hl.timer(function()
+        relabelling[desktop_id] = nil
+
+        local label = directory_of(terminal_window(desktop_id))
+        if labels[desktop_id] ~= label then
+            labels[desktop_id] = label
+            deskbinds.schedule_renumber()
+        end
+    end, { timeout = 300, type = "oneshot" })
+end
+
+-- Always a name, never a number. A desktop with no terminal, or one whose
+-- directory could not be read, is called "~": that is where a terminal would
+-- start if one were opened on it.
+-- Where the focused desktop is, as a path, or nil if it has no terminal.
+--
+-- This is what a second terminal opened on the desktop starts in, so it lands
+-- in the same place as the quake terminal with a shell of its own. Read live
+-- rather than from the label cache: it is one keypress, and a cached path that
+-- has gone stale would open the wrong directory.
+local function directory()
+    local ws = focused_desktop()
+    if not ws then
+        return nil
+    end
+    return cwd_of(terminal_window(ws.id))
+end
+
+local function label_for(desktop_id)
+    return labels[desktop_id] or HOME_LABEL
+end
+
+deskbinds.set_labeller(function(ws) return label_for(ws.id) end)
+
+-- `hyprctl reload` runs this file again from nothing while the terminals are
+-- still open, so the names have to be read back rather than waited for.
+-- Otherwise every desktop falls back to a number and stays there until
+-- something happens in its terminal to change the title.
+--
+-- Read straight through, with no timer and no scheduling: both are called while
+-- the config is loading, where creating a timer segfaults Hyprland. Renumbering
+-- is called at the end rather than left to deskbinds' own hook for the same
+-- event, because that hook was registered first and has already run by now.
+local function relabel_all()
+    for _, win in ipairs(hl.get_windows() or {}) do
+        if tostring(win.class) == CLASS then
+            local id = desktop_of(win)
+            if id then
+                labels[id] = directory_of(win)
+            end
+        end
+    end
+    deskbinds.renumber_desktops()
+end
+
+hl.on("config.reloaded", relabel_all)
+hl.on("hyprland.start", relabel_all)
+
+-- The title is not the directory -- oh-my-zsh puts the running command there,
+-- so it says "vim" as often as it says a path -- but it does change whenever
+-- anything happens in the shell, which makes it a free signal to go and look
+-- the directory up properly.
+hl.on("window.title", function(win)
+    if win and tostring(win.class) == CLASS then
+        local id = desktop_of(win)
+        if id then
+            relabel(id)
+        end
+    end
+end)
+
+-- Gone, so the desktop goes back to being a number. By the time the timer runs
+-- the window is no longer listed, which is exactly what clears the label.
+hl.on("window.close", function(win)
+    if win and tostring(win.class) == CLASS then
+        local id = desktop_of(win)
+        if id then
+            relabel(id)
+        end
+    end
+end)
 
 -- The dispatcher takes the bare name as a positional argument. A table
 -- ({workspace = ...} or {name = ...}) is accepted and then ignored, which
@@ -207,8 +356,7 @@ local function opened(win)
         return
     end
 
-    local ws = win.workspace and win.workspace.name
-    local id = ws and ws:match("^special:quake%-(%d+)$")
+    local id = desktop_of(win)
     if not id then
         return -- not in a terminal's workspace, so none of our business
     end
@@ -218,11 +366,11 @@ local function opened(win)
         -- `silent`, so it has no focus yet: give it some, but only if it is the
         -- one on screen -- a terminal starting on a desktop you have already
         -- moved away from must not steal the keyboard.
-        id = tonumber(id)
         starting[id] = nil
         if showing() == workspace_for(id) and win.address then
             hl.dispatch(hl.dsp.focus({ window = "address:" .. win.address }))
         end
+        relabel(id) -- name the desktop after wherever it starts up
         return
     end
 
@@ -259,6 +407,8 @@ end
 
 return {
     toggle = toggle,
+    label_for = label_for,
+    directory = directory,
     sync = sync,
     workspace_for = workspace_for,
     CLASS = CLASS,

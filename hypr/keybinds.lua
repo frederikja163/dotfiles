@@ -15,12 +15,38 @@ local menu        = programs.menu
 
 -- Applications and window actions
 
-hl.bind(mainMod .. " + Q", hl.dsp.exec_cmd(terminal), { description = "App: terminal" })
+-- A second terminal on the desktop starts where the quake terminal is, so it
+-- comes up in the same place with a shell and history of its own rather than in
+-- $HOME. A desktop with no quake terminal has nowhere in particular to be, and
+-- gets a plain one.
+--
+-- quake is required in here rather than at the top of the file: it pulls in
+-- deskbinds and columns, and this file is loaded before either of them.
+hl.bind(mainMod .. " + Q", function()
+    local directory = require("quake").directory()
+
+    local command = terminal
+    if directory then
+        -- Single quoted for the shell that runs this, since a path may contain
+        -- spaces. --directory is kitty's, as --class already is in quake.lua.
+        command = ("%s --directory '%s'"):format(terminal, directory:gsub("'", "'\\''"))
+    end
+
+    hl.dispatch(hl.dsp.exec_cmd(command))
+end, { description = "App: terminal (where this desktop is)" })
 local closeWindowBind = hl.bind(mainMod .. " + C", hl.dsp.window.close(), { description = "Window: close" })
 -- closeWindowBind:set_enabled(false)
 -- M+M is "swap with the biggest window", see columns.lua. Exiting Hyprland is
 -- handled by the power menu on M+Escape, which asks for confirmation.
 hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(fileManager), { description = "App: file manager" })
+
+-- bin/ide: Rider if the directory holds a .NET solution, nvim otherwise. Given
+-- the desktop's directory, so it opens whatever that desktop is for. It brings
+-- up a terminal of its own when it needs one, which a keybind cannot give it.
+hl.bind(mainMod .. " + I", function()
+    local directory = require("quake").directory() or os.getenv("HOME") or "."
+    hl.dispatch(hl.dsp.exec_cmd(("ide '%s'"):format(directory:gsub("'", "'\\''"))))
+end, { description = "App: editor (where this desktop is)" })
 hl.bind(mainMod .. " + V", hl.dsp.window.float({ action = "toggle" }), { description = "Window: toggle floating" })
 hl.bind(mainMod .. " + R", hl.dsp.exec_cmd(menu), { description = "App: launcher" })
 

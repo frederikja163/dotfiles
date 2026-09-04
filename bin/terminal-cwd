@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Print the working directory of the shell running inside a terminal, given the
+# terminal's own pid.
+#
+# The terminal is not the process holding the directory. kitty stays in the
+# directory it was launched from and never moves, and it keeps `kitten` helper
+# children that sit in the same place, so asking it -- or its newest child --
+# answers $HOME no matter where you have cd'd to. The shell is the one child
+# that moves, so it is the one to ask.
+#
+# A command running in the shell is a child of the shell, not of the terminal,
+# and does not shadow it: the shell's directory stays the answer while `vim` or
+# anything else is in the foreground, which is what makes this stable enough to
+# put on a status bar.
+set -uo pipefail
+
+pid="${1:-}"
+if [ -z "$pid" ]; then
+    echo "usage: terminal-cwd <terminal pid>" >&2
+    exit 1
+fi
+
+for child in $(pgrep -P "$pid" 2>/dev/null); do
+    [ "$(cat "/proc/$child/comm" 2>/dev/null)" = "kitten" ] && continue
+
+    cwd="$(readlink "/proc/$child/cwd" 2>/dev/null)" || continue
+    if [ -n "$cwd" ]; then
+        printf '%s\n' "$cwd"
+        exit 0
+    fi
+done
+
+exit 1

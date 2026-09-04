@@ -1,4 +1,3 @@
-Each desktop has a workspace and a quake terminal. Super+q opens in that workspace.
 Create reload script i can call from any terminal anywhere.
 
 Github integration

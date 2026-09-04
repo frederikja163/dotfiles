@@ -774,8 +774,13 @@ hl.layout.register("columns", {
             end
         end
 
+        -- No targets at all, so this is an empty desktop. Every one of these
+        -- commands is about a window, and there are none: that is an ordinary
+        -- thing to press a key on, not a mistake worth a warning. Returning a
+        -- string here reports an error, so return handled-and-did-nothing --
+        -- the same as having no focused window, just below.
         if not ws then
-            return "columns: no workspace"
+            return true
         end
 
         local st = for_workspace(ws)

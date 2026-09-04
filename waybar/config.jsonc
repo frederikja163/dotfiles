@@ -1,8 +1,10 @@
 // Waybar — https://github.com/Alexays/Waybar/wiki/Configuration
 //
 // One bar, with no "output" key, so it does not depend on monitor names and
-// works unchanged on any machine. bin/waybar-main starts it on whichever
-// monitor is the main one here; without that it would appear on every monitor.
+// works unchanged on any machine. bin/waybar-main copies it into two: this one
+// on the main monitor, and a cut-down one carrying only the workspaces on each
+// of the others. Describing the modules once here is the point -- the second
+// bar is derived, never written out again.
 //
 // Reload with:  killall -SIGUSR2 waybar
 {

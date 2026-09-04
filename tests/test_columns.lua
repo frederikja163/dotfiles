@@ -387,6 +387,15 @@ check("a lone column splits instead", shape(dst), "9 | 1")
 C.reconcile(dst, { 9, 1, 2 }, 9)
 check("then stacks on the focused column", shape(dst), "9+2 | 1")
 
+-- A returned string is an error, and Hyprland puts it on screen. Pressing a
+-- focus key on a desktop with nothing on it is ordinary, so it has to come back
+-- as handled-and-did-nothing rather than as a complaint.
+print("scenario: keys pressed on an empty desktop")
+local empty = { targets = {} }
+check("focus is silently ignored", _G.__provider.layout_msg(empty, "focus l"), true)
+check("so is moving a window",     _G.__provider.layout_msg(empty, "movewin up"), true)
+check("so is resizing a column",   _G.__provider.layout_msg(empty, "colresize 0.05"), true)
+
 print("")
 print(("%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)
