@@ -48,4 +48,5 @@ link dunst    "$HOME/.config/dunst"
 link fuzzel   "$HOME/.config/fuzzel"
 link zsh/.zshenv "$HOME/.zshenv"                 # stub: points zsh at ZDOTDIR
 link zsh/.zshrc  "$HOME/.config/zsh/.zshrc"
+link git      "$HOME/.config/git"                # ~/.gitconfig would override it
 link bin      "$HOME/.local/bin"

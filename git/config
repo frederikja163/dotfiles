@@ -1,0 +1,25 @@
+# Git — https://git-scm.com/docs/git-config
+#
+# Lives at ~/.config/git/config rather than ~/.gitconfig, so $HOME stays clean.
+# Both are read when both exist, and ~/.gitconfig is read *last* and therefore
+# wins, so it must not be left lying around once this is linked.
+
+[user]
+	name = FrederikIA
+	# GitHub's noreply address rather than a real inbox. It is already in the
+	# history of every public repo, and keeps the real address out of it.
+	#
+	# One identity for work and private alike: same account, same address.
+	email = 20968096+frederikja163@users.noreply.github.com
+
+[push]
+	# Push a new branch without spelling out --set-upstream first.
+	autoSetupRemote = true
+
+[init]
+	defaultBranch = main
+
+[diff]
+	# Slower than the default, and lines the diff up with what actually
+	# changed rather than the first match it finds.
+	algorithm = histogram

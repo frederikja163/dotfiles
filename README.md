@@ -17,6 +17,7 @@ each one.
 | `dunst`    | `~/.config/dunst`             | `dunstrc`                            |
 | `fuzzel`   | `~/.config/fuzzel`            | `fuzzel.ini`                         |
 | `zsh`      | `~/.zshenv`, `~/.config/zsh/` | oh-my-zsh setup, `PATH`, prompt      |
+| `git`      | `~/.config/git`               | identity and settings                |
 | `bin`      | `~/.local/bin`                | small scripts, on `PATH`             |
 | `system`   | `/etc`                        | system config (needs root)           |
 | `packages` | —                             | `pacman.txt`, `aur.txt`              |
