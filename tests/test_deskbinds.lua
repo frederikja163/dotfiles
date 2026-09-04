@@ -5,6 +5,26 @@
 local HYPR = os.getenv("HYPR_DIR") or "hypr"
 package.path = HYPR .. "/?.lua;" .. package.path
 
+-- deskbinds.lua reads the pinned monitor order from $HYPR_MONITOR_ORDER when the
+-- variable is set. tests/run.sh sets it; the os.getenv patch below makes this
+-- file self-contained either way and guarantees it never reads the machine's
+-- real, local pin file.
+local pin_path = os.getenv("HYPR_MONITOR_ORDER") or "/tmp/hypr-monitor-order-test"
+local real_getenv = os.getenv
+os.getenv = function(name)
+    if name == "HYPR_MONITOR_ORDER" then
+        return pin_path
+    end
+    return real_getenv(name)
+end
+
+local function set_pin(contents)
+    local f = assert(io.open(pin_path, "w"))
+    f:write(contents)
+    f:close()
+end
+set_pin("") -- baseline: nothing pinned, so id order, as before
+
 local binds, dispatched, monitor_calls, world, events, renames, execs, moves, mod
 
 local function reset(w)
@@ -327,6 +347,67 @@ mod.renumber_desktops()
 moves = {}
 mod.restore_homes()
 check("no moves", #moves, 0)
+
+-- The pinned order decides which screen owns which number, independent of
+-- Hyprland's monitor ids. reset() re-requires deskbinds.lua, which re-reads the
+-- pin file, so the file has to be written before the scenario.
+print("scenario: the pinned order overrides Hyprland id order")
+set_pin("Dell DELL P3424WE DVYH6T3\nBOE 0x0DBB\n")
+reset(two_monitors(0))
+local s = mod.monitor_slots()
+check("pinned slot 1 is DP-4 (id 1)", s[1].name, "DP-4")
+check("pinned slot 2 is eDP-1 (id 0)", s[2].name, "eDP-1")
+
+print("scenario: desktop numbers follow the pinned order too")
+mod.renumber_desktops()
+by_ws = {}
+for _, ren in ipairs(renames) do by_ws[ren.workspace] = ren.name end
+check("DP-4's desktop (id 3) is now 1.1", by_ws[3], "1.1")
+check("eDP-1's desktops (ids 1, 2) are 2.1 and 2.2", by_ws[1], "2.1")
+check("eDP-1's other desktop", by_ws[2], "2.2")
+
+print("scenario: a transform on a pinned line does not disturb the order")
+set_pin("Dell DELL P3424WE DVYH6T3 transform=1\nBOE 0x0DBB\n")
+reset(two_monitors(0))
+local s = mod.monitor_slots()
+check("pinned slot 1 is still DP-4", s[1].name, "DP-4")
+check("pinned slot 2 is still eDP-1", s[2].name, "eDP-1")
+local pe = require("monitorpin").load()
+check("monitorpin reads the transform off the line", pe[1].transform, 1)
+check("...and leaves the identity intact", pe[1].identity, "Dell DELL P3424WE DVYH6T3")
+check("a line with no settings has no transform", pe[2].transform, nil)
+
+print("scenario: a monitor no one has pinned joins after the pinned ones")
+set_pin("Dell DELL P3424WE DVYH6T3\n")
+local p = two_monitors(0)
+local mon3 = { id = 2, name = "HDMI-1", active_workspace = nil }
+local ws9 = { id = 9, special = false, monitor = mon3, name = "9" }
+mon3.active_workspace = ws9
+table.insert(p.monitors, mon3)
+table.insert(p.workspaces, ws9)
+reset(p)
+local s3 = mod.monitor_slots()
+check("pinned DP-4 first", s3[1].name, "DP-4")
+check("then eDP-1 by id", s3[2].name, "eDP-1")
+check("then HDMI-1 by id", s3[3].name, "HDMI-1")
+
+print("scenario: a duplicating monitor keeps its pinned slot")
+set_pin("HDMI-1\nDell DELL P3424WE DVYH6T3\nBOE 0x0DBB\n")
+local thr = two_monitors(0)
+local mon4 = { id = 2, name = "HDMI-1", active_workspace = nil }
+local ws9b = { id = 9, special = false, monitor = mon4, name = "9" }
+mon4.active_workspace = ws9b
+table.insert(thr.monitors, mon4)
+table.insert(thr.workspaces, ws9b)
+reset(thr)
+binds["SUPER + CTRL + 2"].fn() -- duplicate the middle, pinned slot 2
+local s4 = mod.monitor_slots()
+check("slot 1 stays HDMI-1", s4[1].name, "HDMI-1")
+check("slot 2 is DP-4, duplicating", s4[2].name, "DP-4")
+check("slot 2 is flagged duplicating", s4[2].source, "eDP-1")
+check("slot 3 stays eDP-1", s4[3].name, "eDP-1")
+
+set_pin("") -- back to baseline, in case a later scenario runs after this one
 
 -- quake.lua names a desktop after the directory its terminal is sitting in.
 -- Waybar shows the workspace name whenever its format-icons has no entry, so

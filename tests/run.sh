@@ -12,6 +12,11 @@ set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 export HYPR_DIR="${HYPR_DIR:-hypr}"
 
+# deskbinds.lua reads the pinned monitor order from this when set; pointing it
+# at a scratch file keeps the tests from depending on (or touching) the real,
+# machine-local one.
+export HYPR_MONITOR_ORDER="${TMPDIR:-/tmp}/hypr-monitor-order-test"
+
 if ! command -v lua5.4 >/dev/null; then
   echo "lua5.4 not found (pacman -S lua)" >&2
   exit 1
@@ -57,6 +62,10 @@ echo "all good"
 #   ./tests/sandbox.sh start
 #   ./tests/sandbox.sh hyprctl clients -j
 #   ./tests/sandbox.sh stop
+#
+# Lately: monitors are id-ordered from get_monitors(), and hl.monitor's
+# position field is a "WxH" string ("640x480"), not the x@y token, with
+# logical coordinates (pixels / scale).
 #
 # That parks it in a special workspace, which is outside the desktop model and
 # so cannot be reached or shown by accident. It never draws while it is hidden,

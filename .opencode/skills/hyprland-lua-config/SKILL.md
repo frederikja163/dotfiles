@@ -46,6 +46,14 @@ These cost hours each. All verified against Hyprland 0.56.2.
 
 - **Timers are oneshot only.** `hl.timer(fn, { timeout = 300, type = "repeating" })`
   never fires, with no error. To poll, re-arm from inside the callback.
+- **`hl.monitor()`'s `position` takes a `"WxH"`-formatted string** (`"640x480"`),
+  not the legacy `x@y` token — `"640@480"` fails the field with
+  `error applying field 'position'`. Positions are logical pixels (a screen's
+  pixels divided by its scale); a rotated (transform 1/3) screen's dimensions
+  swap. The `hl.get_monitors()` monitor object exposes `width`, `height`,
+  `scale`, `x`, `y` and `id` but no `wl`/`px_w` logical-size fields, and is
+  empty at module load (see monitors.lua's tests for what the layout is built
+  from).
 - **`hl.dsp.workspace.toggle_special` takes a bare positional name**:
   `toggle_special("quake-1")`, no `special:` prefix. Passing a table —
   `{ workspace = ... }` or `{ name = ... }` — is accepted and ignored, and

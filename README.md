@@ -68,6 +68,8 @@ programs of those names do.
 | `hypr-keybinds` | the `SUPER + /` cheatsheet, generated from `hyprctl binds`     |
 | `power-menu`    | `SUPER + Escape`: lock, log out, reboot, shut down            |
 | `waybar-main`   | starts waybar on every monitor, full bar on the largest       |
+| `hypr-monitor-order` | pin which screen is monitor 1, 2, ...; set orientation |
+| `reload` | apply the dotfiles live: hyprland, waybar, wallpaper, idling, dunst |
 | `ide`           | `SUPER + I`: Rider if the directory holds a solution, else nvim |
 | `terminal-cwd`  | the working directory of a terminal's shell, given its pid    |
 | `dotfiles-check` | says at login if this repo is behind its remote               |
@@ -107,7 +109,14 @@ correction.
 - Column state is in memory only: after a config reload a desktop's windows
   collapse into one column.
 
-Each monitor has a number, `1`..`0`, ordered by id. The number keys act on that
+Each monitor has a number, `1`..`0`, in an order **pinned** by
+`hypr-monitor-order` (script or a hand-edited `~/.local/share/hypr/monitor-order`)
+rather than by Hyprland's connector ids, which reshuffle on redock. Monitors no
+one has pinned yet follow in id order. A screen's line can also carry
+`transform=1..3` — orientation for a panel mounted portrait — which
+`monitors.lua` applies; the same script asks for it, and then for the row's
+direction — monitor 1 on the left (the default `ltr`), on the right (`rtl`),
+or the screens stacked top-to-bottom (`ttb`). The number keys act on that
 screen — or on your own desktops when you are already on it:
 
 |                    | another screen        | the one you are on              |

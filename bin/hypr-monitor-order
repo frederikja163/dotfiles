@@ -1,0 +1,264 @@
+#!/usr/bin/env bash
+# Pin the monitor order: which physical screen gets the number keys 1..0 and the
+# desktop names 1.x, 2.x, ...
+#
+# Hyprland assigns a monitor id by connector enumeration and reshuffles it on
+# redock (DP-4 came back as DP-5), so the number a key reaches cannot be
+# anything Hyprland remembers. It has to be remembered by the screen itself, so
+# this writes one monitor identity per line into
+# $XDG_DATA_HOME/hypr/monitor-order and deskbinds.lua reads that back. The
+# identity is the screen's description when it has one -- descriptions carry the
+# serial and survive redocks -- and its connector name otherwise, exactly the
+# rule deskbinds.lua applies.
+#
+# The same lines carry the screen's orientation: "transform=1" stands the panel
+# up after it was physically turned. The script asks for both at once --
+# interaction for the order, a keypress for each screen's mounting -- and
+# monitors.lua applies the transform at the next reload. A screen that was not
+# turned keeps whatever it already had, so re-pinning an unchanged order does
+# not reset anyone's orientation.
+#
+# A comment in the file sets the direction of the row monitors.lua lays the
+# screens into -- "# layout = ltr|rtl|ttb", monitor 1 on the left / on the
+# right / on top. The script asks at the end, Enter keeping the current one.
+#
+# Interaction: one window per screen opens, each showing a big letter. Click on
+# the screens one by one in the order the number keys should follow and press
+# Enter in each window; each window records itself and closes. The letters are
+# assigned in Hyprland's current id order only so the windows are distinct --
+# because you are clicking the screens themselves, which letter is which never
+# has to be known. The first clicked becomes monitor 1.
+#
+# The file is machine-local state, not part of the dotfiles, so every computer
+# pins its own screens. Re-run whenever the wiring changes, and hand-edit the
+# file if you prefer that. Screens that were pinned before but are not plugged
+# in right now are kept at the end: dropping them would renumber anything on a
+# machine where the whole set is not connected at once. Hyprland is reloaded at
+# the end, which is what hands the new order to deskbinds.lua and the new
+# orientation to monitors.lua.
+set -uo pipefail
+
+PIN="${HYPR_MONITOR_ORDER:-${XDG_DATA_HOME:-$HOME/.local/share}/hypr/monitor-order}"
+STATE="${XDG_RUNTIME_DIR:-/tmp}/monitor-order-pick"
+TITLE="monitor-order-pick"
+
+[ -x "$(command -v kitty)" ] || {
+    printf 'monitor-order: kitty is needed to show the labels\n' >&2
+    exit 1
+}
+
+rm -rf "$STATE"
+mkdir -p "$(dirname "$PIN")" "$STATE"
+
+# Close whatever label windows are still open. Each closes itself once a key is
+# pressed in it, so this only ever acts on a timeout or abort.
+cleanup() {
+    rm -rf "$STATE"
+    local addrs a
+    addrs="$(hyprctl clients -j 2>/dev/null | python3 -c '
+import json, sys
+try:
+    clients = json.load(sys.stdin)
+except Exception:
+    clients = []
+for c in clients:
+    if "monitor-order-pick" in (c.get("title", "") or ""):
+        print(c.get("address", ""))
+')"
+    while IFS= read -r a; do
+        [ -n "$a" ] && hyprctl dispatch closewindow "address:$a" >/dev/null
+    done <<< "$addrs"
+}
+trap cleanup EXIT
+
+monitors="$(hyprctl monitors -j 2>/dev/null)" || monitors=""
+if [ -z "$monitors" ]; then
+    printf 'monitor-order: no compositor or no monitors\n' >&2
+    exit 1
+fi
+
+# Current screens as "LETTER<TAB>name<TAB>identity<TAB>label-w<TAB>label-h".
+# The label window is a big letter, sized in logical pixels (the width/height
+# Hyprland reports are physical; divide by the scale). Sizes are plain numbers
+# on purpose: "size 20% 15%" is mis-sized by this Hyprland build on a scaled
+# monitor (a 220x105 request came back 2546x1386), while explicit pixels land
+# exactly where asked. Verified in tests/sandbox.sh.
+map="$(printf '%s' "$monitors" | python3 -c '
+import json, sys
+mons = json.load(sys.stdin)
+mons.sort(key=lambda m: m["id"])
+if len(mons) > 26:
+    sys.exit(1)
+for i, m in enumerate(mons):
+    ident = m.get("description") or m.get("name")
+    scale = m.get("scale") or 1
+    w = max(120, int(m["width"] / scale * 0.20))
+    h = max(80, int(m["height"] / scale * 0.15))
+    print("%s\t%s\t%s\t%d\t%d" % (chr(ord("A") + i), m["name"], ident, w, h))
+')" || {
+    printf 'monitor-order: more than 26 monitors to label\n' >&2
+    exit 1
+}
+
+declare -A ident_of name_of
+count=0
+while IFS=$'\t' read -r letter name ident w h; do
+    [ -z "$letter" ] && continue
+    ident_of[$letter]=$ident
+    name_of[$letter]=$name
+    hyprctl dispatch "hl.dsp.exec_cmd(\"[float; center; size $w $h; monitor $name] kitty --title $TITLE-$letter -o font_size=80 sh -c 'echo $letter; read x; echo $letter >> $STATE/picked'\")" \
+        >/dev/null || {
+        printf 'monitor-order: could not open label windows\n' >&2
+        exit 1
+        }
+    count=$((count + 1))
+done <<< "$map"
+
+printf 'Click each screen in the order you want, pressing Enter in its window.\n'
+printf '%d to do; press Enter in the last one to finish.\n' "$count"
+
+deadline=$(( $(date +%s) + 120 ))
+while true; do
+    got=0
+    [ -f "$STATE/picked" ] && got="$(wc -l < "$STATE/picked")"
+    [ "$got" -ge "$count" ] && break
+    if [ "$(date +%s)" -gt "$deadline" ]; then
+        printf 'monitor-order: timed out waiting for picks\n' >&2
+        exit 1
+    fi
+    sleep 0.2
+done
+
+order=()
+while IFS= read -r letter; do
+    [ -z "$letter" ] && continue
+    [ -n "${ident_of[$letter]:-}" ] || {
+        printf 'monitor-order: unrecognised pick %q\n' "$letter" >&2
+        exit 1
+    }
+    order+=("${ident_of[$letter]}")
+done < "$STATE/picked"
+
+# Remembers what used to be pinned, so a screen that is not connected right now
+# keeps its place and its settings, and so the orientation questions can default
+# to what each screen already had.
+old_pin=()
+if [ -f "$PIN" ]; then
+    while IFS= read -r line; do
+        old_pin+=("$line")
+    done < "$PIN"
+fi
+
+# The transform a pinned line currently asks for: 0 if it has none.
+current_transform() {
+    local ident="$1" id tr
+    for line in "${old_pin[@]}"; do
+        line="${line%%#*}"
+        id="$(printf '%s' "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+        [ -n "$id" ] || continue
+        if [[ "$id" == *" transform="* ]]; then
+            tr="${id##* transform=}"
+            tr="${tr%%[^0-9]*}"
+            id="${id%% transform=*}"
+        else
+            tr=0
+        fi
+        if [ "$id" = "$ident" ]; then
+            printf '%s' "$tr"
+            return
+        fi
+    done
+    printf '0'
+}
+
+# Orientation: turning a physical monitor tells the compositor nothing, so the
+# panel's mounting is asked for here and written onto its line. [1]=90 (a
+# landscape panel standing up), [2]=180, [3]=270, [0]=normal; Enter keeps
+# whatever the screen already had.
+printf 'Orientation: for each screen, tell how its panel is mounted.\n'
+printf '[0]=normal [1]=90 [2]=180 [3]=270, Enter keeps the current one.\n'
+lines=()
+for ((i=0; i<${#order[@]}; i++)); do
+    ident="${order[$i]}"
+    keep="$(current_transform "$ident")"
+    sel=
+    while :; do
+        printf '  %d) %s  [0 1 2 3 | Enter=%s]: ' "$((i+1))" "$ident" "$keep"
+        IFS= read -r -n1 c
+        printf '\n'
+        case "$c" in
+            0|1|2|3)
+                sel="$c"
+                break
+                ;;
+            "")
+                sel="$keep"
+                break
+                ;;
+            *)
+                printf '     (choose 0, 1, 2 or 3, or press Enter)\n' ;;
+        esac
+    done
+    if [ "$sel" = "0" ]; then
+        lines+=("$ident")
+    else
+        lines+=("$ident transform=$sel")
+    fi
+done
+
+# Direction of the row monitors.lua lays the screens into. A "# layout =" line
+# in the file sets it; Enter keeps the current one.
+layout="$(sed -n 's/^# layout = *//p' "$PIN" 2>/dev/null | tail -1)"
+layout="${layout:-ltr}"
+printf 'Row direction for the screens:\n'
+printf '[l]eft-to-right (monitor 1 on the left), [r]ight-to-left, [t]op-to-bottom; Enter keeps %s.\n' "$layout"
+while :; do
+    IFS= read -r -n1 c
+    printf '\n'
+    c="${c,,}"
+    case "$c" in
+        l) layout=ltr; break ;;
+        r) layout=rtl; break ;;
+        t) layout=ttb; break ;;
+        "")
+            break
+            ;;
+        *)
+            printf '     (choose l, r or t, or press Enter)\n' ;;
+    esac
+done
+
+# Keep screens that used to be pinned but are not connected right now,
+# appended at the end, with whatever settings their line carried.
+declare -A in_new
+for ident in "${order[@]}"; do in_new[$ident]=1; done
+for line in "${old_pin[@]}"; do
+    id="${line%%#*}"
+    id="$(printf '%s' "$id" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+    id="${id%% transform=*}"
+    [ -n "$id" ] || continue
+    if [ -z "${in_new[$id]+x}" ]; then
+        lines+=("${line%%#*}")
+        in_new[$id]=1
+    fi
+done
+
+{
+    printf '# Monitor order: one screen per line, monitor 1 first.\n'
+    printf '# Each line is a screen identity; a trailing "transform=N" (0-3) turns it.\n'
+    printf '# Sets the number keys and the desktop names; see deskbinds.lua.\n'
+    printf '# Orientation is applied by monitors.lua.\n'
+    printf '# A "# layout = ltr|rtl|ttb" line sets the row direction:\n'
+    printf '#   ltr = monitor 1 on the left, rtl = on the right, ttb = on top.\n'
+    printf '# Regenerate with: hypr-monitor-order\n'
+    printf '# layout = %s\n' "$layout"
+    for line in "${lines[@]}"; do
+        printf '%s\n' "$line"
+    done
+} > "$PIN.tmp"
+mv "$PIN.tmp" "$PIN"
+
+hyprctl reload >/dev/null 2>&1
+
+printf 'monitor order: 1 = %s\n' "${order[0]}"
+notify-send "Monitor order" "1 = ${order[0]}" 2>/dev/null

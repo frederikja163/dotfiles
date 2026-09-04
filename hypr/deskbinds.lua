@@ -1,7 +1,11 @@
 -- Monitor and desktop keybinds (roadmap.md lines 36-44).
 --
--- Every monitor gets a number, 1..0, ordered by monitor id. The number keys
--- are overloaded on whether the target monitor is the focused one:
+-- Every monitor gets a number, 1..0, in the order pinned by
+-- bin/hypr-monitor-order -- never in physical or connector order, which
+-- Hyprland's monitor ids reflect only by chance and reshuffle on every redock
+-- (DP-4 came back as DP-5). Monitors that have never been pinned trail the
+-- pinned ones, in id order; see the pin loading below. The number keys are
+-- overloaded on whether the target monitor is the focused one:
 --
 --   #n = a monitor that is NOT focused        #f = the focused monitor
 --
@@ -18,9 +22,11 @@
 
 local programs = require("programs")
 local columns = require("columns")
+local monitorpin = require("monitorpin")
 local mainMod = programs.mainMod
 
--- Monitors we have set to mirror another one: [name] = { id = n, source = name }
+-- Monitors we have set to mirror another one:
+-- [name] = { id = n, source = name, pin = n|nil }
 --
 -- This bookkeeping is necessary because a mirroring monitor disappears from
 -- hl.get_monitors() entirely -- hl.get_monitor(name) returns nil for it too, so
@@ -36,42 +42,80 @@ local mirrored = {}
 -- and plugging it back in does not send them home again, so they pile up on one
 -- screen. Remembering where each one came from lets them be put back.
 --
--- Keyed on the monitor description, not its name: a screen comes back under a
--- different connector (DP-4 became DP-5 after a redock, HEADLESS-1 came back as
--- HEADLESS-2), so a name is worthless for recognising it again. Descriptions
--- are stable and include the serial: "Dell Inc. DELL P3424WE DVYH6T3".
+-- The identity is defined once, in monitorpin.lua: description when there is
+-- one (a screen comes back under a different connector, DP-4 became DP-5 after
+-- a redock, HEADLESS-1 came back as HEADLESS-2, so a name is worthless for
+-- recognising it again -- descriptions are stable and carry the serial,
+-- "Dell Inc. DELL P3424WE DVYH6T3"), name otherwise.
 local function identity(mon)
-    if not mon then
-        return nil
+    return monitorpin.identity(mon)
+end
+
+-- The pinned monitor order, loaded once at config time.
+--
+-- bin/hypr-monitor-order writes one monitor identity per line into a plain
+-- text file and reloads Hyprland; hand-editing the file works too. The file is
+-- machine-local state (~/.local/share/hypr/monitor-order), not part of the
+-- dotfiles, so each computer pins its own screens. monitorpin.lua owns both the
+-- path and the parsing, including the per-screen transform= field; the slot
+-- order here is all deskbinds needs from it.
+--
+-- The position in the file is the slot number, absolutely: line N is monitor N.
+-- A pinned screen that is currently unplugged simply leaves its number unused
+-- until it comes back, and a screen no one has pinned yet joins at the end in
+-- id order, so a new monitor is usable the moment it is plugged in.
+local pin_slot = {}
+do
+    for i, entry in ipairs(monitorpin.load()) do
+        pin_slot[entry.identity] = i
     end
-    local d = mon.description
-    if type(d) == "string" and d ~= "" then
-        return d
-    end
-    return mon.name -- headless outputs have no description
 end
 
 local home = {}
 
--- Monitor slots in a stable order, one per number key. Mirroring monitors are
--- spliced back in by id so the numbers of the others do not shift.
+-- Monitor slots in a stable order, one per number key. Pinned monitors lead,
+-- in file order; everything else trails, in id order. Mirroring monitors are
+-- spliced back in at their pinned slot so the numbers of the others do not
+-- shift.
 --
--- A slot is { name, id, monitor = HL.Monitor|nil, source = name|nil }, where
--- monitor is nil exactly when the slot is currently mirroring (source is set).
+-- A slot is { name, id, pin, monitor = HL.Monitor|nil, source = name|nil },
+-- where monitor is nil exactly when the slot is currently mirroring (source is
+-- set) and pin is the monitor's pinned slot number, or nil for unpinned ones.
 local function monitor_slots()
     local slots = {}
 
     for _, m in ipairs(hl.get_monitors() or {}) do
-        table.insert(slots, { name = m.name, id = m.id, monitor = m })
+        table.insert(slots, {
+            name = m.name,
+            id = m.id,
+            pin = pin_slot[identity(m)],
+            monitor = m,
+        })
         -- It is live again, so any stale mirror note is wrong.
         mirrored[m.name] = nil
     end
 
     for name, info in pairs(mirrored) do
-        table.insert(slots, { name = name, id = info.id, source = info.source })
+        table.insert(slots, {
+            name = name,
+            id = info.id,
+            pin = info.pin,
+            source = info.source,
+        })
     end
 
-    table.sort(slots, function(a, b) return a.id < b.id end)
+    table.sort(slots, function(a, b)
+        if a.pin and b.pin then
+            return a.pin < b.pin
+        end
+        if a.pin then
+            return true
+        end
+        if b.pin then
+            return false
+        end
+        return a.id < b.id
+    end)
     return slots
 end
 
@@ -362,8 +406,9 @@ local function toggle_mirror(slot, focused)
         })
         if ok then
             -- Remember it: from here on Hyprland will not report this monitor
-            -- at all, so this table is the only record that it exists.
-            mirrored[slot.name] = { id = slot.id, source = focused.name }
+            -- at all, so this table is the only record that it exists. The pin
+            -- keeps its slot number while it is hidden.
+            mirrored[slot.name] = { id = slot.id, source = focused.name, pin = slot.pin }
             reload_waybar()
         end
     end
