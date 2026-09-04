@@ -32,8 +32,9 @@ local CLASS = "quake"
 -- terminal at its default size, with no error anywhere. monitor_w/monitor_h and
 -- arithmetic do work, and are the same expression syntax as the move rule in
 -- windowrules.lua.
-local SIZE = "monitor_w monitor_h*0.4"
-local MOVE = "0 0"
+local HEIGHT = 0.4
+local SIZE   = ("monitor_w monitor_h*%s"):format(HEIGHT)
+local MOVE   = "0 0"
 
 hl.window_rule({
     name  = "quake-terminal",
@@ -116,6 +117,36 @@ local function focus_terminal(desktop_id)
     if win and win.address then
         hl.dispatch(hl.dsp.focus({ window = "address:" .. win.address }))
     end
+end
+
+-- Give the terminal the shape of the monitor it is being shown on.
+--
+-- The size rule above runs once, when the window is created, and a floating
+-- window keeps its pixel size when it moves between monitors -- so a terminal
+-- made on the ultrawide arrives on the laptop panel still 3440 wide. A desktop
+-- can move between monitors and its terminal goes with it, so the size has to
+-- be worked out again every time it comes down, not just once.
+--
+-- Sizes and positions are in layout coordinates: the monitor's own pixels
+-- divided by its scale, which is 1 on one of these screens and 1.5 on the
+-- other. Both dispatchers take {x=, y=}; resize keeps the window centred, so
+-- the move has to follow it rather than lead.
+local function fit(desktop_id)
+    local win = terminal_window(desktop_id)
+    local mon = hl.get_active_monitor()
+    if not win or not win.address or not mon then
+        return
+    end
+
+    local target = "address:" .. win.address
+    local scale  = mon.scale or 1
+
+    hl.dispatch(hl.dsp.window.resize({
+        window = target,
+        x = math.floor(mon.width / scale),
+        y = math.floor(mon.height / scale * HEIGHT),
+    }))
+    hl.dispatch(hl.dsp.window.move({ window = target, x = mon.x, y = mon.y }))
 end
 
 -- What each desktop is called on the bar: [desktop id] = directory name, or nil
@@ -297,6 +328,7 @@ local function sync()
         end
         if down[ws.id] then
             toggle_special(workspace_for(ws.id))
+            fit(ws.id)
         end
 
         current = ws.id
@@ -342,7 +374,8 @@ local function toggle()
         toggle_special(mine)
         down[ws.id] = true
         -- On the very first press the window does not exist yet; opened()
-        -- focuses it when it turns up.
+        -- focuses and fits it when it turns up.
+        fit(ws.id)
         focus_terminal(ws.id)
     end
 end
@@ -368,6 +401,7 @@ local function opened(win)
         -- moved away from must not steal the keyboard.
         starting[id] = nil
         if showing() == workspace_for(id) and win.address then
+            fit(id)
             hl.dispatch(hl.dsp.focus({ window = "address:" .. win.address }))
         end
         relabel(id) -- name the desktop after wherever it starts up

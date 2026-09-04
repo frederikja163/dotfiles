@@ -8,7 +8,7 @@
 local HYPR = os.getenv("HYPR_DIR") or "hypr"
 package.path = HYPR .. "/?.lua;" .. package.path
 
-local execs, rules, moved, events, world, mod
+local execs, rules, moved, events, world, mod, resizes, geometry
 
 -- The special workspace on the focused monitor, as a bare name, or nil.
 local function special_name()
@@ -16,9 +16,13 @@ local function special_name()
 end
 
 local function reset()
-    execs, rules, moved, events = {}, {}, {}, {}
+    execs, rules, moved, events, resizes, geometry = {}, {}, {}, {}, {}, {}
 
     world = {
+        -- The laptop panel: 1920x1200 at scale 1.5, so 1280x800 in the layout
+        -- coordinates that sizes and positions are expressed in.
+        monitor = { name = "eDP-1", width = 1920, height = 1200, scale = 1.5,
+                    x = 3440, y = 0 },
         desktop = { id = 1, name = "1.1", special = false },
         special = nil,   -- bare name, e.g. "quake-1"
         windows = {},
@@ -75,7 +79,10 @@ local function reset()
         window_rule = function(spec) table.insert(rules, spec) end,
         get_windows = function() return world.windows end,
         get_active_monitor = function()
-            return { name = "eDP-1", active_workspace = world.desktop }
+            local m = {}
+            for k, v in pairs(world.monitor) do m[k] = v end
+            m.active_workspace = world.desktop
+            return m
         end,
         get_active_special_workspace = function()
             return world.special and { name = "special:" .. world.special } or nil
@@ -107,9 +114,16 @@ local function reset()
             layout = function(m) return { kind = "layout", apply = function() end } end,
             window = {
                 swap = function(a) return { kind = "swap", apply = function() end } end,
+                resize = function(a)
+                    return { kind = "resize", arg = a, apply = function()
+                        table.insert(resizes, a)
+                    end }
+                end,
                 move = function(a)
                     return { kind = "move", arg = a, apply = function()
-                        table.insert(moved, a)
+                        -- move does two jobs: to a workspace, and to a
+                        -- position. Keep them apart so each can be asserted.
+                        table.insert(a.workspace and moved or geometry, a)
                     end }
                 end,
             },
@@ -253,6 +267,29 @@ check("the terminal's directory, in full", mod.directory(),
 check("while the name is only the last part", mod.label_for(1), "runner")
 switch_to(2)
 check("and it is per desktop", mod.directory(), nil)
+
+-- The size rule only runs when the window is created, and a floating window
+-- keeps its pixels across a move, so a terminal that follows its desktop to
+-- another monitor arrives the wrong size unless it is refitted on the way up.
+print("scenario: the terminal takes the shape of the monitor showing it")
+reset()
+mod.toggle()
+check("full width of the monitor, in layout pixels", resizes[1] and resizes[1].x, 1280)
+check("40% of its height", resizes[1] and resizes[1].y, 320)
+check("moved to that monitor's origin", geometry[1] and geometry[1].x, 3440)
+check("...and its top edge", geometry[1] and geometry[1].y, 0)
+
+print("scenario: shown again on a monitor of another size")
+reset()
+mod.toggle()                         -- on the laptop panel
+mod.toggle()                         -- away
+world.monitor = { name = "DP-5", width = 3440, height = 1440, scale = 1,
+                  x = 0, y = 0 }
+mod.toggle()                         -- back, on the ultrawide now
+local last_size, last_pos = resizes[#resizes], geometry[#geometry]
+check("refitted to the wider monitor", last_size and last_size.x, 3440)
+check("...and its height", last_size and last_size.y, 576)
+check("and put at its origin", last_pos and last_pos.x, 0)
 
 print("scenario: the terminal is closed by hand")
 reset()

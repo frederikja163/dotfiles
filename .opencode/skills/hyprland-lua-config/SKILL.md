@@ -58,6 +58,13 @@ These cost hours each. All verified against Hyprland 0.56.2.
   `-1337`, and those sort ahead of every ordinary desktop, silently
   reordering them. `name:` also *goes to* an existing workspace of that name
   rather than creating a second. Prefer creating by id and renaming.
+- **A `size` window rule applies once, at creation.** A floating window keeps
+  its pixels when it moves to another monitor, so anything meant to match the
+  screen has to be re-applied when it gets there. Geometry dispatchers both
+  take `{x =, y =}` — `window.resize{ window = "address:…", x = w, y = h }`
+  sets an exact size and keeps the window centred, so `window.move{ window =
+  …, x =, y = }` has to follow it. Both are in layout coordinates: the
+  monitor's own pixels divided by its `scale`.
 - **`hl.exec_cmd` does not run a shell.** Hyprland splits the arguments
   itself, quotes included, so `cmd 'a b'` arrives as one argument `a b` — but
   `>`, `&&` and `|` are not interpreted.
