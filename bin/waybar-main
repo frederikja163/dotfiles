@@ -1,20 +1,13 @@
 #!/usr/bin/env bash
-# Run waybar on every monitor: the full bar on the main one, and a bar carrying
-# nothing but the workspaces on each of the others.
-#
-# "Main" is simply the largest monitor by pixel area. That is deterministic,
-# needs no configuration, and does not depend on connector names, which differ
-# between machines and even between plug-ins (DP-4 became DP-5 after a redock).
+# Run waybar on every monitor, the same full bar on each.
 #
 # waybar has no command line option for the output -- only -b/--bar to pick a
 # bar by name -- so the monitor has to come from the config. A config may hold a
-# list of bars, so this writes a copy holding two, each with its "output" filled
-# in, and runs waybar against that. waybar/config.jsonc itself stays a single
-# machine independent bar, and the second one is derived from it, so the modules
-# never have to be described twice.
-#
-# The workspace module is left to its default of showing only the workspaces of
-# the output it is on, which is what makes one config work for every monitor.
+# list of bars, so this writes a copy holding one full bar per monitor, each
+# with its "output" set to that monitor, and runs waybar against that.
+# waybar/config.jsonc itself stays a single machine independent bar, and the
+# per-monitor copies are derived from it, so the modules never have to be
+# described twice.
 #
 # If the monitors cannot be worked out, waybar runs against the config as-is,
 # which puts the full bar on every monitor: worse, but never no bar at all.
@@ -62,25 +55,16 @@ monitors = json.loads(monitors_raw)
 if not monitors:
     sys.exit(1)
 
-# Largest by pixel area is the main one; everything else gets the short bar.
-monitors.sort(key=lambda m: m["width"] * m["height"], reverse=True)
-main, rest = monitors[0], monitors[1:]
-
-full = dict(config)
-full["name"] = "main"
-full["output"] = main["name"]
-bars = [full]
-
-# Only when there is somewhere to put it. An empty "output" is not the same as
-# no bar: waybar reads it as "no restriction" and puts the bar on every monitor.
-if rest:
-    short = dict(config)
-    short["name"] = "secondary"
-    short["output"] = [m["name"] for m in rest]
-    short["modules-left"] = ["hyprland/workspaces"]
-    short["modules-center"] = []
-    short["modules-right"] = []
-    bars.append(short)
+# Every monitor gets the same full bar. Each bar is pinned to one output so
+# waybar puts a copy on each screen rather than one bar spanning all of them;
+# a bar with an empty "output" would land on every monitor anyway, but spelling
+# them out keeps each bar on the monitor it is drawn for.
+bars = []
+for m in monitors:
+    bar = dict(config)
+    bar["name"] = m["name"]
+    bar["output"] = m["name"]
+    bars.append(bar)
 
 json.dump(bars, open(dst, "w"), indent=2)
 PY
