@@ -23,6 +23,36 @@ if [ ${#pkgs[@]} -gt 0 ]; then
   sudo pacman -S --needed "${pkgs[@]}"
 fi
 
+# --- AUR signing keys ------------------------------------------------------
+#
+# Some AUR PKGBUILDs declare a validpgpkeys fingerprint without the key being
+# importable from the usual keyservers, which stalls yay at "PGP keys need
+# importing". The key is not on the public keyservers at all — not even on a
+# healthy one — so this is not a transient outage; a fresh system runs into
+# the same wall. List them here as "keyid url" and the key is imported from
+# the project's own server, after confirming the fingerprint matches.
+aur_keys=(
+  "224FA88A5A19A03B06827A1BF60CE2127D6BBBDE https://update.tasks.org/keys.asc"  # tasks-bin
+)
+for aur_key in "${aur_keys[@]}"; do
+  read -r keyid url <<< "$aur_key"
+  if gpg --list-keys "$keyid" >/dev/null 2>&1; then
+    continue
+  fi
+  tmp="$(mktemp)"
+  if curl -fsSL "$url" -o "$tmp"; then
+    if [ "$(gpg --show-keys "$tmp" 2>/dev/null | sed -n '/^pub/{n;p;}' | tr -d ' ')" = "$keyid" ]; then
+      echo "==> importing PGP key $keyid"
+      gpg --import "$tmp"
+    else
+      echo "!! key file from $url does not match $keyid, skipping" >&2
+    fi
+  else
+    echo "!! could not fetch key from $url" >&2
+  fi
+  rm -f "$tmp"
+done
+
 # --- AUR -------------------------------------------------------------------
 
 mapfile -t aur < <(read_list "$DOTFILES/packages/aur.txt")
