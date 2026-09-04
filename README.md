@@ -6,6 +6,21 @@ into place, so editing a file here edits the live system.
 This is an index. The reasoning lives in the files themselves, at the top of
 each one.
 
+## Quick start
+
+On a fresh EndeavourOS install, paste this into a terminal. It will generate an
+SSH key, open GitHub so you can add it, clone the repo, and install everything:
+
+```sh
+bash <(curl -fsSL https://raw.githubusercontent.com/frederikja163/dotfiles/main/setup.sh)
+```
+
+To inspect the script first:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/frederikja163/dotfiles/main/setup.sh | less
+```
+
 ## What is where
 
 | In repo    | Links to                      | Contents                             |
