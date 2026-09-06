@@ -35,7 +35,10 @@ hl.bind(mainMod .. " + Q", function()
 
     hl.dispatch(hl.dsp.exec_cmd(command))
 end, { description = "App: terminal (where this desktop is)" })
-local closeWindowBind = hl.bind(mainMod .. " + C", hl.dsp.window.close(), { description = "Window: close" })
+local closeWindowBind = hl.bind(mainMod .. " + C", hl.dsp.window.close(), { description = "Window: close (polite)" })
+hl.bind(mainMod .. " + SHIFT + C", function()
+    hl.dispatch(hl.dsp.exec_cmd("kill -9 $(hyprctl activewindow | awk '/^\tpid:/ { print $2 }')"))
+end, { description = "Window: force kill (abrupt)" })
 -- closeWindowBind:set_enabled(false)
 -- M+M is "swap with the biggest window", see columns.lua. Exiting Hyprland is
 -- handled by the power menu on M+Escape, which asks for confirmation.

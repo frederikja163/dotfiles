@@ -13,6 +13,12 @@
 --   M+S + #n  move window to that monitor    M+S + #f  move window to next desktop
 --   M+C + #n  toggle mirror with focused     M+C + #f  new desktop, focused
 --
+-- On a #f monitor with only one desktop, M+S+#f makes a second desktop and
+-- takes the window onto it (the plain M+#f key makes one in that situation but
+-- has nothing to move). Likewise M+C+#f always mints a fresh desktop, so
+-- M+C+S+#f moves the window onto a fresh one; on a #n monitor M+C+S moves the
+-- whole desktop across, below.
+--
 -- "desktop" is a Hyprland workspace. Empty non-persistent workspaces are
 -- cleaned up by Hyprland automatically, so nothing here has to remove them.
 --
@@ -314,7 +320,10 @@ end
 -- Hyprland numbers named workspaces from -1337 downwards, and those negative
 -- ids sort ahead of every ordinary desktop, so a new desktop would insert
 -- itself before the ones already there and quietly renumber them.
-local function new_desktop_here()
+-- Create a new desktop on the focused monitor and return its id. The caller may
+-- then move the focused window onto it, so a move-and-make-a-desktop key does
+-- not have to create it twice.
+local function create_new_desktop_here()
     local id = unused_desktop_id()
     hl.dispatch(hl.dsp.focus({ workspace = id }))
 
@@ -324,12 +333,33 @@ local function new_desktop_here()
     end
 
     schedule_renumber()
+    return id
+end
+
+local function new_desktop_here()
+    create_new_desktop_here()
 end
 
 local function move_window_to(ws)
     if ws then
         hl.dispatch(hl.dsp.window.move({ workspace = ws.id }))
     end
+end
+
+-- Move the focused window onto a brand-new desktop and name it there.
+--
+-- Creating a desktop means focusing it, which hands the active view over to an
+-- empty desktop, so hl.get_active_window() would answer with nothing (or the
+-- wrong window) afterwards. The address has to be captured before the desktop
+-- exists; the move then targets that window explicitly.
+local function move_focused_window_to_new_desktop()
+    local win = hl.get_active_window()
+    if not (win and win.address) then
+        return
+    end
+
+    local id = create_new_desktop_here()
+    hl.dispatch(hl.dsp.window.move({ workspace = id, window = "address:" .. win.address }))
 end
 
 -- Waybar builds one bar per output, keyed by monitor name, and its workspace
@@ -457,11 +487,18 @@ for n = 1, 10 do
         end
 
         if is_focused(slot) then
-            move_window_to(next_desktop(slot.monitor))
+            -- Only one desktop here, so there is nothing to move to; the plain
+            -- M+n key makes a second one in this case, so move the window onto
+            -- a freshly made desktop to match.
+            if #desktops_on(slot.monitor) < 2 then
+                move_focused_window_to_new_desktop()
+            else
+                move_window_to(next_desktop(slot.monitor))
+            end
         else
             move_window_to(slot.monitor.active_workspace)
         end
-    end, { description = "Screen " .. n .. ": move window there" })
+    end, { description = "Screen " .. n .. ": move window there, or to a new desktop if only one" })
 
     hl.bind(mainMod .. " + CTRL + " .. key, function()
         local slot = monitor_for(n)
@@ -485,8 +522,15 @@ for n = 1, 10 do
     -- desktop belongs, so it stays there after a replug.
     hl.bind(mainMod .. " + CTRL + SHIFT + " .. key, function()
         local slot = monitor_for(n)
-        if not slot or not slot.monitor or is_focused(slot) then
-            return -- no such screen, it is duplicating, or it is already here
+        if not slot or not slot.monitor then
+            return
+        end
+
+        -- M+C+n always makes a brand-new desktop here, so its SHIFT twin moves
+        -- the focused window onto one as well.
+        if is_focused(slot) then
+            move_focused_window_to_new_desktop()
+            return
         end
 
         local mon = hl.get_active_monitor()

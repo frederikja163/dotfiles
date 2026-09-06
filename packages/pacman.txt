@@ -11,6 +11,8 @@ linux-headers       # required to build out-of-tree / DKMS modules
 lua                 # runs tests/run.sh
 python              # parses hyprctl -j in bin/waybar-main and bin/hypr-monitor-order
 dotnet-sdk
+aspnet-runtime
+bun
 
 # shell
 zsh

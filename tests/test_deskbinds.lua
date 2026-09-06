@@ -64,10 +64,18 @@ local function reset(w)
                 if m.id == world.focused_monitor_id then return m end
             end
         end,
+        get_active_window = function() return world.active_window end,
         dsp = {
             layout = function(m) return { kind = "layout", arg = m } end,
             no_op = function() return { kind = "no_op" } end,
             focus = function(a)
+                -- Focusing a fresh, empty desktop switches the active view over
+                -- to it, so Hyprland reports no active window afterwards.
+                -- (get_active_window() also takes a window named in the call,
+                -- which must not clear it -- see the move test below.)
+                if not a.window then
+                    world.active_window = nil
+                end
                 -- Focusing an id that does not exist creates that desktop, on
                 -- the focused monitor, exactly as Hyprland does.
                 if type(a.workspace) == "number" then
@@ -123,6 +131,7 @@ local function two_monitors(focused)
         monitors = { mon0, mon1 },
         workspaces = { ws1, ws2, ws3, wsS },
         focused_monitor_id = focused,
+        active_window = { address = "0xWIN1", stable_id = "win1", floating = false },
     }
 end
 
@@ -219,6 +228,38 @@ table.insert(q.workspaces, { id = 5, special = false, monitor = q.monitors[1] })
 reset(q)
 binds["SUPER + 2"].fn()
 check("skips occupied ids, picks 4", last_of("focus").arg.workspace, 4)
+
+print("scenario: M+S on a focused monitor with ONE desktop moves to a new one")
+local om = two_monitors(1) -- DP-4 focused, only ws3 lives there
+reset(om)
+binds["SUPER + SHIFT + 2"].fn()
+check("M+S+2 creates a fresh desktop", last_of("focus").arg.workspace, 4)
+check("...and moves the window onto it", last_of("move").arg.workspace, 4)
+check("using the move dispatcher", last_of("move").kind, "move")
+check("...addressed by window, not focus", last_of("move").arg.window, "address:0xWIN1")
+
+print("scenario: M+C+S on a focused monitor creates a desktop and moves to it")
+local oc = two_monitors(1)
+reset(oc)
+binds["SUPER + CTRL + SHIFT + 2"].fn()
+check("M+C+S+2 creates a fresh desktop", last_of("focus").arg.workspace, 4)
+check("...and moves the window onto it", last_of("move").arg.workspace, 4)
+check("...addressed by window, not focus", last_of("move").arg.window, "address:0xWIN1")
+
+print("scenario: M+C+S on a focused monitor with MULTIPLE desktops still makes a new one")
+local om2 = two_monitors(0) -- mon0 has ws1 + ws2
+reset(om2)
+binds["SUPER + CTRL + SHIFT + 1"].fn()
+check("M+C+S+1 creates a fresh desktop anyway", last_of("focus").arg.workspace, 4)
+check("...onto which the window moves", last_of("move").arg.workspace, 4)
+check("...addressed by window, not focus", last_of("move").arg.window, "address:0xWIN1")
+
+print("scenario: M+C+S on ANOTHER monitor still moves the whole desktop")
+local ow = two_monitors(0)
+reset(ow)
+binds["SUPER + CTRL + SHIFT + 2"].fn()
+check("moves the focused desktop to DP-4", moves[1] and moves[1].monitor, "DP-4")
+check("addressed by workspace id", moves[1] and moves[1].workspace, 1)
 
 print("scenario: duplicate then un-duplicate with the same key")
 local m = two_monitors(0)

@@ -4,6 +4,10 @@
 # Both are read when both exist, and ~/.gitconfig is read *last* and therefore
 # wins, so it must not be left lying around once this is linked.
 
+[core]
+	# nvim is the editor here (bob-managed, via PATH); the system default is vim.
+	editor = nvim
+
 [user]
 	name = FrederikIA
 	# GitHub's noreply address rather than a real inbox. It is already in the
