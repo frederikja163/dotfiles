@@ -39,6 +39,16 @@ hl.on("hyprland.start", function ()
     -- Idle timeouts: dim, lock, displays off, suspend (see hypridle.conf)
     hl.exec_cmd("hypridle")
 
+    -- Last session's desktops and windows (see bin/dotfiles-session-restore and
+    -- hypr/session.lua). A script rather than work done here: the monitor list
+    -- is still empty at this point, and creating a timer while the config loads
+    -- takes the compositor down. It waits for the screens and then hands back.
+    --
+    -- It must run even when there is nothing to restore, and even when restoring
+    -- is switched off: session.lua writes no session at all until this has told
+    -- it the restore is settled, one way or the other.
+    hl.exec_cmd("dotfiles-session-restore")
+
     -- Say if this repo is behind its remote (see bin/dotfiles-check-updates).
     -- It checks at once and then every 30 seconds until the fetch works, so
     -- unlike the rest of this list it can outlive the login by a long way: on a

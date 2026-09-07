@@ -25,6 +25,7 @@ set -uo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STATE="${XDG_RUNTIME_DIR:-/tmp}/hypr-sandbox.state"
+SESSION="${XDG_RUNTIME_DIR:-/tmp}/hypr-sandbox-session"
 WORKSPACE="special:sandbox"
 
 # Signature and pid of every Hyprland that is up, one "sig pid" per line.
@@ -62,7 +63,16 @@ start() {
     # put the window straight into the special workspace. Floating and fixed
     # size so it never re-tiles the columns of whatever desktop is in front.
     # The host config is lua, so its dispatch takes lua rather than a string.
-    hyprctl dispatch "hl.dsp.exec_cmd(\"[workspace $WORKSPACE silent; float; size 1100 700; move 60 60] env HYPR_SANDBOX=1 Hyprland -c $config\")" >/dev/null || {
+    # HYPR_SESSION points the nested instance's session file (hypr/session.lua)
+    # at a scratch path. Without it the sandbox writes down its own desktops and
+    # windows as *the* session, and the next real login puts the sandbox back.
+    # That happened. session.lua refuses to write the default path under
+    # HYPR_SANDBOX=1 as well, so this is the second of two locks.
+    #
+    # Note that the environment here is the host compositor's, not this shell's:
+    # the nested instance is started through the host's exec dispatcher, so
+    # exporting a variable before running this script does not reach it.
+    hyprctl dispatch "hl.dsp.exec_cmd(\"[workspace $WORKSPACE silent; float; size 1100 700; move 60 60] env HYPR_SANDBOX=1 HYPR_SESSION=$SESSION Hyprland -c $config\")" >/dev/null || {
         echo "sandbox: the host session would not start it" >&2
         return 1
     }

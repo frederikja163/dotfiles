@@ -78,6 +78,21 @@ echo "all good"
 # Dispatcher tables are not field-validated, so --verify-config accepts any
 # spelling here: only a running instance shows which one works.
 #
+# For the session restore: `[workspace <id> silent] cmd` through exec_cmd works
+# for an ordinary desktop and creates it if it is not there, while exec_raw
+# ignores the prefix entirely and hands the whole string to a shell (its
+# redirects are interpreted, its window never appears). exec_cmd itself runs no
+# shell, so a relaunch that has to `cd` first goes through `sh -c "..."`, whose
+# nested single quotes do survive the argument splitter. config.reloaded fires
+# at the first load as well, immediately before hyprland.start -- session.lua
+# relies on that order to tell a reload from a fresh start.
+#
+# And the one that cost a real file: the sandbox is started by the *host*
+# compositor's exec dispatcher, so it inherits the host's environment and not
+# the shell's. A nested instance therefore wrote its own two windows into the
+# real ~/.local/share/hypr/session. sandbox.sh now passes HYPR_SESSION and
+# session.lua refuses the default path when HYPR_SANDBOX=1.
+#
 # That parks it in a special workspace, which is outside the desktop model and
 # so cannot be reached or shown by accident. It never draws while it is hidden,
 # but it runs: use hyprctl and what the config writes out, not your eyes.

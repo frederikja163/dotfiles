@@ -74,9 +74,11 @@ dotfiles, and is named after whatever it drives instead.
 | `dotfiles-update`        | pull, then re-run the install scripts if the commits need it        |
 | `dotfiles-reload`        | apply the dotfiles live: hyprland, waybar, wallpaper, idling, dunst |
 | `dotfiles-monitor-order` | pin which screen is monitor 1, 2, ...; set orientation              |
+| `dotfiles-session-restore` | last login's desktops and windows back; `--off` to stop           |
 | `hypr-keybinds`          | the `SUPER + /` cheatsheet, generated from `hyprctl binds`          |
 | `ide`                    | `SUPER + I`: Rider if the directory holds a solution, else nvim     |
 | `power-menu`             | `SUPER + Escape`: lock, log out, reboot, shut down                  |
+| `proc-cwd`               | the working directory of each pid given                             |
 | `screenshot-region`      | `SUPER + S`: select a region, onto the clipboard                    |
 | `terminal-cwd`           | the working directory of a terminal's shell, given its pid          |
 | `waybar-main`            | starts waybar on every monitor, full bar on the largest             |
@@ -158,6 +160,26 @@ two differ.
 They also remember which screen they belong to, recognised by monitor
 *description* rather than connector name — `DP-4` came back as `DP-5` after a
 redock — and go home when it is plugged back in.
+
+## Across a restart
+
+`session.lua` writes the session down as it changes —
+`~/.local/share/hypr/session`, machine-local, one tab-separated record per
+line — and `dotfiles-session-restore` puts it back at the next login, started
+from `autostart.lua`. What comes back: the desktops, on the right screens,
+each with the quake terminal its name comes from, in the directory that shell
+was in; and one window per process, so kitty reopens in the right directory and
+Rider on the right solution.
+
+What cannot: scrollback, whatever command was running, editor buffers, and the
+column layout — the columns are rebuilt from the order the windows arrive in.
+A program that keeps one process for several windows (Firefox) is started once
+and left to restore its own windows.
+
+There is no session protocol on Wayland, so this is a snapshot and a relaunch,
+and a login that relaunches a dozen programs says so in a notification.
+`dotfiles-session-restore --off` stops it happening, `--on` again; the session
+is still written either way.
 
 ## Day to day
 

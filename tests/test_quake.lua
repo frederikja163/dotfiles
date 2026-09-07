@@ -430,6 +430,31 @@ switch_to(1)
 check("nothing is brought back for the new desktop", special_name(), nil)
 check("and no terminal was started for it", #execs, 1)
 
+-- session.lua starts these again after a restart, and has to say where the
+-- shell was: a quake terminal is otherwise born wherever the compositor was.
+print("scenario: a terminal put back by the session restore")
+reset()
+mod.spawn(2, "/home/fredandr/Projects/runner")
+check("started for that desktop, in that directory", execs[1],
+      "[workspace special:quake-2 silent] kitty --class quake "
+      .. "--directory '/home/fredandr/Projects/runner'")
+
+print("scenario: a directory with a quote in it")
+reset()
+mod.spawn(2, "/home/fredandr/it's")
+check("quoted for the argument splitter", execs[1],
+      "[workspace special:quake-2 silent] kitty --class quake "
+      .. "--directory '/home/fredandr/it'\\''s'")
+
+-- The restore is not meant to be run twice, but nothing stops it being
+-- dispatched by hand, and one terminal per desktop is the rule everywhere else.
+print("scenario: put back on a desktop that already has one")
+reset()
+mod.toggle()
+check("one terminal", #execs, 1)
+mod.spawn(1, "/home/fredandr")
+check("no second one", #execs, 1)
+
 print("scenario: closing a desktop that never had a terminal")
 reset()
 mod.closed(1)

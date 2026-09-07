@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# Put the last session back: the desktops that were open, on the screens they
+# were on, with their quake terminals and their windows. Started once per login
+# by hypr/autostart.lua; hypr/session.lua does the actual work and writes the
+# file this reads.
+#
+#   dotfiles-session-restore          restore, if there is anything to restore
+#   dotfiles-session-restore --off    stop restoring at login, from now on
+#   dotfiles-session-restore --on     start again
+#
+# This exists as a script, rather than as a hyprland.start hook, because the
+# work cannot be done from inside the config while it is loading: the monitor
+# list is still empty there, and creating a timer during config load segfaults
+# Hyprland outright. From out here it can wait for the compositor to settle and
+# then hand over.
+#
+# It always hands over, even when it is not restoring anything: session.lua
+# writes nothing until it has been told the restore is done or declined, so a
+# silent early exit here would mean no session was ever saved again. That is
+# also why the --off switch is honoured by telling the compositor to arm rather
+# than by returning.
+set -uo pipefail
+
+STATE="${XDG_DATA_HOME:-$HOME/.local/share}/hypr"
+OFF="$STATE/session.off"
+MARKER="$STATE/session.restored"
+
+# Deliberately not the session file itself. Which file that is belongs to
+# session.lua, which can be pointed elsewhere for a nested instance -- and it
+# already answers "nothing to restore" for a session that is not there, so
+# there is nothing to be gained here by looking and two paths to disagree.
+
+# Talking to the compositor at all is the one thing this cannot do without.
+if ! command -v hyprctl >/dev/null; then
+    echo "dotfiles-session-restore: no hyprctl on PATH" >&2
+    exit 1
+fi
+
+# The config is Lua, so `hyprctl dispatch` takes Lua rather than the old string
+# form. It insists on being handed a dispatcher, hence the no_op: the call
+# itself has already run by the time its result is looked at.
+dispatch_lua() {
+    hyprctl dispatch "(function() $1 end)() or hl.dsp.no_op()" >/dev/null
+}
+
+case "${1:-}" in
+    --off)
+        mkdir -p "$STATE" && : > "$OFF" || exit 1
+        echo "session restore off (remove $OFF, or --on, to undo)"
+        exit 0
+        ;;
+    --on)
+        rm -f "$OFF"
+        echo "session restore on"
+        exit 0
+        ;;
+    "") ;;
+    *)
+        echo "usage: dotfiles-session-restore [--off|--on]" >&2
+        exit 1
+        ;;
+esac
+
+# Never from inside a nested instance: it would relaunch the whole desktop
+# inside the sandbox, and its session.lua points at a scratch file anyway.
+if [ "${HYPR_SANDBOX:-}" = "1" ]; then
+    exit 0
+fi
+
+# Once per compositor, not once per boot and not once per config load. The
+# instance signature is unique to this run of Hyprland, so a `hyprctl reload`
+# does not restore a second time (session.lua arms itself in that case) while a
+# fresh session after a logout still does.
+signature="${HYPRLAND_INSTANCE_SIGNATURE:-}"
+if [ -z "$signature" ]; then
+    echo "dotfiles-session-restore: no HYPRLAND_INSTANCE_SIGNATURE" >&2
+    exit 1
+fi
+
+if [ "$(cat "$MARKER" 2>/dev/null)" = "$signature" ]; then
+    exit 0
+fi
+
+# Wait for the screens. Desktops are put back on the screen they belong to,
+# recognised by monitor description, and asking before the outputs are up would
+# pile the lot onto whatever exists first. Ten seconds, then give up and let it
+# happen anyway -- a wrong screen is recoverable, a session never restored is
+# just gone.
+for _ in $(seq 1 50); do
+    if [ "$(hyprctl monitors -j 2>/dev/null | grep -c '"id"')" -gt 0 ]; then
+        break
+    fi
+    sleep 0.2
+done
+
+mkdir -p "$STATE"
+# Written before the restore, not after: if this goes wrong half way through, a
+# retry would relaunch whatever had already started a second time.
+printf '%s' "$signature" > "$MARKER"
+
+if [ -e "$OFF" ]; then
+    # Restoring is switched off, but the compositor still has to be told it may
+    # start writing the session down -- being switched off means not putting the
+    # last one back, not forgetting this one.
+    dispatch_lua 'require("session").arm()'
+    exit 0
+fi
+
+# Over to session.lua, which relaunches everything on its own timers and raises
+# the notification itself when it is finished -- the restore outlives this
+# script by several seconds, so there is nothing here to wait for or report.
+dispatch_lua 'require("session").restore()'

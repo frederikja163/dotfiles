@@ -163,15 +163,19 @@ local HOME = os.getenv("HOME") or ""
 -- What home is called, and what a desktop with no terminal is called.
 local HOME_LABEL = "~"
 
-local function cwd_of(win)
-    if not win or not win.pid then
+-- Where the shell inside a terminal is, given the terminal's pid. Exported for
+-- session.lua, which asks the same question about ordinary terminal windows: a
+-- kitty stays in the directory it was launched from for its whole life, so its
+-- own /proc entry is no use to either of us.
+local function terminal_cwd(pid)
+    if not pid then
         return nil
     end
 
     -- bin/terminal-cwd, because the shell holds the directory rather than the
     -- terminal. This shells out from the compositor, so it is kept to one call
     -- per terminal per burst of changes, below.
-    local pipe = io.popen(("terminal-cwd %d 2>/dev/null"):format(win.pid))
+    local pipe = io.popen(("terminal-cwd %d 2>/dev/null"):format(pid))
     if not pipe then
         return nil
     end
@@ -179,6 +183,11 @@ local function cwd_of(win)
     pipe:close()
 
     return cwd ~= "" and cwd or nil
+end
+
+-- The same question asked of a window rather than a pid.
+local function cwd_of(win)
+    return win and terminal_cwd(win.pid) or nil
 end
 
 local function directory_of(win)
@@ -243,6 +252,13 @@ end
 
 local function label_for(desktop_id)
     return labels[desktop_id] or HOME_LABEL
+end
+
+-- Where a given desktop's terminal is, as a path, or nil if it has not got one.
+-- The per-desktop version of directory() above, for session.lua: writing the
+-- session down means asking about every desktop, not only the focused one.
+local function cwd_for(desktop_id)
+    return cwd_of(terminal_window(desktop_id))
 end
 
 deskbinds.set_labeller(function(ws) return label_for(ws.id) end)
@@ -337,6 +353,41 @@ local function sync()
     syncing = false
 end
 
+-- Start a terminal for a desktop, without showing it. `directory` is where its
+-- shell should begin, and is only passed when the terminal is being put back by
+-- session.lua after a restart -- an ordinary first press has no opinion, and
+-- lets kitty start wherever the compositor was started.
+--
+-- The command lives here rather than at the two call sites so there is one
+-- description of what a quake terminal is. Single quoted for the argument
+-- splitter, since a directory may contain spaces.
+local function spawn(desktop_id, directory)
+    -- One terminal per desktop, decided here rather than by each caller: a
+    -- second press in the gap before the window appears must not start a
+    -- second one, and neither must a session restore run twice.
+    if terminal_window(desktop_id) or starting[desktop_id] then
+        return
+    end
+
+    -- Marked before the spawn, not after: the window turning up is what clears
+    -- this, and it must not be able to clear a flag that has not been set yet.
+    starting[desktop_id] = true
+
+    -- `silent` keeps focus where it is; the window lands in the special
+    -- workspace and it is a toggle that shows it.
+    local command = ("[workspace special:%s silent] %s --class %s")
+        :format(workspace_for(desktop_id), terminal, CLASS)
+    if directory then
+        command = ("%s --directory '%s'"):format(command, directory:gsub("'", "'\\''"))
+    end
+    hl.exec_cmd(command)
+
+    -- Backstop for a terminal that never appears at all, which would otherwise
+    -- wedge this desktop shut for the rest of the session.
+    hl.timer(function() starting[desktop_id] = nil end,
+             { timeout = 5000, type = "oneshot" })
+end
+
 local function toggle()
     local ws = focused_desktop()
     if not ws then
@@ -344,22 +395,8 @@ local function toggle()
     end
     current = ws.id
 
-    if not terminal_window(ws.id) and not starting[ws.id] then
-        -- Marked before the spawn, not after: the window turning up is what
-        -- clears this, and it must not be able to clear a flag that has not
-        -- been set yet.
-        starting[ws.id] = true
-
-        -- `silent` keeps focus where it is; the window lands in the special
-        -- workspace and the toggle below is what actually shows it.
-        hl.exec_cmd(("[workspace special:%s silent] %s --class %s")
-            :format(workspace_for(ws.id), terminal, CLASS))
-
-        -- Backstop for a terminal that never appears at all, which would
-        -- otherwise wedge this desktop shut for the rest of the session.
-        hl.timer(function() starting[ws.id] = nil end,
-                 { timeout = 5000, type = "oneshot" })
-    end
+    -- spawn() is the one place that decides whether a terminal is needed.
+    spawn(ws.id)
 
     local mine = workspace_for(ws.id)
     local have = showing()
@@ -473,6 +510,9 @@ end
 return {
     toggle = toggle,
     closed = closed,
+    spawn = spawn,
+    cwd_for = cwd_for,
+    terminal_cwd = terminal_cwd,
     label_for = label_for,
     directory = directory,
     sync = sync,

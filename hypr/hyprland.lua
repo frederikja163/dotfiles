@@ -16,6 +16,7 @@
 --   deskbinds    monitor + desktop binds on the number keys
 --   columns      column behaviour: new column, sizing, swap-biggest
 --   quake        drop-down terminal, one per desktop
+--   session      what was open and where, written down and put back at login
 --   autostart    processes launched with the session
 
 require("monitors")
@@ -27,6 +28,10 @@ require("keybinds")
 require("deskbinds")
 require("columns")
 require("quake")
+
+-- After quake and deskbinds, both of which it asks about the session it is
+-- writing down.
+require("session")
 
 -- Last, so anything it launches sees the environment set above.
 require("autostart")

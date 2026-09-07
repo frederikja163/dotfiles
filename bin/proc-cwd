@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Print the working directory of each process named, one "<pid>\t<cwd>" line
+# per pid that still has one.
+#
+#   proc-cwd 1234 5678
+#
+# Batched on purpose. The caller is hypr/session.lua, which runs inside the
+# compositor and needs this for every window it is about to write down: a
+# readlink per window would be a shell per window, and Lua cannot read a
+# symlink on its own.
+#
+# A pid that has gone, or whose /proc entry cannot be read, is skipped rather
+# than reported -- the caller has nothing better to do with the failure than
+# leave that window's directory out, which is what a missing line means.
+#
+# For a terminal, this is the wrong directory and bin/terminal-cwd is the right
+# one: kitty stays where it was launched while the shell inside it moves. See
+# the note there.
+set -uo pipefail
+
+if [ $# -eq 0 ]; then
+    echo "usage: proc-cwd <pid>..." >&2
+    exit 1
+fi
+
+for pid in "$@"; do
+    cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null)" || continue
+    [ -n "$cwd" ] || continue
+    printf '%s\t%s\n' "$pid" "$cwd"
+done

@@ -331,10 +331,92 @@ end
 -- Writing the ids to a file and replaying them was the alternative, and it
 -- replays at login too, where it would mint phantom desktops from whatever
 -- last happened to be open.
+-- Which desktops have been asked to stay: [id] = true. Kept because nothing
+-- reads the rules back -- a workspace object does not say whether it is
+-- persistent, and `hyprctl workspacerules` has no Lua counterpart -- and
+-- session.lua has to write the flag down to put it back after a restart.
+local persisted = {}
+
 local function set_persistent(id, persistent)
+    persisted[id] = persistent or nil
     hl.workspace_rule({ workspace = tostring(id), persistent = persistent })
 end
 
+local function is_persistent(id)
+    return persisted[id] == true
+end
+
+local function monitor_named(wanted)
+    for _, m in ipairs(hl.get_monitors() or {}) do
+        if identity(m) == wanted then
+            return m
+        end
+    end
+end
+
+-- Put a desktop back: make sure it exists, on the screen it was on, and keep it
+-- open if it was being kept open. session.lua calls this once per desktop it has
+-- written down, before it relaunches anything into them.
+--
+-- The screen is named by identity rather than connector, as everywhere else
+-- here, and one that is not plugged in right now simply leaves the desktop
+-- wherever it was born -- `home` is recorded anyway, so plugging the screen
+-- back in sends it there.
+local function place_desktop(id, wanted, persistent)
+    local exists = false
+    for _, ws in ipairs(hl.get_workspaces() or {}) do
+        if ws.id == id then
+            exists = true
+        end
+    end
+
+    -- Focusing an id that does not exist is what creates it. It is born on the
+    -- focused monitor, which is why the move below is unconditional: at login
+    -- every desktop would otherwise pile onto whichever screen has focus.
+    if not exists then
+        hl.dispatch(hl.dsp.focus({ workspace = id }))
+    end
+
+    if persistent then
+        set_persistent(id, true)
+    end
+
+    if wanted then
+        home[id] = wanted
+        local mon = monitor_named(wanted)
+        if mon then
+            hl.dispatch(hl.dsp.workspace.move({ workspace = id, monitor = mon.name }))
+        end
+    end
+
+    schedule_renumber()
+end
+
+-- Focusing an id that does not exist yet creates the desktop on the focused
+-- monitor, so this only works for the monitor that currently has focus.
+--
+-- Created by id and renamed in the same breath, rather than left to the
+-- deferred pass, which would show the bare id on the bar for the ~80ms until it
+-- ran. The desktop exists by the time the focus dispatch returns, so there is
+-- nothing to wait for.
+--
+-- Asking for the name directly -- "name:~" -- looks tidier and is a trap.
+-- Hyprland numbers named workspaces from -1337 downwards, and those negative
+-- ids sort ahead of every ordinary desktop, so a new desktop would insert
+-- itself before the ones already there and quietly renumber them.
+-- Create a new desktop on the focused monitor and return its id. The caller may
+-- then move the focused window onto it, so a move-and-make-a-desktop key does
+-- not have to create it twice.
+--
+-- `persistent` asks for a desktop that stays open while empty, which is what
+-- M+C+#f makes: asked for one outright, you get to leave it and come back to
+-- it before there is anything on it. The paths that put a window on the new
+-- desktop do not need it -- a desktop with a window on it is never swept up --
+-- and would leave the empty husk behind after the window closes.
+--
+-- The rule goes on after the focus dispatch, not before: it is the focus that
+-- decides which monitor the desktop is born on, and a persistent rule naming
+-- no monitor would have Hyprland pick.
 local function create_new_desktop_here(persistent)
     local id = unused_desktop_id()
     hl.dispatch(hl.dsp.focus({ workspace = id }))
@@ -687,6 +769,8 @@ return {
     set_closing_hook = set_closing_hook,
     new_desktop_here = new_desktop_here,
     close_desktop_here = close_desktop_here,
+    is_persistent = is_persistent,
+    place_desktop = place_desktop,
     renumber_desktops = renumber_desktops,
     schedule_renumber = schedule_renumber,
     desktops_on = desktops_on,
