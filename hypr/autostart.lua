@@ -9,6 +9,24 @@ if os.getenv("HYPR_SANDBOX") == "1" then
 end
 
 hl.on("hyprland.start", function ()
+    -- Notification daemon, started explicitly and first.
+    --
+    -- Relying on dbus to activate it on demand was tried and silently ate every
+    -- notification for a whole session. Three installed packages ship a service
+    -- file for org.freedesktop.Notifications, and plasma-workspace wins:
+    -- /usr/share/dbus-1/services/org.kde.plasma.Notifications.service runs
+    -- `plasma_waitforname`, which does not start a daemon at all -- it waits
+    -- for plasmashell to claim the name. There is no plasmashell here, so it
+    -- blocks until dbus times out and dunst is never reached. The only symptom
+    -- is notify-send printing "Timeout was reached" to a stderr nobody reads.
+    --
+    -- Starting it here takes the name before anything can ask dbus for it, so
+    -- the plasma stub is never consulted. First in this function for that
+    -- reason: an entry below it that notifies on failure would lose it.
+    -- Via the unit rather than the bare binary so it stays supervised and dbus
+    -- sees the name as taken.
+    hl.exec_cmd("systemctl --user start dunst.service")
+
     -- Polkit authentication agent (not on $PATH, must use the full path)
     hl.exec_cmd("/usr/lib/hyprpolkitagent/hyprpolkitagent")
 
@@ -22,11 +40,9 @@ hl.on("hyprland.start", function ()
     hl.exec_cmd("hypridle")
 
     -- Say if this repo is behind its remote (see bin/dotfiles-check). It waits
-    -- for the network itself, and stays quiet unless there is something to
-    -- report, so it costs nothing at login.
+    -- for the network itself, retrying for half an hour, and stays quiet unless
+    -- there is something to report, so it costs nothing at login.
     hl.exec_cmd("dotfiles-check")
-
-    -- dunst is started on demand over dbus, so it needs no entry here.
 end)
 
 -- Which monitor is the main one can change: docking, undocking, a cable moving
