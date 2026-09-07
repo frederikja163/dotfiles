@@ -66,6 +66,12 @@ hl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.float({ action = "toggle" }), {
 hl.bind(mainMod .. " + F", hl.dsp.window.fullscreen({ action = "toggle" }), { description = "Window: toggle fullscreen" })
 hl.bind(mainMod .. " + R", hl.dsp.exec_cmd(menu), { description = "App: launcher" })
 
+-- Screenshot of a mouse-selected region, onto the clipboard. In bin/ rather
+-- than inline because it is a pipeline: hl.exec_cmd does not run a shell, so
+-- the "|" into wl-copy would be passed to grim as an argument.
+hl.bind(mainMod .. " + S", hl.dsp.exec_cmd("screenshot-region"),
+        { description = "Screenshot: region to clipboard" })
+
 -- Keybind cheatsheet (this popup)
 hl.bind(mainMod .. " + slash", hl.dsp.exec_cmd("hypr-keybinds"), { description = "App: this keybind list" })
 

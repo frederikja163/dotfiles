@@ -77,6 +77,7 @@ dotfiles, and is named after whatever it drives instead.
 | `hypr-keybinds`          | the `SUPER + /` cheatsheet, generated from `hyprctl binds`          |
 | `ide`                    | `SUPER + I`: Rider if the directory holds a solution, else nvim     |
 | `power-menu`             | `SUPER + Escape`: lock, log out, reboot, shut down                  |
+| `screenshot-region`      | `SUPER + S`: select a region, onto the clipboard                    |
 | `terminal-cwd`           | the working directory of a terminal's shell, given its pid          |
 | `waybar-main`            | starts waybar on every monitor, full bar on the largest             |
 

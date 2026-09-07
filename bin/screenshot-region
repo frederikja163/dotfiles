@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Select a region with the mouse and put the image on the clipboard. Bound to
+# SUPER+S; see hypr/keybinds.lua.
+#
+# Clipboard only, deliberately: nothing is written to disk. Almost every
+# screenshot here goes straight into a chat or an issue, and a directory slowly
+# filling with timestamped PNGs nobody ever looks at again is worse than
+# losing the odd one. Pasting it is the whole point, so if it matters, paste it.
+#
+# grim + slurp rather than hyprshot, which wraps exactly this pair and adds a
+# save-to-file default we do not want. Nothing has to be granted screencopy
+# permission because ecosystem:enforce_permissions is off (hypr/environment.lua).
+set -uo pipefail
+
+for tool in slurp grim wl-copy; do
+    # Checked up front rather than left to fail. Started from a keybind stderr
+    # goes nowhere at all, so a missing package would look like a dead key.
+    if ! command -v "$tool" >/dev/null; then
+        echo "screenshot-region: $tool is not on PATH" >&2
+        notify-send "Screenshot" "$tool is not installed" 2>/dev/null
+        exit 1
+    fi
+done
+
+# Two steps rather than grim -g "$(slurp)", so a cancelled selection can be
+# told apart from a failed capture: slurp prints nothing and exits non-zero on
+# escape or a right-click, and feeding that empty geometry to grim would
+# silently copy the entire output instead.
+region=$(slurp) || exit 0
+[ -n "$region" ] || exit 0
+
+if ! grim -g "$region" - | wl-copy --type image/png; then
+    echo "screenshot-region: capture failed" >&2
+    notify-send "Screenshot" "Capture failed" 2>/dev/null
+    exit 1
+fi
+
+# The only feedback there is, with no file to point at. Low urgency so it
+# expires on its own without covering what was just captured.
+notify-send --urgency=low --expire-time=1500 "Screenshot" "Region copied to clipboard" 2>/dev/null
