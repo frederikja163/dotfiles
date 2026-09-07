@@ -60,6 +60,11 @@ export PATH="$HOME/.local/bin:$PATH"
 # JetBrains Toolbox shell scripts (rider, etc.)
 export PATH="$XDG_DATA_HOME/JetBrains/Toolbox/scripts:$PATH"
 
-# .NET SDK + runtime (full install; /usr/share/dotnet is missing aspnet-runtime)
-export DOTNET_ROOT="$HOME/.dotnet"
-export PATH="$HOME/.dotnet:$PATH"
+# .NET lives in the pacman tree. A manual dotnet-install.sh tree in ~/.dotnet
+# was used first, because /usr/share/dotnet ships no ASP.NET Core runtime — but
+# the aspnet-runtime package supplies that, so the manual copy bought nothing
+# and rotted: once its files were gone, DOTNET_ROOT still pointed at the empty
+# directory and every apphost-built binary died with ".NET location: Not found".
+# Set explicitly rather than relying on the apphost's built-in default, so a
+# move off /usr/share/dotnet surfaces here.
+export DOTNET_ROOT="/usr/share/dotnet"
