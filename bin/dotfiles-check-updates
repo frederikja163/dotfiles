@@ -8,11 +8,11 @@
 # Silent when there is nothing to say: on a detached HEAD, on a branch with no
 # upstream, or when the fetch succeeds and the branch is already current.
 #
-# Not silent about being offline, which is a deliberate reversal. It used to
-# stay quiet on a failed fetch on the grounds that a notification firing
-# whenever the wifi is slow gets ignored -- but the cost of that was a login
-# where the machine never got online and the reminder simply never arrived, and
-# nothing ever said so. Now it says so, once, and keeps trying.
+# Not silent about a failed fetch, which is a deliberate reversal. It used to
+# stay quiet on the grounds that a notification firing whenever the wifi is slow
+# gets ignored -- but the cost of that was a login where the machine never got
+# online and the reminder simply never arrived, and nothing ever said so. Now it
+# says so, once, keeps trying, and says which of the two causes it is.
 set -uo pipefail
 
 # The repo is wherever this script really lives: bin/ is a symlink from
@@ -70,15 +70,52 @@ unnotify() {
         CloseNotification u "$1" >/dev/null 2>&1
 }
 
-# Failures are not told apart by cause, deliberately: git reports "could not
-# resolve host" and a remote that has genuinely gone away with the same exit
-# status. Every failure is treated as the network, which is what it almost
-# always is -- see the note on the wording below.
+# Which kind of failure it was, asked only after a fetch has already failed.
 #
+# The note above argues against trusting a reachability probe instead of the
+# fetch, and that still stands: a captive portal answers politely while passing
+# no git traffic, so a probe cannot tell you whether a fetch will work. This is
+# a different job. The fetch has already decided that something is wrong; this
+# only decides which of two things to say about it.
+#
+# curl against the very url git was handed, not a hand-rolled socket. It is
+# already a declared dependency; it reads the same proxy environment git does,
+# so on a network where git leaves through a proxy a bare connect to port 443
+# would fail and blame the network wrongly; and bash's own /dev/tcp is killed
+# outright on this machine -- SIGKILL, immediately, not a timeout -- so it was
+# never an option here.
+#
+# No --fail on purpose. An HTTP answer of any kind, 404 included, means the
+# network carried us to the remote and the remote is what refused. Only a
+# transport failure -- DNS, connect, timeout, TLS -- counts as the network.
+probe_timeout="${DOTFILES_CHECK_UPDATES_PROBE_TIMEOUT:-10}"
+
+network_reaches_remote() {
+    curl --silent --output /dev/null --max-time "$probe_timeout" "$url"
+}
+
+failure_cause() {
+    case "$url" in
+        http://*|https://*)
+            if network_reaches_remote; then
+                printf 'remote\n'
+            else
+                printf 'network\n'
+            fi
+            ;;
+        *)
+            # A filesystem path, or anything else with no network in it: a
+            # failure here cannot be the connection.
+            printf 'remote\n'
+            ;;
+    esac
+}
+
 # There is no deadline. Retrying stops when the fetch works or the session ends,
 # because a reminder that gives up while you are still logged in is a reminder
 # that silently stopped watching.
 offline_id=""
+told_cause=""
 failures=0
 
 while :; do
@@ -88,20 +125,42 @@ while :; do
 
     failures=$((failures + 1))
 
-    # Said after the second failure, not the first: one failed fetch at login is
-    # the ordinary case, because the session really is up before the network.
-    # Waiting for a second one 30 seconds later is what distinguishes "still
-    # connecting" from "not going to connect on its own".
+    # Said from the second failure on, not the first: one failed fetch at login
+    # is the ordinary case, because the session really is up before the network.
+    # A second one 30 seconds later is what distinguishes "still connecting"
+    # from "not going to connect on its own".
     #
-    # Worded as a reminder rather than a diagnosis. If the real cause is a bad
-    # remote url or a deleted repo, this says the wrong thing -- but git gives
-    # the same exit status either way, and of the two the network is the one
-    # that happens.
-    if [ "$failures" -eq 2 ]; then
-        offline_summary="dotfiles: cannot reach the remote"
-        offline_body="Remember to get on the internet."
-        offline_body="$offline_body Still checking every ${retry_interval}s."
-        offline_id="$(notify "$offline_summary" "$offline_body")"
+    # Re-checked on every attempt after that, but only spoken when the answer
+    # changes. The cause is not fixed for the run: the usual recovery is the
+    # network coming back and the fetch working, but it can equally come back
+    # and reveal that the url is wrong, and then the notice should stop telling
+    # you to get online. One notification, kept current, rather than one per
+    # attempt or one stale one.
+    if [ "$failures" -ge 2 ]; then
+        cause="$(failure_cause)"
+
+        if [ "$cause" != "$told_cause" ]; then
+            if [ "$cause" = "network" ]; then
+                offline_summary="dotfiles: no network"
+                offline_body="Remember to get on the internet."
+            else
+                offline_summary="dotfiles: cannot fetch from $remote"
+                offline_body="The network is fine, so this is the remote:"
+                offline_body="$offline_body check its url, or whether the repo"
+                offline_body="$offline_body is still there."
+            fi
+            still="Still checking every ${retry_interval}s."
+            offline_body="$offline_body $still"
+
+            if [ -n "$offline_id" ]; then
+                notify --replace-id="$offline_id" \
+                    "$offline_summary" "$offline_body" >/dev/null
+            else
+                offline_id="$(notify "$offline_summary" "$offline_body")"
+            fi
+
+            told_cause="$cause"
+        fi
     fi
 
     sleep "$retry_interval"
