@@ -1,0 +1,275 @@
+#!/usr/bin/env bash
+# Pull this repo, then re-run the install scripts if the commits that arrived
+# actually need them.
+#
+# The companion to bin/dotfiles-check, which only says you are behind. This is
+# the deliberate act it asks for, so it is interactive by default and never
+# started from the session.
+#
+#   dotfiles-update              pull, then ask, with the diff's answer offered
+#   dotfiles-update -y           pull, then do what the diff says, no questions
+#   dotfiles-update -a           pull, then run both regardless
+#   dotfiles-update -n           say what a pull would bring and change nothing
+#
+# Overwriting a running bash script is not the hazard it looks like here, and
+# this script rewrites itself on any commit that touches bin/. Tested: git
+# replaces a checked-out file with a fresh inode rather than truncating it in
+# place, so the bash reading this keeps its open fd on the old copy and runs the
+# version it started as. A pull mid-run finishes on the old code. No re-exec
+# from a temp copy is needed, which was the alternative.
+set -uo pipefail
+
+# The repo is wherever this script really lives: bin/ is a symlink from
+# ~/.local/bin, so the link has to be resolved before taking the parent.
+REPO="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)" || exit 1
+
+# shellcheck source=bin/dotfiles-lib.sh
+. "$REPO/bin/dotfiles-lib.sh" || exit 1
+
+assume_yes=0
+force_all=0
+dry_run=0
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -y|--yes)     assume_yes=1 ;;
+        -a|--all)     force_all=1; assume_yes=1 ;;
+        -n|--dry-run) dry_run=1 ;;
+        -h|--help)
+            # Spelled out rather than sed'd out of the header above, which
+            # silently printed the wrong lines the moment the header grew.
+            cat <<'EOF'
+dotfiles-update -- pull this repo, then re-run the install scripts if the
+commits that arrived need them.
+
+  dotfiles-update        pull, then ask, with the diff's answer offered
+  -y, --yes              pull, then do what the diff says, no questions
+  -a, --all              pull, then run both install scripts regardless
+  -n, --dry-run          say what a pull would bring and change nothing
+  -h, --help             this
+
+install.sh is judged needed when install.sh itself changed; the configs are
+symlinked directories, so their contents are live without relinking.
+install-packages.sh when packages/, system/ or install-packages.sh changed.
+EOF
+            exit 0
+            ;;
+        *)
+            echo "unknown option: $1 (try --help)" >&2
+            exit 2
+            ;;
+    esac
+    shift
+done
+
+cd "$REPO" || exit 1
+
+# A dirty tree is the normal state of this repo between commits, so this does
+# not pre-flight for one and refuse. The fast-forward below already declines
+# precisely when it would clobber a local modification, and says which file --
+# there is no reason to be stricter than that about files it never touches.
+
+# Nothing may ask a question during the fetch: this is run from a terminal, but
+# a credential prompt here would mean the https rewrite had failed to apply, and
+# hanging is a worse way to find that out than failing.
+export GIT_TERMINAL_PROMPT=0
+
+branch="$(git symbolic-ref --quiet --short HEAD)" || {
+    echo "detached HEAD -- check out a branch first" >&2
+    exit 1
+}
+
+remote="$(git config --get "branch.$branch.remote")" || {
+    echo "$branch has no upstream -- nothing to pull from" >&2
+    exit 1
+}
+merge="$(git config --get "branch.$branch.merge")" || {
+    echo "$branch has no upstream branch configured" >&2
+    exit 1
+}
+
+before="$(git rev-parse HEAD)" || exit 1
+
+# --- what is coming ---------------------------------------------------------
+
+url="$(git remote get-url "$remote")" || exit 1
+url="$(dotfiles_https_url "$url")"
+
+# Everything below works off FETCH_HEAD rather than @{upstream}, because a fetch
+# from a bare url does not move the remote-tracking refs. That is the price of
+# not going through the ssh remote, see dotfiles-lib.sh.
+#
+# The tracking ref is written explicitly for the same reason. Leaving it out was
+# tried and is quietly wrong: origin/main stayed at whatever the last real
+# `git fetch` saw, so after an update `git status` called the branch *ahead* by
+# the commits it had just pulled, and `git reset --hard origin/main` went
+# backwards. Forced with a leading +, which is what git's own default refspec
+# does for tracking refs.
+#
+# An upstream not under refs/heads/ is left to the plain form: FETCH_HEAD still
+# works, and guessing at a tracking ref for it would be worse than none.
+echo "==> fetching"
+case "$merge" in
+    refs/heads/*) refspec="+$merge:refs/remotes/$remote/${merge#refs/heads/}" ;;
+    *)            refspec="$merge" ;;
+esac
+
+git fetch --quiet "$url" "$refspec" || {
+    echo "fetch failed -- offline, or $url is wrong" >&2
+    exit 1
+}
+
+target="$(git rev-parse FETCH_HEAD)" || exit 1
+
+if [ "$before" = "$target" ]; then
+    echo "    already up to date at ${before:0:8}"
+    exit 0
+fi
+
+# Checked before anything is printed. Without this a diverged branch got a full
+# plan of work, "install.sh: needed" and all, and only then hit the --ff-only
+# refusal below -- an answer to a question the script could not carry out.
+if ! git merge-base --is-ancestor HEAD "$target"; then
+    ahead="$(git rev-list --count "$target..HEAD")"
+    echo "    $branch has diverged: $ahead local commit(s) not on the remote." >&2
+    echo "    Nothing pulled. Merge or rebase by hand, then run this again." >&2
+    exit 1
+fi
+
+behind="$(git rev-list --count "HEAD..$target")"
+echo "    $behind commit(s) to pull:"
+git log --oneline --no-decorate --reverse "HEAD..$target" | sed 's/^/      /'
+
+# Read the file list from the range rather than after pulling, so --dry-run can
+# report the same plan without touching the working tree.
+changed="$(git diff --name-only "$before" "$target")"
+
+changed_any() {
+    local pattern
+    for pattern in "$@"; do
+        if printf '%s\n' "$changed" | grep -qE "$pattern"; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# install.sh is needed when the set of links changes, which means when
+# install.sh itself changes -- and essentially only then.
+#
+# It looks like it should also run whenever a config changes, but it must not:
+# the destinations are symlinks to *directories* in this repo, so a commit
+# editing hypr/keybinds.lua is already live the moment it lands. Re-running the
+# script would relink identical paths and print "ok" for each. A brand new
+# config directory does need linking, and that arrives with the install.sh line
+# that links it, so the one condition covers it.
+if [ "$force_all" -eq 1 ] || changed_any '^install\.sh$'; then
+    want_links=1
+else
+    want_links=0
+fi
+
+# install-packages.sh is needed for a new package, a change to its own steps
+# (the pinned NVIM_VERSION lives there), or a file under system/, which it is
+# what installs into /etc.
+if [ "$force_all" -eq 1 ] || changed_any '^packages/' '^install-packages\.sh$' '^system/'; then
+    want_packages=1
+else
+    want_packages=0
+fi
+
+echo
+echo "    install.sh:          $([ "$want_links" -eq 1 ] && echo "needed" || echo "not needed")"
+echo "    install-packages.sh: $([ "$want_packages" -eq 1 ] && echo "needed" || echo "not needed")"
+
+if [ "$dry_run" -eq 1 ]; then
+    echo
+    echo "(dry run -- nothing pulled)"
+    exit 0
+fi
+
+# --- pull -------------------------------------------------------------------
+
+# A fast-forward onto what was already fetched, rather than `git pull`. Two
+# reasons: pull would contact the remote a second time, over ssh this time, and
+# ask for the passphrase the fetch above was rewritten to avoid; and --ff-only
+# is the only merge worth making unattended, since a real merge or rebase
+# decided by an update script is one nobody reviewed. Divergence is caught
+# above, so reaching this and failing means a local modification is in the way.
+echo
+echo "==> fast-forwarding"
+git merge --quiet --ff-only "$target" || {
+    echo "fast-forward failed -- resolve it by hand, nothing else has run" >&2
+    exit 1
+}
+echo "    now at $(git rev-parse --short HEAD)"
+
+# --- run what is needed -----------------------------------------------------
+
+# Without a terminal there is nothing to answer at, so the diff decides alone
+# rather than a prompt hanging forever.
+if [ ! -t 0 ] && [ "$assume_yes" -eq 0 ]; then
+    echo "    (not a terminal: going with the detected plan)"
+    assume_yes=1
+fi
+
+ask() {
+    local prompt="$1" default="$2" answer hint="[y/N]"
+    [ "$default" = "y" ] && hint="[Y/n]"
+    read -r -p "$prompt $hint " answer || answer=""
+    case "${answer:-$default}" in
+        [Yy]*) return 0 ;;
+        *)     return 1 ;;
+    esac
+}
+
+run_packages=$want_packages
+run_links=$want_links
+
+if [ "$assume_yes" -eq 0 ]; then
+    echo
+    # The detected answer is the default, so holding Enter through both
+    # questions does the right thing while either can still be overridden.
+    ask "run install-packages.sh?" "$([ "$want_packages" -eq 1 ] && echo y || echo n)" \
+        && run_packages=1 || run_packages=0
+    ask "run install.sh?" "$([ "$want_links" -eq 1 ] && echo y || echo n)" \
+        && run_links=1 || run_links=0
+fi
+
+# Packages before links, matching the order in the README: a config is no use
+# linked into place if the program reading it is not installed yet.
+if [ "$run_packages" -eq 1 ]; then
+    echo
+    echo "==> install-packages.sh"
+    "$REPO/install-packages.sh" || {
+        echo "install-packages.sh failed -- install.sh not run" >&2
+        exit 1
+    }
+fi
+
+if [ "$run_links" -eq 1 ]; then
+    echo
+    echo "==> install.sh"
+    "$REPO/install.sh" || exit 1
+fi
+
+# Not reloaded here, only mentioned. A reload restarts the bar and re-applies
+# every window rule in the session you are sitting in; that belongs to whoever
+# is at the keyboard, not to a script they ran to fetch some commits.
+#
+# bin/dotfiles-reload rather than a bare `hyprctl reload`, because a reload
+# leaves waybar, hyprpaper and hypridle on their old config and that script is
+# what covers them. Guarded on it existing: it arrives in a commit of its own,
+# and someone running an older checkout of this script will not have it.
+if changed_any '^hypr/' '^waybar/'; then
+    echo
+    echo "hypr/ or waybar/ changed. They are linked, so the new config is on"
+    if command -v dotfiles-reload >/dev/null; then
+        echo "disk but not loaded. Apply it when convenient:  dotfiles-reload"
+    else
+        echo "disk but not loaded. Apply it when convenient:  hyprctl reload"
+    fi
+fi
+
+echo
+echo "done"

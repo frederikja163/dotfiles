@@ -15,6 +15,9 @@ set -uo pipefail
 # ~/.local/bin, so the link has to be resolved before taking the parent.
 REPO="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)" || exit 1
 
+# shellcheck source=bin/dotfiles-lib.sh
+. "$REPO/bin/dotfiles-lib.sh" || exit 1
+
 # The session is up before the network is. Overridable so the tests do not wait.
 sleep "${DOTFILES_CHECK_DELAY:-30}"
 
@@ -47,25 +50,11 @@ branch="$(git symbolic-ref --quiet --short HEAD)" || exit 0
 remote="$(git config "branch.$branch.remote")" || exit 0
 merge="$(git config "branch.$branch.merge")" || exit 0
 
-# Over https rather than the configured ssh url, deliberately.
-#
-# There is no ssh-agent in the graphical session and the key has a passphrase,
-# so ssh cannot authenticate without a terminal to ask at -- an ssh fetch here
-# fails every time, and the "stay quiet on failure" rule above would hide that
-# forever. This repo is public, so https needs no credentials at all. A private
-# repo would go back to being silent, correctly.
+# Over https rather than the configured ssh url: see the reasoning in
+# dotfiles-lib.sh. It matters more here than in dotfiles-update, because the
+# "stay quiet on failure" rule above would hide an ssh failure forever.
 url="$(git remote get-url "$remote" 2>/dev/null)" || exit 0
-case "$url" in
-    git@*:*)
-        # host:path -> host/path, done before the scheme is prefixed so the
-        # substitution cannot land on the colon in "https:".
-        rest="${url#git@}"
-        url="https://${rest/://}"
-        ;;
-    ssh://git@*)
-        url="https://${url#ssh://git@}"
-        ;;
-esac
+url="$(dotfiles_https_url "$url")"
 
 # Failures are not told apart by cause, deliberately: git reports "could not
 # resolve host" and a remote that has genuinely gone away with the same exit
