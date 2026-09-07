@@ -33,15 +33,29 @@
 # after the shell has its prompt back.
 set -uo pipefail
 
+# Takes no arguments, and says so rather than ignoring them.
+#
+# Ignoring them was the original behaviour and it is a trap: this script's whole
+# job is to act on the session you are sitting in, so `dotfiles-reload --help`
+# from someone expecting a usage message restarted their bar, wallpaper and idle
+# daemon and dropped every desktop's column layout instead. Anything that only
+# ever does something had better refuse what it does not understand.
+if [ $# -gt 0 ]; then
+    printf 'dotfiles-reload: takes no arguments (got %s)\n' "$*" >&2
+    printf 'It applies hypr/, waybar/, hyprpaper, hypridle and dunst to the\n' >&2
+    printf 'running session. There is nothing to configure; just run it bare.\n' >&2
+    exit 2
+fi
+
 if [ "${HYPR_SANDBOX:-}" = "1" ]; then
-    printf 'reload: refusing to run inside the sandbox (would reload the host session)\n' >&2
+    printf 'dotfiles-reload: refusing to run inside the sandbox (would reload the host session)\n' >&2
     exit 1
 fi
 
 for c in hyprctl waybar-main dunstctl notify-send; do
     command -v "$c" >/dev/null || {
-        printf 'reload: %s is not on PATH\n' "$c" >&2
-        notify-send "reload" "$c missing" 2>/dev/null
+        printf 'dotfiles-reload: %s is not on PATH\n' "$c" >&2
+        notify-send "dotfiles-reload" "$c missing" 2>/dev/null
         exit 1
     }
 done
@@ -69,7 +83,7 @@ restart_if_running() {
         if "$@"; then
             return 0
         fi
-        notify-send "reload" "failed: $label" 2>/dev/null
+        notify-send "dotfiles-reload" "failed: $label" 2>/dev/null
     }
 
     step "hyprland"  hyprctl reload
@@ -77,8 +91,9 @@ restart_if_running() {
     step "hyprpaper" restart_if_running hyprpaper
     step "hypridle"  restart_if_running hypridle
 
-    # dunst is started on demand over dbus (see autostart.lua), so it may not
-    # be running at all; that is not a failure.
+    # dunst is started with the session now (see autostart.lua), so it should be
+    # running -- but the guard stays, because a reload is not the place to
+    # resurrect it and a stopped daemon is not a failure of this script.
     if pgrep -x dunst >/dev/null; then
         step "dunst" dunstctl reload
     fi
