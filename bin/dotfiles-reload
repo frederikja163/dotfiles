@@ -77,6 +77,48 @@ restart_if_running() {
     return 0
 }
 
+# waybar cannot go through step() the way the others do.
+#
+# bin/waybar-main ends in `exec waybar`, so it does not return while the bar is
+# up -- it *is* the bar. Handing it to step(), which waits for its command and
+# reads the exit status, parked this script on it for the rest of the session:
+# every reload left a dotfiles-reload process holding a waybar and never ran the
+# hyprpaper, hypridle or dunst steps below at all. Then the next reload's
+# `pkill -x waybar` killed the parked run's bar, it exited non-zero, and that
+# stale process announced "failed: waybar" about a bar that had worked
+# perfectly. Five of those were sitting in dunst's history.
+#
+# waybar-main is right to exec: its other two callers, autostart.lua and
+# deskbinds.lua, want a process that stays. So the caller is what changes here.
+# Start it detached, and report on whether the bar came back rather than on an
+# exit status that only arrives when something kills it.
+start_waybar() {
+    local before pid i
+
+    # The pids to ignore while waiting. waybar-main kills the old bar and sleeps
+    # before starting the new one, so checking for "a waybar exists" straight
+    # away would find the outgoing one and call it a success.
+    before=" $(pgrep -x waybar | tr '\n' ' ') "
+
+    nohup waybar-main >/dev/null 2>&1 &
+
+    # Twenty quarter-second checks: five seconds of waiting, six or so in wall
+    # time once pgrep is counted. Generously more than the 0.3s wait inside
+    # waybar-main plus the time waybar needs to map its layer surfaces, and it
+    # only ever runs that long when the bar genuinely does not come back.
+    for ((i = 0; i < 20; i++)); do
+        sleep 0.25
+        for pid in $(pgrep -x waybar); do
+            case "$before" in
+                *" $pid "*) ;;
+                *) return 0 ;;
+            esac
+        done
+    done
+
+    return 1
+}
+
 (
     step() {
         local label="$1"; shift
@@ -87,7 +129,7 @@ restart_if_running() {
     }
 
     step "hyprland"  hyprctl reload
-    step "waybar"    waybar-main
+    step "waybar"    start_waybar
     step "hyprpaper" restart_if_running hyprpaper
     step "hypridle"  restart_if_running hypridle
 
