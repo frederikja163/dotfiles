@@ -4,7 +4,7 @@
 -- Which screen is where -- and which way it is mounted -- is this machine's
 -- business, not the repo's: connector names lie (DP-4 came back as DP-5), so
 -- the per-screen settings live in the pinned monitor file that
--- bin/dotfiles-monitor-setup writes and monitorpin.lua parses. Orientation is
+-- bin/dotfiles-monitor-order writes and monitorpin.lua parses. Orientation is
 -- the one setting kept there so far: "transform=1" on a screen's line stands
 -- it up after the panel was physically turned.
 --
@@ -121,7 +121,7 @@ end
 -- timer crashes Hyprland outright, so both call apply_pinned directly.
 -- hyprland.start is when the monitors are first enumerable on boot;
 -- config.reloaded is what a hand-edited pin file (or a re-run of
--- dotfiles-monitor-setup) lands on. monitor.added is a runtime event, on
+-- dotfiles-monitor-order) lands on. monitor.added is a runtime event, on
 -- hotplug and on replug, where the monitors have been seen before but a
 -- reconnect must be re-armed -- and it is the fallback that puts a rotated
 -- screen back after a mirror was toggled off (deskbinds.lua re-issues

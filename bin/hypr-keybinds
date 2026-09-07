@@ -40,7 +40,7 @@ binds="$(
 )"
 
 if [ -z "$binds" ]; then
-  notify-send "dotfiles-keybinds" "No binds with descriptions found." 2>/dev/null
+  notify-send "hypr-keybinds" "No binds with descriptions found." 2>/dev/null
   exit 1
 fi
 

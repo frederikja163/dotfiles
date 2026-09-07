@@ -63,16 +63,18 @@ programs of those names do.
 
 ## bin/
 
-`dotfiles-*` acts on this repo as a whole; the rest are tools the session and
-its keybinds reach for.
+A `dotfiles-` prefix means the script knows about this repo: it reads its git
+state, applies its configs, or writes a file only this repo's Lua parses. A
+bare name means the opposite -- it would work unchanged in someone else's
+dotfiles, and is named after whatever it drives instead.
 
 | Script                   | Does                                                                |
 | ------------------------ | ------------------------------------------------------------------- |
 | `dotfiles-check`         | says at login if this repo is behind its remote                     |
 | `dotfiles-update`        | pull, then re-run the install scripts if the commits need it        |
 | `dotfiles-reload`        | apply the dotfiles live: hyprland, waybar, wallpaper, idling, dunst |
-| `dotfiles-keybinds`      | the `SUPER + /` cheatsheet, generated from `hyprctl binds`          |
-| `dotfiles-monitor-setup` | pin which screen is monitor 1, 2, ...; set orientation              |
+| `dotfiles-monitor-order` | pin which screen is monitor 1, 2, ...; set orientation              |
+| `hypr-keybinds`          | the `SUPER + /` cheatsheet, generated from `hyprctl binds`          |
 | `ide`                    | `SUPER + I`: Rider if the directory holds a solution, else nvim     |
 | `power-menu`             | `SUPER + Escape`: lock, log out, reboot, shut down                  |
 | `terminal-cwd`           | the working directory of a terminal's shell, given its pid          |
@@ -117,7 +119,7 @@ correction.
   collapse into one column.
 
 Each monitor has a number, `1`..`0`, in an order **pinned** by
-`dotfiles-monitor-setup` (script or a hand-edited `~/.local/share/hypr/monitor-order`)
+`dotfiles-monitor-order` (script or a hand-edited `~/.local/share/hypr/monitor-order`)
 rather than by Hyprland's connector ids, which reshuffle on redock. Monitors no
 one has pinned yet follow in id order. A screen's line can also carry
 `transform=1..3` — orientation for a panel mounted portrait — which

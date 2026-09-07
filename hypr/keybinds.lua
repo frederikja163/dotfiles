@@ -2,7 +2,7 @@
 -- See https://wiki.hypr.land/Configuring/Basics/Binds/
 --
 -- Every bind carries a description, which is what makes the cheatsheet popup
--- (SUPER + /, see bin/dotfiles-keybinds) possible: it is generated from
+-- (SUPER + /, see bin/hypr-keybinds) possible: it is generated from
 -- `hyprctl binds`, and binds without a description are skipped.
 
 local programs = require("programs")
@@ -67,7 +67,7 @@ hl.bind(mainMod .. " + F", hl.dsp.window.fullscreen({ action = "toggle" }), { de
 hl.bind(mainMod .. " + R", hl.dsp.exec_cmd(menu), { description = "App: launcher" })
 
 -- Keybind cheatsheet (this popup)
-hl.bind(mainMod .. " + slash", hl.dsp.exec_cmd("dotfiles-keybinds"), { description = "App: this keybind list" })
+hl.bind(mainMod .. " + slash", hl.dsp.exec_cmd("hypr-keybinds"), { description = "App: this keybind list" })
 
 -- Lock / suspend / log out / reboot / shut down
 hl.bind(mainMod .. " + Escape", hl.dsp.exec_cmd("power-menu"), { description = "App: power menu" })

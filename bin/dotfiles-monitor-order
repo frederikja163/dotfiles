@@ -43,7 +43,7 @@ STATE="${XDG_RUNTIME_DIR:-/tmp}/monitor-order-pick"
 TITLE="monitor-order-pick"
 
 [ -x "$(command -v kitty)" ] || {
-    printf 'dotfiles-monitor-setup: kitty is needed to show the labels\n' >&2
+    printf 'dotfiles-monitor-order: kitty is needed to show the labels\n' >&2
     exit 1
 }
 
@@ -73,7 +73,7 @@ trap cleanup EXIT
 
 monitors="$(hyprctl monitors -j 2>/dev/null)" || monitors=""
 if [ -z "$monitors" ]; then
-    printf 'dotfiles-monitor-setup: no compositor or no monitors\n' >&2
+    printf 'dotfiles-monitor-order: no compositor or no monitors\n' >&2
     exit 1
 fi
 
@@ -96,7 +96,7 @@ for i, m in enumerate(mons):
     h = max(80, int(m["height"] / scale * 0.15))
     print("%s\t%s\t%s\t%d\t%d" % (chr(ord("A") + i), m["name"], ident, w, h))
 ')" || {
-    printf 'dotfiles-monitor-setup: more than 26 monitors to label\n' >&2
+    printf 'dotfiles-monitor-order: more than 26 monitors to label\n' >&2
     exit 1
 }
 
@@ -108,7 +108,7 @@ while IFS=$'\t' read -r letter name ident w h; do
     name_of[$letter]=$name
     hyprctl dispatch "hl.dsp.exec_cmd(\"[float; center; size $w $h; monitor $name] kitty --title $TITLE-$letter -o font_size=80 sh -c 'echo $letter; read x; echo $letter >> $STATE/picked'\")" \
         >/dev/null || {
-        printf 'dotfiles-monitor-setup: could not open label windows\n' >&2
+        printf 'dotfiles-monitor-order: could not open label windows\n' >&2
         exit 1
         }
     count=$((count + 1))
@@ -123,7 +123,7 @@ while true; do
     [ -f "$STATE/picked" ] && got="$(wc -l < "$STATE/picked")"
     [ "$got" -ge "$count" ] && break
     if [ "$(date +%s)" -gt "$deadline" ]; then
-        printf 'dotfiles-monitor-setup: timed out waiting for picks\n' >&2
+        printf 'dotfiles-monitor-order: timed out waiting for picks\n' >&2
         exit 1
     fi
     sleep 0.2
@@ -133,7 +133,7 @@ order=()
 while IFS= read -r letter; do
     [ -z "$letter" ] && continue
     [ -n "${ident_of[$letter]:-}" ] || {
-        printf 'dotfiles-monitor-setup: unrecognised pick %q\n' "$letter" >&2
+        printf 'dotfiles-monitor-order: unrecognised pick %q\n' "$letter" >&2
         exit 1
     }
     order+=("${ident_of[$letter]}")
@@ -250,7 +250,7 @@ done
     printf '# Orientation is applied by monitors.lua.\n'
     printf '# A "# layout = ltr|rtl|ttb" line sets the row direction:\n'
     printf '#   ltr = monitor 1 on the left, rtl = on the right, ttb = on top.\n'
-    printf '# Regenerate with: dotfiles-monitor-setup\n'
+    printf '# Regenerate with: dotfiles-monitor-order\n'
     printf '# layout = %s\n' "$layout"
     for line in "${lines[@]}"; do
         printf '%s\n' "$line"
