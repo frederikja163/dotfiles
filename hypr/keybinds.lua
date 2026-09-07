@@ -35,7 +35,22 @@ hl.bind(mainMod .. " + Q", function()
 
     hl.dispatch(hl.dsp.exec_cmd(command))
 end, { description = "App: terminal (where this desktop is)" })
-local closeWindowBind = hl.bind(mainMod .. " + C", hl.dsp.window.close(), { description = "Window: close (polite)" })
+-- Closes the focused window; on an empty desktop it closes the desktop, which
+-- is the counterpart to M+C+#n making one. Focusing an empty desktop clears the
+-- focused window, so no active window is exactly that case -- and a quake
+-- terminal in view is a focused window like any other, so that still closes the
+-- terminal rather than the desktop underneath it. deskbinds refuses when the
+-- desktop is a monitor's last one, or has anything on it.
+--
+-- deskbinds is required inside the callback for the same reason quake is above:
+-- this file is loaded before it.
+local closeWindowBind = hl.bind(mainMod .. " + C", function()
+    if hl.get_active_window() then
+        hl.dispatch(hl.dsp.window.close())
+    else
+        require("deskbinds").close_desktop_here()
+    end
+end, { description = "Window: close (polite), or an empty desktop" })
 hl.bind(mainMod .. " + SHIFT + C", function()
     hl.dispatch(hl.dsp.exec_cmd("kill -9 $(hyprctl activewindow | awk '/^\tpid:/ { print $2 }')"))
 end, { description = "Window: force kill (abrupt)" })

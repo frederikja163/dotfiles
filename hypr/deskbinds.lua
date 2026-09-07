@@ -308,24 +308,40 @@ local function focus_workspace(ws)
     end
 end
 
--- Focusing an id that does not exist yet creates the desktop on the focused
--- monitor, so this only works for the monitor that currently has focus.
+-- Whether an empty desktop stays open once you leave it.
 --
--- Created by id and renamed in the same breath, rather than left to the
--- deferred pass, which would show the bare id on the bar for the ~80ms until it
--- ran. The desktop exists by the time the focus dispatch returns, so there is
--- nothing to wait for.
+-- Hyprland removes an empty workspace the moment it stops being visible, and a
+-- `persistent` workspace rule is the only thing that stops it -- there is no
+-- dispatcher for this. Issuing the rule at runtime works, with three
+-- behaviours worth knowing, all established against a nested instance:
 --
--- Asking for the name directly -- "name:~" -- looks tidier and is a trap.
--- Hyprland numbers named workspaces from -1337 downwards, and those negative
--- ids sort ahead of every ordinary desktop, so a new desktop would insert
--- itself before the ones already there and quietly renumber them.
--- Create a new desktop on the focused monitor and return its id. The caller may
--- then move the focused window onto it, so a move-and-make-a-desktop key does
--- not have to create it twice.
-local function create_new_desktop_here()
+-- The selector is the desktop's *id* as a string, and it goes on matching
+-- after the renumbering pass has renamed the desktop -- the id is the identity
+-- here as it is everywhere else in this file. Re-issuing a rule for the same
+-- selector replaces the old one rather than adding a second.
+--
+-- Switching persistence off removes the desktop at once, but only when it is
+-- out of view: Hyprland will not destroy the workspace it is showing.
+-- close_desktop_here therefore focuses elsewhere first and drops the rule
+-- second, and that order matters.
+--
+-- None of this survives `hyprctl reload`: the rule list is rebuilt from the
+-- config, which knows nothing of what has been created since, so an empty
+-- desktop does not outlive a dotfiles-reload. Left that way on purpose.
+-- Writing the ids to a file and replaying them was the alternative, and it
+-- replays at login too, where it would mint phantom desktops from whatever
+-- last happened to be open.
+local function set_persistent(id, persistent)
+    hl.workspace_rule({ workspace = tostring(id), persistent = persistent })
+end
+
+local function create_new_desktop_here(persistent)
     local id = unused_desktop_id()
     hl.dispatch(hl.dsp.focus({ workspace = id }))
+
+    if persistent then
+        set_persistent(id, true)
+    end
 
     local name = name_for_new_desktop(hl.get_active_monitor())
     if name then
@@ -336,8 +352,45 @@ local function create_new_desktop_here()
     return id
 end
 
-local function new_desktop_here()
-    create_new_desktop_here()
+local function new_desktop_here(persistent)
+    create_new_desktop_here(persistent)
+end
+
+-- Close the desktop in view, if there is nothing on it. This is the other half
+-- of SUPER+C, which closes the focused window: an empty desktop is the one
+-- occasion that key has no window to close, so it closes the desktop instead
+-- (see keybinds.lua). Returns whether it did.
+--
+-- Refuses on a monitor's last desktop -- Hyprland always shows one, so there
+-- would be nothing to put in its place -- and on a special workspace, which is
+-- not a desktop at all.
+--
+-- A desktop whose only content is its quake terminal counts as empty, because
+-- the terminal sits in a workspace of its own. So this closes it and leaves the
+-- terminal behind, hidden. That is the bargain quake.lua already documents: the
+-- id is the identity, and a later desktop with the same id inherits it.
+local function close_desktop_here()
+    local mon = hl.get_active_monitor()
+    local ws = mon and mon.active_workspace
+    if not ws or ws.special then
+        return false
+    end
+
+    if #(hl.get_workspace_windows(ws.id) or {}) > 0 then
+        return false
+    end
+
+    local target = next_desktop(mon)
+    if not target or target.id == ws.id then
+        return false
+    end
+
+    -- Out of view first, then un-persist: the other order leaves the desktop
+    -- standing, since Hyprland does not remove the workspace it is showing.
+    focus_workspace(target)
+    set_persistent(ws.id, false)
+    schedule_renumber()
+    return true
 end
 
 local function move_window_to(ws)
@@ -511,7 +564,11 @@ for n = 1, 10 do
         if slot.source then
             toggle_mirror(slot, hl.get_active_monitor())
         elseif is_focused(slot) then
-            new_desktop_here()
+            -- Persistent: a desktop made by asking for one stays until it is
+            -- closed with SUPER+C. The one M+#f makes when a monitor has only
+            -- a single desktop is a step on the way to somewhere and still goes
+            -- when you leave it empty.
+            new_desktop_here(true)
         else
             toggle_mirror(slot, hl.get_active_monitor())
         end
@@ -606,6 +663,7 @@ end
 return {
     set_labeller = set_labeller,
     new_desktop_here = new_desktop_here,
+    close_desktop_here = close_desktop_here,
     renumber_desktops = renumber_desktops,
     schedule_renumber = schedule_renumber,
     desktops_on = desktops_on,

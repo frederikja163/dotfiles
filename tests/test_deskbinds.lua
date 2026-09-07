@@ -25,12 +25,12 @@ local function set_pin(contents)
 end
 set_pin("") -- baseline: nothing pinned, so id order, as before
 
-local binds, dispatched, monitor_calls, world, events, renames, execs, moves, mod
+local binds, dispatched, monitor_calls, world, events, renames, execs, moves, rules, mod
 
 local function reset(w)
     world = w
-    binds, dispatched, monitor_calls, events, renames, execs, moves =
-        {}, {}, {}, {}, {}, {}, {}
+    binds, dispatched, monitor_calls, events, renames, execs, moves, rules =
+        {}, {}, {}, {}, {}, {}, {}, {}
 
     _G.hl = {
         -- deskbinds requires columns, which registers the layout on load.
@@ -59,6 +59,14 @@ local function reset(w)
             return out
         end,
         get_workspaces = function() return world.workspaces end,
+        -- Keeping an empty desktop open is a workspace rule rather than a
+        -- dispatch, so these are recorded separately. Hyprland replaces the
+        -- rule for a selector it already has, which is why the last one for an
+        -- id is what counts.
+        workspace_rule = function(rule) table.insert(rules, rule) end,
+        get_workspace_windows = function(id)
+            return (world.windows_on or {})[id] or {}
+        end,
         get_active_monitor = function()
             for _, m in ipairs(world.monitors) do
                 if m.id == world.focused_monitor_id then return m end
@@ -522,6 +530,90 @@ check("created by id", last_of("focus").arg.workspace, 4)
 -- The renumbering pass still numbers it afterwards; what matters is that
 -- creating it did not name it first.
 check("nothing named it on the way in", renames[1] and renames[1].workspace, 1)
+
+-- Hyprland sweeps up an empty desktop the moment it stops being visible, so a
+-- desktop asked for outright has to be made persistent or it is gone before it
+-- has been used for anything.
+local function last_rule_for(id)
+    for i = #rules, 1, -1 do
+        if rules[i].workspace == tostring(id) then
+            return rules[i]
+        end
+    end
+end
+
+print("scenario: M+C+#f makes a desktop that survives being left empty")
+local p1 = two_monitors(0)
+reset(p1)
+binds["SUPER + CTRL + 1"].fn()
+check("created the desktop", last_of("focus").arg.workspace, 4)
+check("...and asked for it to persist", last_rule_for(4) and last_rule_for(4).persistent, true)
+check("addressed by id as a string", last_rule_for(4) and last_rule_for(4).workspace, "4")
+check("only that one desktop is made persistent", #rules, 1)
+
+print("scenario: the desktops made on the way somewhere are not persistent")
+local p2 = two_monitors(1) -- DP-4 focused, a single desktop on it
+reset(p2)
+binds["SUPER + 2"].fn() -- M+#f with one desktop: makes a second
+check("M+2 created one", last_of("focus").arg.workspace, 4)
+check("...with no persistence rule", #rules, 0)
+
+local p3 = two_monitors(1)
+reset(p3)
+binds["SUPER + SHIFT + 2"].fn() -- moves the window onto a fresh desktop
+check("M+S+2 created one", last_of("focus").arg.workspace, 4)
+check("...with no rule either, it has a window on it", #rules, 0)
+
+-- SUPER+C on an empty desktop: leave it, then drop the rule. That order is
+-- Hyprland's, not a preference -- it will not destroy the workspace it shows.
+print("scenario: closing the empty desktop in view")
+local c1 = two_monitors(0) -- mon0 shows ws1 and also owns ws2
+reset(c1)
+check("it closed something", mod.close_desktop_here(), true)
+check("focus moved to the next desktop", last_of("focus").arg.workspace, 2)
+check("persistence dropped for the one left behind", last_rule_for(1).persistent, false)
+check("...by id", last_rule_for(1).workspace, "1")
+
+print("scenario: the focus happens before the rule is dropped")
+-- Both are recorded, so the order can be asserted rather than assumed: the
+-- reverse leaves the desktop standing.
+local c2 = two_monitors(0)
+reset(c2)
+local order = {}
+local real_dispatch, real_rule = hl.dispatch, hl.workspace_rule
+hl.dispatch = function(d)
+    if d.kind == "focus" then table.insert(order, "focus") end
+    return real_dispatch(d)
+end
+hl.workspace_rule = function(r)
+    table.insert(order, "rule")
+    return real_rule(r)
+end
+mod.close_desktop_here()
+check("focus first", order[1], "focus")
+check("rule second", order[2], "rule")
+hl.dispatch, hl.workspace_rule = real_dispatch, real_rule
+
+print("scenario: a desktop with a window on it is not closed")
+local c3 = two_monitors(0)
+c3.windows_on = { [1] = { { address = "0xWIN1" } } }
+reset(c3)
+check("refused", mod.close_desktop_here(), false)
+check("nothing dispatched", #dispatched, 0)
+check("no rule touched", #rules, 0)
+
+print("scenario: a monitor's last desktop stays, empty or not")
+local c4 = two_monitors(1) -- DP-4 focused, ws3 is all it has
+reset(c4)
+check("refused", mod.close_desktop_here(), false)
+check("no rule touched", #rules, 0)
+
+print("scenario: nothing to close when a special workspace is in view")
+local c5 = two_monitors(0)
+c5.monitors[1].active_workspace = c5.workspaces[4] -- the special one
+reset(c5)
+check("refused", mod.close_desktop_here(), false)
+check("no rule touched", #rules, 0)
 
 print("")
 print(("%d passed, %d failed"):format(pass, fail))

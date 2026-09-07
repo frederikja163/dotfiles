@@ -67,6 +67,13 @@ echo "all good"
 # position field is a "WxH" string ("640x480"), not the x@y token, with
 # logical coordinates (pixels / scale).
 #
+# And: an empty desktop is kept only by a `persistent` workspace rule, whose
+# selector is the id as a string and keeps matching after a rename. Issued at
+# runtime it takes effect at once, but switching it off removes the desktop
+# only while it is out of view, so the order (focus away, then drop the rule)
+# is load-bearing -- the stub cannot see that either way round. `hyprctl
+# reload` rebuilds the rule list, dropping every rule made since config load.
+#
 # That parks it in a special workspace, which is outside the desktop model and
 # so cannot be reached or shown by accident. It never draws while it is hidden,
 # but it runs: use hyprctl and what the config writes out, not your eyes.

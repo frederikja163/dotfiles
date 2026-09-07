@@ -133,13 +133,21 @@ screen — or on your own desktops when you are already on it:
 | ------------------ | --------------------- | ------------------------------- |
 | `SUPER + n`        | focus it              | next desktop, or make a second  |
 | `+ SHIFT`          | move window there     | move window to the next desktop |
-| `+ CTRL`           | duplicate/extend      | new desktop                     |
+| `+ CTRL`           | duplicate/extend      | new desktop, and it stays       |
 | `+ ALT + SHIFT`    | move column there     | move column to the next desktop |
 | `+ CTRL + SHIFT`   | move this desktop there | —                             |
 
 Desktops are **named after the directory** their quake terminal is sitting in,
 so the bar reads `dotfiles` rather than `2`; `~` when it has not been taken
-anywhere. Empty ones are removed by Hyprland on their own.
+anywhere.
+
+Hyprland removes an empty desktop as soon as you leave it, which is right for
+one made in passing and wrong for one asked for outright: `SUPER + CTRL + n`
+therefore makes a desktop that **stays while empty**, so it can be set up
+before there is anything on it. `SUPER + C` closes it — the same key that
+closes a window, since an empty desktop is the one time it has no window to
+close. It declines on a monitor's last desktop. A desktop kept this way does
+not survive `dotfiles-reload`: see the reasoning in `deskbinds.lua`.
 
 They also remember which screen they belong to, recognised by monitor
 *description* rather than connector name — `DP-4` came back as `DP-5` after a
