@@ -129,9 +129,21 @@ fi
 # Checked before anything is printed. Without this a diverged branch got a full
 # plan of work, "install.sh: needed" and all, and only then hit the --ff-only
 # refusal below -- an answer to a question the script could not carry out.
+#
+# Being merely ahead is not divergence, and has to be told apart from it: local
+# commits waiting to be pushed are the normal state of this repo between one
+# piece of work and the next. Calling that "diverged, merge or rebase by hand"
+# was alarming and wrong -- there is simply nothing to pull.
 if ! git merge-base --is-ancestor HEAD "$target"; then
     ahead="$(git rev-list --count "$target..HEAD")"
-    echo "    $branch has diverged: $ahead local commit(s) not on the remote." >&2
+
+    if git merge-base --is-ancestor "$target" HEAD; then
+        echo "    nothing to pull; $ahead local commit(s) not pushed yet"
+        exit 0
+    fi
+
+    echo "    $branch has diverged: $ahead local commit(s) not on the remote," >&2
+    echo "    $(git rev-list --count "HEAD..$target") on the remote and not here." >&2
     echo "    Nothing pulled. Merge or rebase by hand, then run this again." >&2
     exit 1
 fi
