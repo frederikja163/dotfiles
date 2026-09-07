@@ -149,6 +149,12 @@ closes a window, since an empty desktop is the one time it has no window to
 close. It declines on a monitor's last desktop. A desktop kept this way does
 not survive `dotfiles-reload`: see the reasoning in `deskbinds.lua`.
 
+Closing a desktop **takes its quake terminal with it**, so the next desktop to
+be given that id starts at `~` rather than inheriting a closed desktop's shell
+and working directory. A desktop that merely lapses — left empty, so Hyprland
+removes it — keeps its terminal, and does pass it on; `quake.lua` says why the
+two differ.
+
 They also remember which screen they belong to, recognised by monitor
 *description* rather than connector name — `DP-4` came back as `DP-5` after a
 redock — and go home when it is plugged back in.

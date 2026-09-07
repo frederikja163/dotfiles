@@ -356,6 +356,18 @@ local function new_desktop_here(persistent)
     create_new_desktop_here(persistent)
 end
 
+-- Called with the id of a desktop being closed by hand, while it is still
+-- there. quake.lua sets this and takes the desktop's terminal down with it.
+--
+-- A hook rather than a call into quake.lua, because quake.lua requires this
+-- module -- reaching back the other way would be a loop. Same arrangement as
+-- set_labeller below.
+local closing_hook = nil
+
+local function set_closing_hook(fn)
+    closing_hook = fn
+end
+
 -- Close the desktop in view, if there is nothing on it. This is the other half
 -- of SUPER+C, which closes the focused window: an empty desktop is the one
 -- occasion that key has no window to close, so it closes the desktop instead
@@ -366,9 +378,13 @@ end
 -- not a desktop at all.
 --
 -- A desktop whose only content is its quake terminal counts as empty, because
--- the terminal sits in a workspace of its own. So this closes it and leaves the
--- terminal behind, hidden. That is the bargain quake.lua already documents: the
--- id is the identity, and a later desktop with the same id inherits it.
+-- the terminal sits in a workspace of its own. The terminal is closed with the
+-- desktop, through the hook below -- otherwise it would outlive it and be
+-- inherited by whichever desktop is minted with the same id next, bringing that
+-- desktop's name and working directory back from a desktop that was closed on
+-- purpose. Note that this is the opposite of what happens when Hyprland sweeps
+-- an empty desktop up on its own, which quake.lua deliberately does not react
+-- to: leaving a desktop is not a decision to be rid of it, and closing it is.
 local function close_desktop_here()
     local mon = hl.get_active_monitor()
     local ws = mon and mon.active_workspace
@@ -383,6 +399,12 @@ local function close_desktop_here()
     local target = next_desktop(mon)
     if not target or target.id == ws.id then
         return false
+    end
+
+    -- While the desktop is still the one in view, so whatever belongs to it can
+    -- still be found by asking what is focused.
+    if closing_hook then
+        closing_hook(ws.id)
     end
 
     -- Out of view first, then un-persist: the other order leaves the desktop
@@ -662,6 +684,7 @@ end
 
 return {
     set_labeller = set_labeller,
+    set_closing_hook = set_closing_hook,
     new_desktop_here = new_desktop_here,
     close_desktop_here = close_desktop_here,
     renumber_desktops = renumber_desktops,

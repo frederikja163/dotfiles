@@ -594,6 +594,31 @@ check("focus first", order[1], "focus")
 check("rule second", order[2], "rule")
 hl.dispatch, hl.workspace_rule = real_dispatch, real_rule
 
+-- quake.lua hangs its own tidying up on this: the desktop's terminal is closed
+-- with it, so the next desktop to get this id does not inherit the old one's
+-- shell and directory. Called while the desktop is still in view, since that is
+-- how anything belonging to it can still be found.
+print("scenario: closing a desktop tells whoever asked to be told")
+local h1 = two_monitors(0)
+reset(h1)
+local told, told_at = {}, nil
+mod.set_closing_hook(function(id)
+    table.insert(told, id)
+    told_at = #dispatched
+end)
+mod.close_desktop_here()
+check("called once", #told, 1)
+check("with the id of the desktop being closed", told[1], 1)
+check("before anything has been dispatched", told_at, 0)
+
+print("scenario: nothing is closed, so nothing is told")
+local h2 = two_monitors(1) -- DP-4's only desktop, which cannot be closed
+reset(h2)
+told = {}
+mod.set_closing_hook(function(id) table.insert(told, id) end)
+check("refused", mod.close_desktop_here(), false)
+check("hook not called", #told, 0)
+
 print("scenario: a desktop with a window on it is not closed")
 local c3 = two_monitors(0)
 c3.windows_on = { [1] = { { address = "0xWIN1" } } }

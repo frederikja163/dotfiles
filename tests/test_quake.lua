@@ -8,7 +8,7 @@
 local HYPR = os.getenv("HYPR_DIR") or "hypr"
 package.path = HYPR .. "/?.lua;" .. package.path
 
-local execs, rules, moved, events, world, mod, resizes, geometry
+local execs, rules, moved, events, world, mod, resizes, geometry, closed
 
 -- The special workspace on the focused monitor, as a bare name, or nil.
 local function special_name()
@@ -16,7 +16,8 @@ local function special_name()
 end
 
 local function reset()
-    execs, rules, moved, events, resizes, geometry = {}, {}, {}, {}, {}, {}
+    execs, rules, moved, events, resizes, geometry, closed =
+        {}, {}, {}, {}, {}, {}, {}
 
     world = {
         -- The laptop panel: 1920x1200 at scale 1.5, so 1280x800 in the layout
@@ -114,6 +115,19 @@ local function reset()
             layout = function(m) return { kind = "layout", apply = function() end } end,
             window = {
                 swap = function(a) return { kind = "swap", apply = function() end } end,
+                -- Closing a desktop closes its terminal, by address. The stub
+                -- takes the window away as the compositor would, so what the
+                -- module believes afterwards can be asserted.
+                close = function(a)
+                    return { kind = "close", arg = a, apply = function()
+                        table.insert(closed, a)
+                        for i = #world.windows, 1, -1 do
+                            if ("address:" .. world.windows[i].address) == a.window then
+                                table.remove(world.windows, i)
+                            end
+                        end
+                    end }
+                end,
                 resize = function(a)
                     return { kind = "resize", arg = a, apply = function()
                         table.insert(resizes, a)
@@ -382,6 +396,45 @@ check("not evicted", #moved, 0)
 events["window.open"]({ class = "firefox", address = "0x111",
                         workspace = { name = "1.1" } })
 check("an ordinary window is left alone", #moved, 0)
+
+-- A desktop closed with SUPER+C takes its terminal with it, unlike one Hyprland
+-- sweeps up on its own. Otherwise the next desktop to be given that id inherits
+-- the shell, the directory and so the name of a desktop that was closed on
+-- purpose.
+print("scenario: the desktop is closed")
+reset()
+world.cwds[1] = "/home/fredandr/dotfiles"
+mod.toggle()
+check("a terminal, and the desktop named after it", mod.label_for(1), "dotfiles")
+mod.closed(1)
+check("the terminal is closed", #closed, 1)
+check("...by address, not by focus", closed[1] and closed[1].window, "address:0x1")
+check("nothing of it is left", mod.directory(), nil)
+check("and the name goes with it", mod.label_for(1), "~")
+
+print("scenario: the id is used again for a new desktop")
+world.cwds[2] = "/home/fredandr/Projects/runner"
+mod.toggle()                         -- the new desktop 1 asks for a terminal
+check("a fresh terminal is started", #execs, 2)
+check("in its own directory", mod.directory(), "/home/fredandr/Projects/runner")
+check("named after that, not the closed desktop's", mod.label_for(1), "runner")
+
+-- down[] left set would have sync() try to show a workspace that is gone.
+print("scenario: the desktop was closed with its terminal on screen")
+reset()
+mod.toggle()
+check("showing", special_name(), "quake-1")
+mod.closed(1)
+switch_to(2)
+switch_to(1)
+check("nothing is brought back for the new desktop", special_name(), nil)
+check("and no terminal was started for it", #execs, 1)
+
+print("scenario: closing a desktop that never had a terminal")
+reset()
+mod.closed(1)
+check("nothing to close", #closed, 0)
+check("still called ~", mod.label_for(1), "~")
 
 print("")
 print(("%d passed, %d failed"):format(pass, fail))

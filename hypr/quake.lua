@@ -419,17 +419,48 @@ end
 
 hl.on("window.open", opened)
 
--- Nothing here closes a terminal when its desktop goes away, deliberately.
+-- Nothing here closes a terminal when its desktop merely *goes away*,
+-- deliberately.
 --
 -- A terminal sits in a workspace of its own, which does not count towards
 -- making its desktop non-empty, so a desktop whose only content is the terminal
--- is removed the moment you leave it. Tidying up on that signal was tried and
--- is worse than the leak it fixes: drop the terminal on an empty desktop, step
--- away, come back, and it had been killed underneath you.
+-- is removed by Hyprland the moment you leave it. Tidying up on that signal was
+-- tried and is worse than the leak it fixes: drop the terminal on an empty
+-- desktop, step away, come back, and it had been killed underneath you.
 --
--- So a terminal outlives its desktop. Hyprland reuses desktop ids, so a later
--- desktop with the same id inherits it -- which is the same bargain as every
--- other desktop: the id is the identity, and one terminal belongs to it.
+-- So a terminal outlives a desktop that lapsed. Hyprland reuses desktop ids, so
+-- a later desktop with the same id inherits it -- which is the same bargain as
+-- every other desktop: the id is the identity, and one terminal belongs to it.
+--
+-- A desktop *closed* with SUPER+C is the other case, and gets the opposite
+-- treatment. There the desktop was got rid of on purpose, and inheriting its
+-- terminal would hand the next desktop with that id the closed one's shell,
+-- working directory and therefore its name on the bar. So closing takes the
+-- terminal with it, and the desktop that comes next starts at "~" with nothing
+-- behind it.
+--
+-- Everything remembered per desktop goes at the same time. `down` in
+-- particular: left set, sync() would try to show a terminal workspace that no
+-- longer exists on a desktop that never had one.
+local function closed(desktop_id)
+    local win = terminal_window(desktop_id)
+    if win and win.address then
+        -- By address rather than by focus: the terminal is usually the hidden
+        -- side of the desktop being closed, and the focused window is either
+        -- nothing at all or something else entirely.
+        hl.dispatch(hl.dsp.window.close({ window = "address:" .. win.address }))
+    end
+
+    down[desktop_id]     = nil
+    starting[desktop_id] = nil
+    labels[desktop_id]   = nil
+
+    if current == desktop_id then
+        current = nil
+    end
+end
+
+deskbinds.set_closing_hook(closed)
 
 hl.bind(mainMod .. " + grave", toggle, { description = "App: quake terminal" })
 
@@ -441,6 +472,7 @@ end
 
 return {
     toggle = toggle,
+    closed = closed,
     label_for = label_for,
     directory = directory,
     sync = sync,

@@ -73,6 +73,10 @@ echo "all good"
 # only while it is out of view, so the order (focus away, then drop the rule)
 # is load-bearing -- the stub cannot see that either way round. `hyprctl
 # reload` rebuilds the rule list, dropping every rule made since config load.
+# window.close does take window = "address:0x..." and closes that window rather
+# than the focused one, which is how a desktop closes its own quake terminal.
+# Dispatcher tables are not field-validated, so --verify-config accepts any
+# spelling here: only a running instance shows which one works.
 #
 # That parks it in a special workspace, which is outside the desktop model and
 # so cannot be reached or shown by accident. It never draws while it is hidden,
