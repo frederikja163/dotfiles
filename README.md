@@ -63,16 +63,23 @@ programs of those names do.
 
 ## bin/
 
-| Script          | Does                                                          |
-| --------------- | ------------------------------------------------------------- |
-| `hypr-keybinds` | the `SUPER + /` cheatsheet, generated from `hyprctl binds`     |
-| `power-menu`    | `SUPER + Escape`: lock, log out, reboot, shut down            |
-| `waybar-main`   | starts waybar on every monitor, full bar on the largest       |
-| `hypr-monitor-order` | pin which screen is monitor 1, 2, ...; set orientation |
-| `reload` | apply the dotfiles live: hyprland, waybar, wallpaper, idling, dunst |
-| `ide`           | `SUPER + I`: Rider if the directory holds a solution, else nvim |
-| `terminal-cwd`  | the working directory of a terminal's shell, given its pid    |
-| `dotfiles-check` | says at login if this repo is behind its remote               |
+`dotfiles-*` acts on this repo as a whole; the rest are tools the session and
+its keybinds reach for.
+
+| Script                   | Does                                                                |
+| ------------------------ | ------------------------------------------------------------------- |
+| `dotfiles-check`         | says at login if this repo is behind its remote                     |
+| `dotfiles-update`        | pull, then re-run the install scripts if the commits need it        |
+| `dotfiles-reload`        | apply the dotfiles live: hyprland, waybar, wallpaper, idling, dunst |
+| `dotfiles-keybinds`      | the `SUPER + /` cheatsheet, generated from `hyprctl binds`          |
+| `dotfiles-monitor-setup` | pin which screen is monitor 1, 2, ...; set orientation              |
+| `ide`                    | `SUPER + I`: Rider if the directory holds a solution, else nvim     |
+| `power-menu`             | `SUPER + Escape`: lock, log out, reboot, shut down                  |
+| `terminal-cwd`           | the working directory of a terminal's shell, given its pid          |
+| `waybar-main`            | starts waybar on every monitor, full bar on the largest             |
+
+`dotfiles-lib.sh` is not a command: it holds the remote-url rewrite that
+`dotfiles-check` and `dotfiles-update` both source.
 
 ## Keys
 
@@ -110,7 +117,7 @@ correction.
   collapse into one column.
 
 Each monitor has a number, `1`..`0`, in an order **pinned** by
-`hypr-monitor-order` (script or a hand-edited `~/.local/share/hypr/monitor-order`)
+`dotfiles-monitor-setup` (script or a hand-edited `~/.local/share/hypr/monitor-order`)
 rather than by Hyprland's connector ids, which reshuffle on redock. Monitors no
 one has pinned yet follow in id order. A screen's line can also carry
 `transform=1..3` — orientation for a panel mounted portrait — which
@@ -141,7 +148,7 @@ redock — and go home when it is plugged back in.
 ./install-packages.sh      # packages + neovim (Arch, needs sudo)
 ./install.sh               # symlink configs; backs up anything it displaces
 
-reload                     # apply the dotfiles to the running session
+dotfiles-reload            # apply the dotfiles to the running session
                            # kitty: ctrl+shift+f5
 
 ./tests/run.sh             # Lua tests, then Hyprland --verify-config
@@ -155,7 +162,7 @@ if it is already running, refuses to act under `HYPR_SANDBOX=1`, and raises a
 notification for a step that failed.
 `hyprlock.conf` is picked up at the next lock, and a change to the `PATH`
 exports in `environment.lua` needs a full session restart to be certain —
-`reload` only re-exports them to processes started afterwards.
+`dotfiles-reload` only re-exports them to processes started afterwards.
 
 Both install scripts are safe to re-run and skip whatever is already done.
 

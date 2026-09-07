@@ -4,9 +4,9 @@
 -- Which screen is where -- and which way it is mounted -- is this machine's
 -- business, not the repo's: connector names lie (DP-4 came back as DP-5), so
 -- the per-screen settings live in the pinned monitor file that
--- bin/hypr-monitor-order writes and monitorpin.lua parses. Orientation is the
--- one setting kept there so far: "transform=1" on a screen's line stands it up
--- after the panel was physically turned.
+-- bin/dotfiles-monitor-setup writes and monitorpin.lua parses. Orientation is
+-- the one setting kept there so far: "transform=1" on a screen's line stands
+-- it up after the panel was physically turned.
 --
 -- The layout comes from the same file. A comment in it sets the direction --
 -- "# layout = ltr|rtl|ttb" -- and the screens make a row or column in number
@@ -121,12 +121,13 @@ end
 -- timer crashes Hyprland outright, so both call apply_pinned directly.
 -- hyprland.start is when the monitors are first enumerable on boot;
 -- config.reloaded is what a hand-edited pin file (or a re-run of
--- hypr-monitor-order) lands on. monitor.added is a runtime event, on hotplug
--- and on replug, where the monitors have been seen before but a reconnect must
--- be re-armed -- and it is the fallback that puts a rotated screen back after
--- a mirror was toggled off (deskbinds.lua re-issues hl.monitor() there without
--- a transform). monitor.removed re-packs the row when a screen goes away; both
--- wait for the monitor to finish changing before configuring it.
+-- dotfiles-monitor-setup) lands on. monitor.added is a runtime event, on
+-- hotplug and on replug, where the monitors have been seen before but a
+-- reconnect must be re-armed -- and it is the fallback that puts a rotated
+-- screen back after a mirror was toggled off (deskbinds.lua re-issues
+-- hl.monitor() there without a transform). monitor.removed re-packs the row
+-- when a screen goes away; both wait for the monitor to finish changing before
+-- configuring it.
 local function defer_apply()
     hl.timer(apply_pinned, { timeout = 200, type = "oneshot" })
 end

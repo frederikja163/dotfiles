@@ -1,7 +1,7 @@
 -- Shared parsing for the pinned monitor file (~/.local/share/hypr/monitor-order),
 -- read both by monitors.lua (which turns each screen the way it is mounted) and
--- deskbinds.lua (which numbers them). bin/hypr-monitor-order writes the file;
--- hand-editing it works too. It is machine-local state, not part of the
+-- deskbinds.lua (which numbers them). bin/dotfiles-monitor-setup writes the
+-- file; hand-editing it works too. It is machine-local state, not part of the
 -- dotfiles, so each computer describes its own screens.
 --
 -- Format: one screen per line, monitor 1 first. A line is the screen's

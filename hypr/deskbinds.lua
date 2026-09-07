@@ -1,7 +1,7 @@
 -- Monitor and desktop keybinds (roadmap.md lines 36-44).
 --
 -- Every monitor gets a number, 1..0, in the order pinned by
--- bin/hypr-monitor-order -- never in physical or connector order, which
+-- bin/dotfiles-monitor-setup -- never in physical or connector order, which
 -- Hyprland's monitor ids reflect only by chance and reshuffle on every redock
 -- (DP-4 came back as DP-5). Monitors that have never been pinned trail the
 -- pinned ones, in id order; see the pin loading below. The number keys are
@@ -59,7 +59,7 @@ end
 
 -- The pinned monitor order, loaded once at config time.
 --
--- bin/hypr-monitor-order writes one monitor identity per line into a plain
+-- bin/dotfiles-monitor-setup writes one monitor identity per line into a plain
 -- text file and reloads Hyprland; hand-editing the file works too. The file is
 -- machine-local state (~/.local/share/hypr/monitor-order), not part of the
 -- dotfiles, so each computer pins its own screens. monitorpin.lua owns both the
