@@ -80,8 +80,8 @@ dotfiles, and is named after whatever it drives instead.
 | `terminal-cwd`           | the working directory of a terminal's shell, given its pid          |
 | `waybar-main`            | starts waybar on every monitor, full bar on the largest             |
 
-`dotfiles-lib.sh` is not a command: it holds the remote-url rewrite that
-`dotfiles-check` and `dotfiles-update` both source.
+Shared shell code lives in `lib/`, which is not on `PATH`: see
+`lib/dotfiles-lib.sh`, sourced by `dotfiles-check` and `dotfiles-update`.
 
 ## Keys
 

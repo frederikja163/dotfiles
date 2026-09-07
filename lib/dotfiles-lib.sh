@@ -1,7 +1,14 @@
-# Shared by bin/dotfiles-check and bin/dotfiles-update. Sourced, not run --
-# it lives in bin/ because that is the directory symlinked onto PATH, so this
-# is the only place both callers can reach it from. Not executable, and named
-# .sh, so it reads as a library rather than a command.
+# Shared by bin/dotfiles-check and bin/dotfiles-update. Sourced, not run.
+#
+# In lib/ rather than bin/, which is where it started. bin/ is symlinked onto
+# PATH, and although being non-executable already made this impossible to run,
+# it still landed in zsh's command hash and so turned up when completing
+# `dotfiles-<TAB>` -- noise in the list of things you actually can run. Nothing
+# needs it on PATH: both callers source it by absolute path off the repo root,
+# which they resolve anyway to find the repo they are reporting on.
+#
+# lib/ is deliberately not linked anywhere by install.sh. It is read out of the
+# repo, so there is nothing to install.
 
 # Print the https equivalent of a git remote url.
 #

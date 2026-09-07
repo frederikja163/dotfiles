@@ -23,8 +23,8 @@ set -uo pipefail
 # ~/.local/bin, so the link has to be resolved before taking the parent.
 REPO="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)" || exit 1
 
-# shellcheck source=bin/dotfiles-lib.sh
-. "$REPO/bin/dotfiles-lib.sh" || exit 1
+# shellcheck source=lib/dotfiles-lib.sh
+. "$REPO/lib/dotfiles-lib.sh" || exit 1
 
 assume_yes=0
 force_all=0
