@@ -5,10 +5,10 @@
 # pulled, because pulling relinks configs under a running session and that is a
 # decision to take deliberately rather than at login.
 #
-# Silent unless there is something to say. Offline, on a detached HEAD, on a
-# branch with no upstream, or with the remote unreachable, it exits without a
-# word -- a notification that fires whenever the wifi is slow is one that gets
-# ignored.
+# Silent unless there is something to say. On a detached HEAD, on a branch with
+# no upstream, or with the remote still unreachable when it gives up, it exits
+# without a word -- a notification that fires whenever the wifi is slow is one
+# that gets ignored.
 set -uo pipefail
 
 # The repo is wherever this script really lives: bin/ is a symlink from
@@ -17,6 +17,25 @@ REPO="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)" || exit 1
 
 # The session is up before the network is. Overridable so the tests do not wait.
 sleep "${DOTFILES_CHECK_DELAY:-30}"
+
+# ...and a single delay was not enough. Waiting 30 seconds and giving up assumed
+# the network arrives shortly after the session, which is true of wifi that
+# reconnects on its own and false of every other case: opening the laptop out of
+# range, a captive portal, or picking the network by hand a few minutes in. The
+# check then stayed silent for the whole login even though there were commits
+# waiting, which is the one failure the reminder cannot afford -- it is the only
+# thing that ever tells you.
+#
+# So the fetch below is retried on a schedule instead, and only the last failure
+# is silent. Every attempt is a full fetch: there is no cheap way to ask "is the
+# network up" that is worth trusting, since a route and a DNS answer both exist
+# on a captive portal that will not pass a git fetch through.
+#
+# Half an hour is where it stops. That is long enough to cover coming back into
+# range or logging into a portal, and short enough that the notification still
+# belongs to this login rather than arriving out of nowhere hours later.
+DOTFILES_CHECK_RETRY_INTERVAL="${DOTFILES_CHECK_RETRY_INTERVAL:-120}"
+DOTFILES_CHECK_RETRY_DEADLINE="${DOTFILES_CHECK_RETRY_DEADLINE:-1800}"
 
 cd "$REPO" || exit 1
 
@@ -48,7 +67,17 @@ case "$url" in
         ;;
 esac
 
-timeout 60 git fetch --quiet "$url" "$merge" 2>/dev/null || exit 0
+# Failures are not told apart by cause, deliberately: git reports "could not
+# resolve host" and a remote that has genuinely gone away with the same exit
+# status, so every failure is treated as worth another try. Retrying a real
+# error costs a fetch every two minutes and then silence, which is what would
+# have happened immediately anyway.
+started=$SECONDS
+while :; do
+    timeout 60 git fetch --quiet "$url" "$merge" 2>/dev/null && break
+    [ "$((SECONDS - started))" -lt "$DOTFILES_CHECK_RETRY_DEADLINE" ] || exit 0
+    sleep "$DOTFILES_CHECK_RETRY_INTERVAL"
+done
 
 behind="$(git rev-list --count "HEAD..FETCH_HEAD" 2>/dev/null)" || exit 0
 [ "${behind:-0}" -gt 0 ] || exit 0
