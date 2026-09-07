@@ -17,10 +17,50 @@ read_list() {
 
 # --- official repos --------------------------------------------------------
 
+# Only packages that are missing entirely are this script's business, and only
+# then does pacman run at all.
+#
+# `pacman -S --needed <the whole list>` was what this did, and it is wrong twice
+# over. It treats a listed package being out of date as something to fix, which
+# is system maintenance rather than anything to do with these dotfiles -- and
+# because it names the package without upgrading the system, it is a partial
+# upgrade, which Arch does not support. That is not theoretical; it broke:
+#
+#   installing aquamarine (0.15.0-2) breaks dependency 'libaquamarine.so=13-64'
+#   required by hyprtoolkit
+#
+# hyprland was in the list and due an update, so pacman pulled in its new
+# dependency aquamarine (libaquamarine.so=14) while leaving hyprtoolkit -- an
+# indirect dependency, absent from the list -- at the build wanting so=13. The
+# transaction could not be satisfied, so nothing installed at all. The repos
+# were consistent the whole time; only this script's view of them was not.
+#
+# Skipping installed packages avoids that by not asking for the upgrade in the
+# first place, which is also what stops a routine `dotfiles-update` from
+# dragging in a kernel and the reboot that follows it. When something genuinely
+# is missing there is no way around -u: installing a named package against a
+# freshly synced database is the classic Arch breakage, so the full upgrade
+# comes with it and is announced rather than sprung.
+#
+# A list entry naming a virtual or a provider rather than a real package would
+# look missing here and be installed explicitly. There are none today; the
+# alternative, parsing `pacman -T`, is harder to read for a case that does not
+# yet exist.
 mapfile -t pkgs < <(read_list "$DOTFILES/packages/pacman.txt")
-if [ ${#pkgs[@]} -gt 0 ]; then
-  echo "==> pacman (${#pkgs[@]} packages)"
-  sudo pacman -S --needed "${pkgs[@]}"
+
+missing=()
+for pkg in "${pkgs[@]}"; do
+  pacman -Qq "$pkg" >/dev/null 2>&1 || missing+=("$pkg")
+done
+
+if [ ${#missing[@]} -eq 0 ]; then
+  echo "==> pacman: all ${#pkgs[@]} packages present, nothing to install"
+  echo "    (upgrading the system is separate: sudo pacman -Syu)"
+else
+  echo "==> pacman: ${#missing[@]} of ${#pkgs[@]} missing: ${missing[*]}"
+  echo "    Installing these requires a full system upgrade (-Syu); a partial"
+  echo "    one is what breaks Arch. Expect a reboot if the kernel is included."
+  sudo pacman -Syu --needed "${missing[@]}"
 fi
 
 # --- AUR signing keys ------------------------------------------------------
@@ -55,14 +95,26 @@ done
 
 # --- AUR -------------------------------------------------------------------
 
+# Same rule as the pacman block above: only what is missing, and yay is not run
+# at all when there is nothing to build. It matters more here, because yay would
+# otherwise rebuild AUR packages from source on a routine dotfiles pull.
 mapfile -t aur < <(read_list "$DOTFILES/packages/aur.txt")
-if [ ${#aur[@]} -gt 0 ]; then
-  if command -v yay >/dev/null; then
-    echo "==> yay (${#aur[@]} packages)"
-    yay -S --needed "${aur[@]}"
-  else
-    echo "!! yay not found, skipping AUR packages: ${aur[*]}" >&2
-  fi
+
+aur_missing=()
+for pkg in "${aur[@]}"; do
+  pacman -Qq "$pkg" >/dev/null 2>&1 || aur_missing+=("$pkg")
+done
+
+if [ ${#aur_missing[@]} -eq 0 ]; then
+  echo "==> yay: all ${#aur[@]} AUR packages present, nothing to build"
+elif ! command -v yay >/dev/null; then
+  echo "!! yay not found, skipping AUR packages: ${aur_missing[*]}" >&2
+else
+  # -Syu rather than -S for the reason the pacman block explains: building a
+  # new AUR package can pull repo dependencies with it, and naming those
+  # without upgrading the system is the same partial upgrade by another route.
+  echo "==> yay: ${#aur_missing[@]} of ${#aur[@]} missing: ${aur_missing[*]}"
+  yay -Syu --needed "${aur_missing[@]}"
 fi
 
 # --- neovim via bob --------------------------------------------------------
