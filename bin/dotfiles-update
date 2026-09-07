@@ -2,9 +2,9 @@
 # Pull this repo, then re-run the install scripts if the commits that arrived
 # actually need them.
 #
-# The companion to bin/dotfiles-check, which only says you are behind. This is
-# the deliberate act it asks for, so it is interactive by default and never
-# started from the session.
+# The companion to bin/dotfiles-check-updates, which only says you are behind.
+# This is the deliberate act it asks for, so it is interactive by default and
+# never started from the session.
 #
 #   dotfiles-update              pull, then ask, with the diff's answer offered
 #   dotfiles-update -y           pull, then do what the diff says, no questions

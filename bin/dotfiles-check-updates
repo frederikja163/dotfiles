@@ -19,7 +19,7 @@ REPO="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)" || exit 1
 . "$REPO/lib/dotfiles-lib.sh" || exit 1
 
 # The session is up before the network is. Overridable so the tests do not wait.
-sleep "${DOTFILES_CHECK_DELAY:-30}"
+sleep "${DOTFILES_CHECK_UPDATES_DELAY:-30}"
 
 # ...and a single delay was not enough. Waiting 30 seconds and giving up assumed
 # the network arrives shortly after the session, which is true of wifi that
@@ -37,8 +37,10 @@ sleep "${DOTFILES_CHECK_DELAY:-30}"
 # Half an hour is where it stops. That is long enough to cover coming back into
 # range or logging into a portal, and short enough that the notification still
 # belongs to this login rather than arriving out of nowhere hours later.
-DOTFILES_CHECK_RETRY_INTERVAL="${DOTFILES_CHECK_RETRY_INTERVAL:-120}"
-DOTFILES_CHECK_RETRY_DEADLINE="${DOTFILES_CHECK_RETRY_DEADLINE:-1800}"
+# Short locals below, because the override names are a mouthful in an
+# expression and the environment is only how a test reaches in.
+retry_interval="${DOTFILES_CHECK_UPDATES_RETRY_INTERVAL:-120}"
+retry_deadline="${DOTFILES_CHECK_UPDATES_RETRY_DEADLINE:-1800}"
 
 cd "$REPO" || exit 1
 
@@ -64,8 +66,8 @@ url="$(dotfiles_https_url "$url")"
 started=$SECONDS
 while :; do
     timeout 60 git fetch --quiet "$url" "$merge" 2>/dev/null && break
-    [ "$((SECONDS - started))" -lt "$DOTFILES_CHECK_RETRY_DEADLINE" ] || exit 0
-    sleep "$DOTFILES_CHECK_RETRY_INTERVAL"
+    [ "$((SECONDS - started))" -lt "$retry_deadline" ] || exit 0
+    sleep "$retry_interval"
 done
 
 behind="$(git rev-list --count "HEAD..FETCH_HEAD" 2>/dev/null)" || exit 0

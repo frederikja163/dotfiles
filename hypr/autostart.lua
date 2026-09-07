@@ -39,10 +39,10 @@ hl.on("hyprland.start", function ()
     -- Idle timeouts: dim, lock, displays off, suspend (see hypridle.conf)
     hl.exec_cmd("hypridle")
 
-    -- Say if this repo is behind its remote (see bin/dotfiles-check). It waits
-    -- for the network itself, retrying for half an hour, and stays quiet unless
-    -- there is something to report, so it costs nothing at login.
-    hl.exec_cmd("dotfiles-check")
+    -- Say if this repo is behind its remote (see bin/dotfiles-check-updates).
+    -- It waits for the network itself, retrying for half an hour, and stays
+    -- quiet unless there is something to report, so it costs nothing at login.
+    hl.exec_cmd("dotfiles-check-updates")
 end)
 
 -- Which monitor is the main one can change: docking, undocking, a cable moving

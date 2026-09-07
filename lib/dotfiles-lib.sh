@@ -1,4 +1,5 @@
-# Shared by bin/dotfiles-check and bin/dotfiles-update. Sourced, not run.
+# Shared by bin/dotfiles-check-updates and bin/dotfiles-update.
+# Sourced, not run.
 #
 # In lib/ rather than bin/, which is where it started. bin/ is symlinked onto
 # PATH, and although being non-executable already made this impossible to run,

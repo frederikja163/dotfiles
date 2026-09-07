@@ -70,7 +70,7 @@ dotfiles, and is named after whatever it drives instead.
 
 | Script                   | Does                                                                |
 | ------------------------ | ------------------------------------------------------------------- |
-| `dotfiles-check`         | says at login if this repo is behind its remote                     |
+| `dotfiles-check-updates` | says at login if this repo is behind its remote                     |
 | `dotfiles-update`        | pull, then re-run the install scripts if the commits need it        |
 | `dotfiles-reload`        | apply the dotfiles live: hyprland, waybar, wallpaper, idling, dunst |
 | `dotfiles-monitor-order` | pin which screen is monitor 1, 2, ...; set orientation              |
@@ -81,7 +81,7 @@ dotfiles, and is named after whatever it drives instead.
 | `waybar-main`            | starts waybar on every monitor, full bar on the largest             |
 
 Shared shell code lives in `lib/`, which is not on `PATH`: see
-`lib/dotfiles-lib.sh`, sourced by `dotfiles-check` and `dotfiles-update`.
+`lib/dotfiles-lib.sh`, sourced by `dotfiles-check-updates` and `dotfiles-update`.
 
 ## Keys
 
