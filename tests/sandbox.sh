@@ -11,6 +11,7 @@
 #   ./tests/sandbox.sh start [config]     start it (default: this repo's hypr/)
 #   ./tests/sandbox.sh hyprctl monitors -j
 #   ./tests/sandbox.sh exec kitty         run something inside it
+#   ./tests/sandbox.sh keys -k Tab        press keys at it (wtype arguments)
 #   ./tests/sandbox.sh status
 #   ./tests/sandbox.sh stop
 #
@@ -124,6 +125,96 @@ sandbox_hyprctl() {
     HYPRLAND_INSTANCE_SIGNATURE="$(saved_sig)" hyprctl "$@"
 }
 
+# The nested instance's own Wayland socket, which nothing reports: `hyprctl
+# instances` knows only the IPC signature, and /proc/<pid>/environ holds the
+# *host* value the sandbox inherited, not the one it went on to create.
+#
+# So ask the sandbox itself. Hyprland exports WAYLAND_DISPLAY to the processes
+# it launches, so a shell started inside it can print the value. exec_raw
+# rather than exec_cmd because only exec_raw hands the string to a shell, so
+# the redirect is interpreted -- exec_cmd would pass ">" to printenv as an
+# argument.
+#
+# Cached, because every keypress would otherwise pay for a round trip.
+wayland_display() {
+    local cache="${XDG_RUNTIME_DIR:-/tmp}/hypr-sandbox-wayland"
+
+    if [ -s "$cache" ]; then
+        local cached
+        cached="$(cat "$cache")"
+        # Still valid only while that socket is there; a restarted sandbox gets
+        # a new one and the old name would silently address the host.
+        if [ -S "${XDG_RUNTIME_DIR:-/tmp}/$cached" ]; then
+            printf '%s' "$cached"
+            return 0
+        fi
+    fi
+
+    local out="${XDG_RUNTIME_DIR:-/tmp}/hypr-sandbox-wayland.probe"
+    rm -f "$out"
+    sandbox_hyprctl dispatch "hl.dsp.exec_raw(\"printenv WAYLAND_DISPLAY > $out\")" >/dev/null || return 1
+
+    local waited=0
+    while [ "$waited" -lt 30 ]; do
+        if [ -s "$out" ]; then
+            tr -d '\n' < "$out" > "$cache"
+            rm -f "$out"
+            cat "$cache"
+            return 0
+        fi
+        sleep 0.1
+        waited=$((waited + 1))
+    done
+
+    echo "sandbox: it never said which wayland socket it made" >&2
+    return 1
+}
+
+# Press keys at the sandbox. Arguments are wtype's:
+#
+#   ./tests/sandbox.sh keys -M super -k g -m super   # SUPER + G
+#   ./tests/sandbox.sh keys -k h                     # h
+#
+# This is the only way to test a bind that enters or leaves a submap. No
+# physical key reaches the sandbox -- it lives in a special workspace precisely
+# so none can -- but wtype is a *client* of the nested compositor, and a
+# virtual keyboard goes through the same input path as a real one: Hyprland's
+# applyConfigToKeyboard defaults allow_binds to true, so binds do fire. The
+# host session never sees any of it.
+#
+# Two things to know before believing a result:
+#
+# Binds only match at all because input.lua turns on resolve_binds_by_sym
+# under HYPR_SANDBOX. Hyprland otherwise resolves a bind's keysym through the
+# config's *layout*, which does not match the keymap wtype invents, so keys
+# arrive at clients correctly while every bind stays silent.
+#
+# Throw the first keypress away. Each invocation is a new client and so a new
+# virtual keyboard, and the first key on a fresh one lands before Hyprland has
+# finished applying the keyboard config, so it resolves to the wrong symbol.
+# `keys -k F13` first, then measure.
+#
+# A modifier needs both halves, in one invocation. wtype's -M/-m set the
+# modifier *state* without pressing any key, while -P/-p press the key without
+# touching the state; a real keyboard does both at once. Anything testing a
+# shifted bind, or what happens when a modifier is merely reached for, wants:
+#
+#   keys -M shift -P Shift_L -k Tab -p Shift_L -m shift
+#
+# Splitting that across two invocations proves nothing: each one is its own
+# keyboard, and the first is destroyed -- releasing whatever it held -- before
+# the second runs. Using only -M hides bugs about the key event (a mode being
+# cancelled by reaching for SHIFT); using only -P hides bugs about the state
+# (SHIFT+Tab matching the plain Tab bind).
+keys() {
+    running || { echo "sandbox: not running" >&2; return 1; }
+
+    local wd
+    wd="$(wayland_display)" || return 1
+
+    WAYLAND_DISPLAY="$wd" wtype "$@"
+}
+
 case "${1:-}" in
     start)   shift; start "$@" ;;
     stop)    stop ;;
@@ -144,8 +235,9 @@ for m in json.load(sys.stdin):
         shift
         sandbox_hyprctl dispatch "hl.dsp.exec_cmd(\"$*\")"
         ;;
+    keys)    shift; keys "$@" ;;
     *)
-        sed -n '2,23p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
+        sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
         exit 1
         ;;
 esac

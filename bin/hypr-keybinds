@@ -14,9 +14,16 @@ set -euo pipefail
 binds="$(
   hyprctl binds | awk '
     # Hyprland prints one indented "field: value" block per bind.
-    /^bind/            { mask = ""; key = ""; desc = ""; next }
+    /^bind/            { mask = ""; key = ""; desc = ""; submap = ""; next }
     /^\tmodmask:/      { mask = $2; next }
     /^\tkey:/          { key  = $2; next }
+    /^\tsubmap:/       {
+        # Empty for a normal-mode bind, so this cannot use $2: there is no
+        # second field at all on "\tsubmap: ".
+        submap = $0
+        sub(/^\tsubmap: /, "", submap)
+        next
+    }
     /^\tdescription:/  {
         # Descriptions contain spaces, so rebuild everything after the colon.
         desc = $0
@@ -32,11 +39,19 @@ binds="$(
             if (int(m /  8) % 2) mods = mods "ALT + "
             if (int(m /  4) % 2) mods = mods "CTRL + "
             if (int(m /  1) % 2) mods = mods "SHIFT + "
-            printf "%-28s %s\n", mods key, desc
+
+            # A bind inside a mode is not reached by its modifiers -- the mode
+            # was entered first -- so it is labelled "<mode> > <key>". The
+            # leading field is only there to sort by, and is cut off below:
+            # normal mode first, then one group per mode.
+            if (submap == "")
+                printf "0\t%-30s %s\n", mods key, desc
+            else
+                printf "1%s\t%-30s %s\n", submap, submap " \342\226\270 " mods key, desc
         }
-        mask = ""; key = ""; desc = ""
+        mask = ""; key = ""; desc = ""; submap = ""
     }
-  '
+  ' | sort | cut -f2-
 )"
 
 if [ -z "$binds" ]; then

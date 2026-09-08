@@ -18,9 +18,6 @@
 -- The pure state functions are exported at the bottom so they can be tested
 -- without a compositor.
 
-local programs = require("programs")
-local mainMod = programs.mainMod
-
 local MIN = 0.08 -- smallest column or row, as a fraction
 
 local state = {}
@@ -823,79 +820,31 @@ hl.layout.register("columns", {
     end,
 })
 
-----------------------------------------------------------------------------
--- Keybinds
-----------------------------------------------------------------------------
-
--- Modifiers have one meaning each:
+-- Keys live in modes.lua. The layout messages below are this file's public
+-- interface to them, and to `hyprctl dispatch 'hl.dsp.layout("...")'`:
 --
---   SHIFT  move the thing
---   CTRL   change its geometry
---   ALT    scope up: the whole column rather than one window
+--   focus l|r|u|d      move the focus
+--   movecol prev|next  move the focused window to the column beside it
+--   movewin up|down    move it within its column
+--   swapcol prev|next  move the whole column
+--   colresize <f>      widen/narrow the column by a fraction of the screen
+--   rowresize <f>      grow/shrink the window within its column
+--   cyclemain          promote through the widest column
+--   newcol             give the focused window a column of its own
 --
--- Only the letter keys carry a description, so the arrow aliases do not
--- duplicate every entry in the SUPER + / cheatsheet.
---
--- There is no bind for "newcol": moving a window past the last column with
--- SHIFT + h/l already gives it a column of its own. The message is still there
--- for `hyprctl dispatch 'hl.dsp.layout("newcol")'`.
+-- There is no bind for "newcol": moving a window past the last column already
+-- gives it one. The message stays for dispatching by hand.
 
-hl.bind(mainMod .. " + M", hl.dsp.layout("cyclemain"),
-        { description = "Column: cycle windows through the widest one" })
-
-local horizontal = {
-    { keys = { "H", "left"  }, dir = "prev", label = "left",  step = -0.05, focus = "l" },
-    { keys = { "L", "right" }, dir = "next", label = "right", step =  0.05, focus = "r" },
-}
-
-for _, h in ipairs(horizontal) do
-    for i, key in ipairs(h.keys) do
-        local named = i == 1 -- the arrow aliases stay out of the cheatsheet
-
-        hl.bind(mainMod .. " + " .. key, hl.dsp.layout("focus " .. h.focus),
-                { repeating = true,
-                  description = named and ("Window: focus " .. h.label) or nil })
-
-        hl.bind(mainMod .. " + SHIFT + " .. key, hl.dsp.layout("movecol " .. h.dir),
-                { repeating = true,
-                  description = named and ("Window: move to the column " .. h.label) or nil })
-
-        hl.bind(mainMod .. " + ALT + SHIFT + " .. key, hl.dsp.layout("swapcol " .. h.dir),
-                { repeating = true,
-                  description = named and ("Column: move " .. h.label) or nil })
-
-        -- Widening a window is widening its column, so this is a window action.
-        hl.bind(mainMod .. " + CTRL + " .. key, hl.dsp.layout(("colresize %.2f"):format(h.step)),
-                { repeating = true,
-                  description = named and ("Window: resize " .. h.label) or nil })
-    end
-end
-
-local vertical = {
-    { keys = { "J", "down" }, dir = "down", label = "down", step =  0.05, focus = "d" },
-    { keys = { "K", "up"   }, dir = "up",   label = "up",   step = -0.05, focus = "u" },
-}
-
-for _, v in ipairs(vertical) do
-    for i, key in ipairs(v.keys) do
-        local named = i == 1
-
-        hl.bind(mainMod .. " + " .. key, hl.dsp.layout("focus " .. v.focus),
-                { repeating = true,
-                  description = named and ("Window: focus " .. v.label) or nil })
-
-        hl.bind(mainMod .. " + SHIFT + " .. key, hl.dsp.layout("movewin " .. v.dir),
-                { repeating = true,
-                  description = named and ("Window: move " .. v.label .. " in its column") or nil })
-
-        hl.bind(mainMod .. " + CTRL + " .. key, hl.dsp.layout(("rowresize %.2f"):format(v.step)),
-                { repeating = true,
-                  description = named and ("Window: resize " .. v.label) or nil })
-    end
+-- Forget a desktop's layout. Called by deskbinds when the desktop goes, since
+-- workspace ids are reused and the next desktop given this one would otherwise
+-- inherit its columns.
+local function forget(ws)
+    state[ws] = nil
 end
 
 -- Exported for tests: all of these work on a plain state table.
 return {
+    forget = forget,
     new_state = new_state,
     add_to_column = add_to_column,
     to_unit = to_unit,

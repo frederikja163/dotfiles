@@ -1,23 +1,32 @@
--- Monitor and desktop keybinds (roadmap.md lines 36-44).
+-- Monitors and desktops: what the screen and desktop keys actually do.
+--
+-- This file holds no binds. modes.lua owns every key and calls the actions
+-- exported at the bottom, because the same action is reached two ways -- as a
+-- chord in normal mode (SUPER+3) and as a motion inside a mode (SUPER+M then
+-- 3) -- and neither should have to know how the other is typed.
 --
 -- Every monitor gets a number, 1..0, in the order pinned by
 -- bin/dotfiles-monitor-order -- never in physical or connector order, which
 -- Hyprland's monitor ids reflect only by chance and reshuffle on every redock
 -- (DP-4 came back as DP-5). Monitors that have never been pinned trail the
--- pinned ones, in id order; see the pin loading below. The number keys are
--- overloaded on whether the target monitor is the focused one:
+-- pinned ones, in id order; see the pin loading below.
 --
---   #n = a monitor that is NOT focused        #f = the focused monitor
+-- A screen number is overloaded on whether it is the screen you are already
+-- on, and the overload is the same at every scope: acting "towards" the screen
+-- you are on means acting towards a brand-new desktop on it.
 --
---   M   + #n  focus that monitor             M   + #f  next desktop (wraps)
---   M+S + #n  move window to that monitor    M+S + #f  move window to next desktop
---   M+C + #n  toggle mirror with focused     M+C + #f  new desktop, focused
+--   #n = a screen you are not on             #f = the screen you are on
 --
--- On a #f monitor with only one desktop, M+S+#f makes a second desktop and
--- takes the window onto it (the plain M+#f key makes one in that situation but
--- has nothing to move). Likewise M+C+#f always mints a fresh desktop, so
--- M+C+S+#f moves the window onto a fresh one; on a #n monitor M+C+S moves the
--- whole desktop across, below.
+--   focus_screen            go there         a new desktop, kept while empty
+--   move_window_to_screen   window there     window to a new desktop
+--   move_column_to_screen   column there     column to a new desktop
+--   move_desktop_to_screen  desktop there    nothing (it is already here)
+--   toggle_mirror_screen    duplicate it     nothing (cannot mirror itself)
+--
+-- Cycling desktops is a separate axis -- focus_neighbour_desktop and friends,
+-- on Tab -- so nothing here depends on how many desktops happen to exist. The
+-- two "only one desktop, so make a second" special cases this file used to
+-- carry are gone with it: creating and going-to are different keys now.
 --
 -- "desktop" is a Hyprland workspace. Empty non-persistent workspaces are
 -- cleaned up by Hyprland automatically, so nothing here has to remove them.
@@ -26,10 +35,8 @@
 -- which are the primitives already used elsewhere in this config. Focusing a
 -- monitor is done by focusing the workspace it currently shows.
 
-local programs = require("programs")
 local columns = require("columns")
 local monitorpin = require("monitorpin")
-local mainMod = programs.mainMod
 
 -- Monitors we have set to mirror another one:
 -- [name] = { id = n, source = name, pin = n|nil }
@@ -78,6 +85,17 @@ do
 end
 
 local home = {}
+
+-- Which desktops have been asked to stay: [id] = true. Kept because nothing
+-- reads the rules back -- a workspace object does not say whether it is
+-- persistent, and `hyprctl workspacerules` has no Lua counterpart -- and
+-- session.lua has to write the flag down to put it back after a restart.
+local persisted = {}
+
+-- Every desktop id this session has ever seen, so the ones that go can be
+-- noticed. Not the same as "desktops that exist": that is what it is compared
+-- against.
+local seen = {}
 
 -- Monitor slots in a stable order, one per number key. Pinned monitors lead,
 -- in file order; everything else trails, in id order. Mirroring monitors are
@@ -129,7 +147,75 @@ local function monitor_for(index)
     return monitor_slots()[index]
 end
 
--- Regular (non-special) workspaces living on a monitor, lowest id first.
+-- Where a desktop sits in its screen's row: [workspace id] = sort key.
+--
+-- Desktops are ordered by workspace id, which is the order they were made in
+-- and so the order you expect. That stops being true the moment a desktop
+-- moves between screens: its id is fixed, so it inserts itself wherever that
+-- id happens to fall in the row it arrives in -- landing in the middle and
+-- renumbering the desktops either side of it.
+--
+-- Renumbering the desktop instead was the obvious answer and is a trap.
+-- workspace.change_id does not rename a workspace: it creates one under the
+-- new id and moves the windows across, leaving the old one behind, and the
+-- desktop's quake terminal stays in "special:quake-<old id>" where nothing
+-- will ever find it again. Verified in a nested instance; the terminal was
+-- still sitting in the orphaned special workspace afterwards.
+--
+-- So the id is left alone and the *position* is remembered instead. Only
+-- desktops that have actually been moved get an entry; everything else falls
+-- back to its id, so this table is empty until something happens. Stale
+-- entries are pruned in the renumbering pass, because ids get reused and a new
+-- desktop must not inherit a retired one's place in the row.
+local position = {}
+
+local function sort_key(ws)
+    return position[ws.id] or ws.id
+end
+
+----------------------------------------------------------------------------
+-- Forgetting a desktop
+----------------------------------------------------------------------------
+--
+-- Everything anyone remembers about a desktop is keyed by its workspace id,
+-- and Hyprland reuses ids the moment a desktop goes. Anything left behind is
+-- therefore inherited by the next desktop handed that id, which is how a brand
+-- new desktop came up on the wrong screen, in the wrong place in the row, and
+-- with a previous occupant's terminal and working directory: it was wearing a
+-- dead desktop's clothes.
+--
+-- There were two ways for a desktop to go and only one of them cleaned up.
+-- Closing it with SUPER+C did; *lapsing* -- left empty, swept up by Hyprland
+-- -- did not, and that is the common one. So cleanup is driven by the only
+-- thing that cannot be wrong: whether the workspace still exists.
+--
+-- Other modules register what they remember, rather than deskbinds knowing
+-- their business: quake.lua has the desktop's terminal and name, columns.lua
+-- has its layout.
+local forget_hooks = {}
+
+local function on_forget(fn)
+    table.insert(forget_hooks, fn)
+end
+
+local function forget_desktop(id)
+    position[id] = nil
+    home[id] = nil
+    seen[id] = nil
+
+    if persisted[id] then
+        persisted[id] = nil
+        -- The rule names a monitor, so leaving it would place the next desktop
+        -- with this id on a dead one's screen.
+        hl.workspace_rule({ workspace = tostring(id), persistent = false })
+    end
+
+    for _, fn in ipairs(forget_hooks) do
+        fn(id)
+    end
+end
+
+-- Regular (non-special) workspaces living on a monitor, in row order.
 local function desktops_on(mon)
     local list = {}
     for _, ws in ipairs(hl.get_workspaces() or {}) do
@@ -137,14 +223,45 @@ local function desktops_on(mon)
             table.insert(list, ws)
         end
     end
-    table.sort(list, function(a, b) return a.id < b.id end)
+    table.sort(list, function(a, b) return sort_key(a) < sort_key(b) end)
     return list
 end
 
--- Next desktop on a monitor, wrapping back to the first.
-local function next_desktop(mon)
+-- Put a desktop at the end of a monitor's row, and keep it there.
+--
+-- The key only has to be larger than everything already on that screen; screens
+-- do not share a row, so keys never have to be unique across them.
+local function place_at_end_of(mon, ws)
+    if not (mon and ws) then
+        return
+    end
+
+    local highest
+    for _, other in ipairs(desktops_on(mon)) do
+        if other.id ~= ws.id then
+            local key = sort_key(other)
+            if not highest or key > highest then
+                highest = key
+            end
+        end
+    end
+
+    -- Nothing else there, so its own id will do and no note is needed.
+    if highest then
+        position[ws.id] = highest + 1
+    end
+end
+
+-- The desktop `step` places along from the one in view, wrapping both ways.
+-- step = 1 is the next one, -1 the previous; SUPER+Tab and SUPER+SHIFT+Tab.
+local function neighbour_desktop(mon, step)
     local list = desktops_on(mon)
-    if #list == 0 then
+    -- One desktop is its own neighbour, so there is nothing to go to. Saying
+    -- so rather than returning it keeps the callers from dispatching a focus
+    -- at the desktop already in view, which would churn workspace events (and
+    -- a renumbering pass) for nothing. close_desktop_here relies on the same
+    -- answer to know it has nowhere to put you.
+    if #list < 2 then
         return nil
     end
 
@@ -157,17 +274,66 @@ local function next_desktop(mon)
         end
     end
 
-    return list[(current % #list) + 1]
+    -- Lua indexes from 1, so shift into 0-based, wrap, and shift back. The
+    -- extra #list keeps a step of -1 on the first desktop out of the negatives.
+    return list[((current - 1 + step + #list) % #list) + 1]
 end
 
--- Lowest unused positive workspace id, for creating a new desktop.
-local function unused_desktop_id()
-    local used = {}
-    for _, ws in ipairs(hl.get_workspaces() or {}) do
-        used[ws.id] = true
+-- Where focus goes when the desktop in view is closed: the one before it, or
+-- the one after when it was the first.
+--
+-- Deliberately does not wrap. Closing is backing out of somewhere, so the
+-- neighbour you came from is where you expect to land -- and the wrapping
+-- version put you on desktop 1 from anywhere, which is a long way from where
+-- you were with several open.
+local function desktop_after_closing(mon, ws)
+    local list = desktops_on(mon)
+
+    local current
+    for i, other in ipairs(list) do
+        if other.id == ws.id then
+            current = i
+            break
+        end
     end
 
-    local id = 1
+    if not current then
+        return nil
+    end
+
+    return list[current - 1] or list[current + 1]
+end
+
+-- An unused workspace id for a new desktop on `mon`, chosen so the desktop
+-- lands at the end of that monitor's row.
+--
+-- Everything here orders desktops by id (desktops_on sorts by it), so the id is
+-- what decides where a new one appears. Taking the lowest free id globally put
+-- it *first* whenever a lower id had been freed elsewhere: with the laptop
+-- holding id 1 and the other screen holding 3 and 4, a new desktop on the
+-- second screen took the free id 2 and arrived ahead of both, renumbering them
+-- from under you.
+--
+-- So start past that monitor's own highest id. Gaps further down are still
+-- reused -- they belong to other screens, where they sort correctly -- so ids
+-- stay small rather than climbing forever.
+--
+-- `mon` may be nil, when there is no focused monitor to ask about; then this is
+-- the old "lowest free id", which is the best that can be said.
+local function unused_desktop_id(mon)
+    local used = {}
+    local highest = 0
+
+    for _, ws in ipairs(hl.get_workspaces() or {}) do
+        used[ws.id] = true
+
+        if mon and not ws.special and ws.monitor and ws.monitor.id == mon.id
+           and ws.id > highest then
+            highest = ws.id
+        end
+    end
+
+    local id = highest + 1
     while used[id] do
         id = id + 1
     end
@@ -177,20 +343,36 @@ end
 -- Hyprland workspace ids are global: the second monitor can end up owning ids
 -- 2 and 3, so they are renamed to encode their position per monitor.
 --
--- The name is "<monitor>.<desktop>", e.g. 1.1, 1.2, 2.1 -- deliberately unique
--- across monitors rather than just "1", "2". Waybar marks a button active when
--- the workspace name equals the globally focused workspace's name, with no
--- monitor check (workspaces.cpp: `isActiveByName`), so two monitors both owning
--- a desktop called "1" makes both light up at once. It resolves a workspace's
--- monitor by name too, which misattributes the `hosting-monitor` class.
+-- Every name begins with the desktop's number on its own screen, because that
+-- number is a key you press: SUPER+D then 2 goes to the second desktop here.
+-- A desktop called only "dotfiles" gave no clue what to press.
 --
--- Waybar turns these into plain 1, 2, 3 for display via format-icons, see
--- waybar/config.jsonc. Everything here still addresses workspaces by id.
+-- With a label:    "2 dotfiles"   (quake.lua's, the terminal's directory)
+-- Without one:     "2.1"          "<desktop>.<screen>"
 --
--- A desktop that has something better to call itself says so through this hook
--- -- quake.lua names one after the directory its terminal is sitting in, so the
--- bar reads "dotfiles" rather than "2". Waybar shows the workspace name for
--- anything its format-icons does not cover, so nothing is needed at that end.
+-- Both are deliberately unique across monitors rather than plain "2". Waybar
+-- marks a button active when the workspace name equals the globally focused
+-- workspace's name, with no monitor check (workspaces.cpp: `isActiveByName`),
+-- so two monitors both owning a desktop called "2" makes both light up at
+-- once. It resolves a workspace's monitor by name too, which misattributes the
+-- `hosting-monitor` class. Where a label and a number still collide across
+-- screens -- same position, same directory -- the screen number is appended:
+-- "1 dotfiles (2)".
+--
+-- Both forms lead with the desktop's own number, and that is load-bearing
+-- rather than cosmetic: waybar orders its buttons by workspace id by default
+-- (workspaces.cpp, "both normal => sort by ID"), which is not the order these
+-- names describe -- a desktop shuffled along its row kept its id, so the bar
+-- ignored the move entirely. waybar/config.jsonc therefore asks for
+-- `sort-by: name`, and a name only sorts into the right place if the number
+-- comes first. That is why the unlabelled form is "<desktop>.<screen>" and not
+-- the other way round, which is how it read until the row could be reordered.
+--
+-- Waybar renders the unlabelled form as a plain number through format-icons
+-- (waybar/config.jsonc) and prints anything else as-is, which is what shows
+-- "2 dotfiles".
+--
+-- Everything here still addresses workspaces by id.
 --
 -- Returns a name, or nil to leave the desktop numbered. Set through
 -- set_labeller, below, once schedule_renumber exists to be called.
@@ -205,25 +387,71 @@ local function renumber_desktops()
     end
     renaming = true
 
-    -- Names have to stay unique across monitors, so a label that is already
-    -- spoken for keeps its number alongside it. Two desktops open on the same
-    -- directory is unusual but not wrong, and sharing a name would light both
-    -- their buttons up at once.
+    -- Everything remembered about a desktop is keyed by its workspace id, and
+    -- ids are reused the moment a desktop goes. So a desktop that lapses --
+    -- left empty, swept up by Hyprland, never going through close_desktop_here
+    -- -- leaves its notes behind, and the next desktop handed that id is born
+    -- wearing a dead one's clothes: its place in the row, and its home screen,
+    -- which is what made a new desktop appear on the other monitor seemingly at
+    -- random. The persistence rule is worse, because it names a monitor, and
+    -- Hyprland acts on it.
+    --
+    -- This pass already walks every desktop, so it is the cheapest place to
+    -- notice, and it runs on every workspace event.
+    -- Anything that has gone since the last pass is forgotten here. This runs
+    -- on every workspace event, so a desktop that lapses is cleaned up within
+    -- a tick of Hyprland sweeping it.
+    do
+        local live = {}
+        for _, ws in ipairs(hl.get_workspaces() or {}) do
+            live[ws.id] = true
+        end
+
+        local gone = {}
+        for id in pairs(seen) do
+            if not live[id] then
+                table.insert(gone, id)
+            end
+        end
+
+        -- Collected first: forget_desktop writes to `seen`.
+        for _, id in ipairs(gone) do
+            forget_desktop(id)
+        end
+    end
+
+    -- Names have to stay unique across monitors: waybar marks a button active
+    -- by comparing names with no monitor check, so two desktops sharing one
+    -- would light each other up. A collision keeps the screen number as well,
+    -- which is unique by construction -- only one desktop per screen per slot.
     local taken = {}
 
     for mon_index, slot in ipairs(monitor_slots()) do
         local mon = slot.monitor
         for index, ws in ipairs(mon and desktops_on(mon) or {}) do
+            seen[ws.id] = true
+
             if mon and not home[ws.id] then
                 home[ws.id] = identity(mon)
             end
 
-            local number = ("%d.%d"):format(mon_index, index)
-            local want   = number
+            -- The name always begins with the desktop's own number, because
+            -- that number is a key you press: SUPER+D then 2 goes to the
+            -- second desktop on this screen. A desktop called "dotfiles" gave
+            -- no clue which number that was.
+            --
+            -- An unlabelled desktop stays "<screen>.<desktop>", which waybar's
+            -- format-icons renders as the bare number (see waybar/config.jsonc);
+            -- anything else it does not recognise it prints as-is, which is
+            -- what shows "2 dotfiles".
+            local want = ("%d.%d"):format(index, mon_index)
 
             local label = labeller and labeller(ws)
             if label and label ~= "" then
-                want = taken[label] and (label .. " " .. number) or label
+                want = ("%d %s"):format(index, label)
+                if taken[want] then
+                    want = ("%d %s (%d)"):format(index, label, mon_index)
+                end
             end
             taken[want] = true
 
@@ -268,14 +496,7 @@ end
 -- Unique, because two desktops sharing a name light up each other's buttons on
 -- the bar, and because the renaming pass would only have to undo it.
 local function name_for_new_desktop(mon)
-    if not labeller then
-        return nil
-    end
-
-    local label = labeller({})
-    if not label or label == "" then
-        return nil
-    end
+    local label = labeller and labeller({})
 
     local used = {}
     for _, ws in ipairs(hl.get_workspaces() or {}) do
@@ -283,19 +504,30 @@ local function name_for_new_desktop(mon)
             used[ws.name] = true
         end
     end
-    if not used[label] then
-        return label
-    end
 
-    -- Taken, so fall back to the same "<label> <monitor>.<desktop>" the
-    -- renumbering pass would settle on anyway.
     for mon_index, slot in ipairs(monitor_slots()) do
         if slot.monitor and mon and slot.monitor.id == mon.id then
             -- Not +1: this runs after the desktop has been created, so it is
             -- already in the count, and it sorts last because its id is the
-            -- highest. Adding one named it "1.3" for the ~100ms until the
-            -- renumbering pass corrected it to "1.2".
-            local candidate = ("%s %d.%d"):format(label, mon_index, #desktops_on(mon))
+            -- highest. Adding one named it "3" for the ~100ms until the
+            -- renumbering pass corrected it to "2".
+            local index = #desktops_on(mon)
+
+            -- Same shape as the renumbering pass settles on, so the name does
+            -- not visibly change a moment after the desktop appears. An
+            -- unlabelled desktop still gets its number here rather than being
+            -- left nil: without it the bar shows the raw workspace id for the
+            -- ~80ms until the deferred pass runs.
+            local candidate
+            if label and label ~= "" then
+                candidate = ("%d %s"):format(index, label)
+                if used[candidate] then
+                    candidate = ("%d %s (%d)"):format(index, label, mon_index)
+                end
+            else
+                candidate = ("%d.%d"):format(index, mon_index)
+            end
+
             return not used[candidate] and candidate or nil
         end
     end
@@ -331,15 +563,25 @@ end
 -- Writing the ids to a file and replaying them was the alternative, and it
 -- replays at login too, where it would mint phantom desktops from whatever
 -- last happened to be open.
--- Which desktops have been asked to stay: [id] = true. Kept because nothing
--- reads the rules back -- a workspace object does not say whether it is
--- persistent, and `hyprctl workspacerules` has no Lua counterpart -- and
--- session.lua has to write the flag down to put it back after a restart.
-local persisted = {}
-
-local function set_persistent(id, persistent)
+-- The rule has to name the monitor, and leaving it out is the bug this comment
+-- exists for: issuing *any* persistent workspace rule makes Hyprland re-place
+-- every persistent workspace it knows about, and one whose rule names no
+-- monitor is placed on whichever screen has focus at that moment. So making an
+-- empty desktop on one screen dragged every empty desktop from the other
+-- screen over to join it -- reproduced in a nested instance, three desktops
+-- changing screens on a single keypress.
+--
+-- Naming the monitor pins each one where it belongs, so the re-placement pass
+-- puts everything back exactly where it already was. It follows that the name
+-- has to be kept current: a persistent desktop that moves screens gets its
+-- rule re-issued, or the next pass would haul it back.
+local function set_persistent(id, persistent, monitor)
     persisted[id] = persistent or nil
-    hl.workspace_rule({ workspace = tostring(id), persistent = persistent })
+    hl.workspace_rule({
+        workspace = tostring(id),
+        persistent = persistent,
+        monitor = monitor,
+    })
 end
 
 local function is_persistent(id)
@@ -377,13 +619,17 @@ local function place_desktop(id, wanted, persistent)
         hl.dispatch(hl.dsp.focus({ workspace = id }))
     end
 
+    local mon = wanted and monitor_named(wanted)
+
     if persistent then
-        set_persistent(id, true)
+        -- The screen it is being put back on, when that screen is plugged in;
+        -- otherwise wherever it was born, which is where it stays for now.
+        local born = hl.get_active_monitor()
+        set_persistent(id, true, mon and mon.name or (born and born.name))
     end
 
     if wanted then
         home[id] = wanted
-        local mon = monitor_named(wanted)
         if mon then
             hl.dispatch(hl.dsp.workspace.move({ workspace = id, monitor = mon.name }))
         end
@@ -409,8 +655,8 @@ end
 -- not have to create it twice.
 --
 -- `persistent` asks for a desktop that stays open while empty, which is what
--- M+C+#f makes: asked for one outright, you get to leave it and come back to
--- it before there is anything on it. The paths that put a window on the new
+-- focus_screen makes on the screen you are already on: asked for one outright,
+-- you get to leave it and come back to it before there is anything on it. The paths that put a window on the new
 -- desktop do not need it -- a desktop with a window on it is never swept up --
 -- and would leave the empty husk behind after the window closes.
 --
@@ -418,11 +664,14 @@ end
 -- decides which monitor the desktop is born on, and a persistent rule naming
 -- no monitor would have Hyprland pick.
 local function create_new_desktop_here(persistent)
-    local id = unused_desktop_id()
+    -- The desktop is born on whichever monitor has focus, so that is the row
+    -- it has to land at the end of.
+    local id = unused_desktop_id(hl.get_active_monitor())
     hl.dispatch(hl.dsp.focus({ workspace = id }))
 
     if persistent then
-        set_persistent(id, true)
+        local mon = hl.get_active_monitor()
+        set_persistent(id, true, mon and mon.name)
     end
 
     local name = name_for_new_desktop(hl.get_active_monitor())
@@ -436,18 +685,6 @@ end
 
 local function new_desktop_here(persistent)
     create_new_desktop_here(persistent)
-end
-
--- Called with the id of a desktop being closed by hand, while it is still
--- there. quake.lua sets this and takes the desktop's terminal down with it.
---
--- A hook rather than a call into quake.lua, because quake.lua requires this
--- module -- reaching back the other way would be a loop. Same arrangement as
--- set_labeller below.
-local closing_hook = nil
-
-local function set_closing_hook(fn)
-    closing_hook = fn
 end
 
 -- Close the desktop in view, if there is nothing on it. This is the other half
@@ -478,21 +715,21 @@ local function close_desktop_here()
         return false
     end
 
-    local target = next_desktop(mon)
+    local target = desktop_after_closing(mon, ws)
     if not target or target.id == ws.id then
         return false
     end
 
-    -- While the desktop is still the one in view, so whatever belongs to it can
-    -- still be found by asking what is focused.
-    if closing_hook then
-        closing_hook(ws.id)
-    end
-
-    -- Out of view first, then un-persist: the other order leaves the desktop
-    -- standing, since Hyprland does not remove the workspace it is showing.
+    -- Out of view first: Hyprland will not remove the workspace it is showing,
+    -- so un-persisting it while it is in view leaves it standing.
     focus_workspace(target)
     set_persistent(ws.id, false)
+
+    -- The same cleanup a lapsed desktop gets, just without waiting for the
+    -- pass to notice. Everything keyed to this id goes: its screen, its place
+    -- in the row, its terminal, its layout.
+    forget_desktop(ws.id)
+
     schedule_renumber()
     return true
 end
@@ -554,6 +791,11 @@ local function restore_homes()
         local target = belongs and where[belongs]
         if target and not ws.special and ws.monitor and ws.monitor.name ~= target then
             hl.dispatch(hl.dsp.workspace.move({ workspace = ws.id, monitor = target }))
+
+            -- Same reason as the move above: a stale rule would undo this.
+            if persisted[ws.id] then
+                set_persistent(ws.id, true, target)
+            end
         end
     end
 end
@@ -613,118 +855,245 @@ local function is_focused(slot)
     return active and slot and slot.monitor and active.id == slot.monitor.id
 end
 
-for n = 1, 10 do
-    local key = tostring(n % 10) -- 10 is bound to the "0" key
+----------------------------------------------------------------------------
+-- Actions
+----------------------------------------------------------------------------
+--
+-- These used to be the bodies of the number-key binds. modes.lua owns the keys
+-- now and calls in here, which is why they take a slot number rather than
+-- reading a key: the same action is reached from a chord in normal mode and
+-- from a motion inside a mode, and neither should know how the other is typed.
+--
+-- Every one of them takes n = 1..10, a monitor slot, and quietly does nothing
+-- when that slot holds no usable monitor -- either because there is no such
+-- screen or because it is duplicating another one and so has no desktops of
+-- its own.
 
-    hl.bind(mainMod .. " + " .. key, function()
-        local slot = monitor_for(n)
-        if not slot or not slot.monitor then
-            -- No such monitor, or it is duplicating another one and so has
-            -- nothing of its own to focus.
-            return
+-- Focus a screen. On the screen you are already on there is nothing to focus,
+-- so it makes a desktop instead: "go to a desktop that does not exist yet".
+-- Persistent, because a desktop asked for outright should survive being left
+-- empty, unlike one passed through on the way somewhere else.
+local function focus_screen(n)
+    local slot = monitor_for(n)
+    if not slot or not slot.monitor then
+        return
+    end
+
+    if is_focused(slot) then
+        new_desktop_here(true)
+    else
+        focus_workspace(slot.monitor.active_workspace)
+    end
+end
+
+-- Take the focused window to a screen, or to a fresh desktop on the screen you
+-- are on -- the same overload as focus_screen, one scope down.
+local function move_window_to_screen(n)
+    local slot = monitor_for(n)
+    if not slot or not slot.monitor then
+        return
+    end
+
+    if is_focused(slot) then
+        move_focused_window_to_new_desktop()
+    else
+        move_window_to(slot.monitor.active_workspace)
+    end
+end
+
+-- Take the focused window's whole column across.
+--
+-- The window has to be read before anything moves: creating a desktop means
+-- focusing it, and the column is identified by the focused window's stable id,
+-- which would by then be gone (or be a different window).
+local function move_column_to_screen(n)
+    local slot = monitor_for(n)
+    if not slot or not slot.monitor then
+        return
+    end
+
+    local win = hl.get_active_window()
+    if not win or win.floating or not win.workspace then
+        return
+    end
+
+    local target_id
+    if is_focused(slot) then
+        target_id = create_new_desktop_here()
+    else
+        local target = slot.monitor.active_workspace
+        target_id = target and target.id
+    end
+
+    if target_id then
+        columns.move_column_to_workspace(win.workspace.id, target_id, win.stable_id)
+    end
+end
+
+-- Send the whole desktop in view to another screen, and record that it now
+-- belongs there so a replug puts it back. Nothing to do on the screen it is
+-- already on.
+local function move_desktop_to_screen(n)
+    local slot = monitor_for(n)
+    if not slot or not slot.monitor or is_focused(slot) then
+        return
+    end
+
+    local mon = hl.get_active_monitor()
+    local ws = mon and mon.active_workspace
+    if not ws or ws.special then
+        return
+    end
+
+    home[ws.id] = identity(slot.monitor)
+
+    -- Remembered before the move, while the target's row can still be read
+    -- without this desktop in it. Hyprland has not moved it yet either way --
+    -- the dispatch below is what does that -- so desktops_on(target) is exactly
+    -- the row it is about to join.
+    place_at_end_of(slot.monitor, ws)
+
+    hl.dispatch(hl.dsp.workspace.move({ workspace = ws.id, monitor = slot.monitor.name }))
+
+    -- Its rule still names the screen it came from, which the next
+    -- re-placement pass would act on and drag it straight back.
+    if persisted[ws.id] then
+        set_persistent(ws.id, true, slot.monitor.name)
+    end
+
+    schedule_renumber()
+end
+
+-- Duplicate/extend. Note the missing `slot.monitor` check: a slot that is
+-- currently mirroring has no monitor object at all, and switching it back off
+-- has to keep working, which is the whole reason `mirrored` is remembered.
+local function toggle_mirror_screen(n)
+    local slot = monitor_for(n)
+    if not slot then
+        return
+    end
+
+    toggle_mirror(slot, hl.get_active_monitor())
+end
+
+-- The nth desktop on the screen in view, addressed by position rather than by
+-- Hyprland's global workspace id.
+--
+-- The position is the one you can see: desktops_on sorts by id, which is the
+-- same order renumber_desktops names them in ("1.1", "1.2", ...) and therefore
+-- the order Waybar shows. So "the second button on the bar" is n = 2, on every
+-- screen, regardless of what global ids those desktops happen to hold.
+--
+-- Does nothing when there is no such desktop. Going somewhere that is not
+-- there is not a request to create it -- SUPER+n on the screen you are on is
+-- how a desktop gets made, and it stays deliberately separate.
+local function desktop_at(n)
+    local mon = hl.get_active_monitor()
+    return mon and desktops_on(mon)[n]
+end
+
+local function focus_desktop_index(n)
+    focus_workspace(desktop_at(n))
+end
+
+-- How many desktops the screen in view has, so a mode can describe only the
+-- ones that exist.
+local function desktop_count()
+    local mon = hl.get_active_monitor()
+    return mon and #desktops_on(mon) or 0
+end
+
+-- Move the desktop in view one place along its own screen's row.
+--
+-- Swapping the two sort keys is the whole operation: it gives both desktops an
+-- explicit position even if they were until now relying on their ids, and
+-- leaves every other desktop alone. The workspace id never changes, so windows,
+-- the quake terminal and the persistence rule all stay where they are.
+--
+-- Deliberately does not wrap. At either end there is nowhere further to go, and
+-- silently teleporting a desktop to the other side of the row is not what
+-- "move it left" should do.
+local function move_desktop_in_row(step)
+    local mon = hl.get_active_monitor()
+    local ws = mon and mon.active_workspace
+    if not ws or ws.special then
+        return
+    end
+
+    local list = desktops_on(mon)
+
+    local current
+    for i, other in ipairs(list) do
+        if other.id == ws.id then
+            current = i
+            break
         end
+    end
 
-        if is_focused(slot) then
-            -- Only one desktop here: there is nothing to cycle to, so make a
-            -- second one rather than doing nothing.
-            if #desktops_on(slot.monitor) < 2 then
-                new_desktop_here()
-            else
-                focus_workspace(next_desktop(slot.monitor))
-            end
-        else
-            focus_workspace(slot.monitor.active_workspace)
-        end
-    end, { description = "Screen " .. n .. ": go there, or next desktop if already there" })
+    local target = current and list[current + step]
+    if not target then
+        return
+    end
 
-    hl.bind(mainMod .. " + SHIFT + " .. key, function()
-        local slot = monitor_for(n)
-        if not slot or not slot.monitor then
-            return
-        end
+    position[ws.id], position[target.id] = sort_key(target), sort_key(ws)
+    schedule_renumber()
+end
 
-        if is_focused(slot) then
-            -- Only one desktop here, so there is nothing to move to; the plain
-            -- M+n key makes a second one in this case, so move the window onto
-            -- a freshly made desktop to match.
-            if #desktops_on(slot.monitor) < 2 then
-                move_focused_window_to_new_desktop()
-            else
-                move_window_to(next_desktop(slot.monitor))
-            end
-        else
-            move_window_to(slot.monitor.active_workspace)
-        end
-    end, { description = "Screen " .. n .. ": move window there, or to a new desktop if only one" })
+-- The desktop axis. step = 1 is the next desktop, -1 the previous; both wrap.
+local function focus_neighbour_desktop(step)
+    local mon = hl.get_active_monitor()
+    if mon then
+        focus_workspace(neighbour_desktop(mon, step))
+    end
+end
 
-    hl.bind(mainMod .. " + CTRL + " .. key, function()
-        local slot = monitor_for(n)
-        if not slot then
-            return
-        end
+local function move_window_to_neighbour_desktop(step)
+    local mon = hl.get_active_monitor()
+    if mon then
+        move_window_to(neighbour_desktop(mon, step))
+    end
+end
 
-        -- Duplicating already: this key switches it back off, which has to work
-        -- even though Hyprland no longer reports the monitor.
-        if slot.source then
-            toggle_mirror(slot, hl.get_active_monitor())
-        elseif is_focused(slot) then
-            -- Persistent: a desktop made by asking for one stays until it is
-            -- closed with SUPER+C. The one M+#f makes when a monitor has only
-            -- a single desktop is a step on the way to somewhere and still goes
-            -- when you leave it empty.
-            new_desktop_here(true)
-        else
-            toggle_mirror(slot, hl.get_active_monitor())
-        end
-    end, { description = "Screen " .. n .. ": duplicate onto it, or new desktop if already there" })
+-- Take the focused window's whole column to an existing desktop.
+--
+-- A floating window is in no column, and with nothing focused there is no
+-- column to name, so both do nothing rather than guessing.
+local function move_column_to(ws)
+    if not ws then
+        return
+    end
 
-    -- CTRL is the screen itself: with SHIFT that is a screen-sized move, so the
-    -- whole desktop goes across. Doing this by hand also changes where the
-    -- desktop belongs, so it stays there after a replug.
-    hl.bind(mainMod .. " + CTRL + SHIFT + " .. key, function()
-        local slot = monitor_for(n)
-        if not slot or not slot.monitor then
-            return
-        end
+    local win = hl.get_active_window()
+    if not win or win.floating or not win.workspace then
+        return
+    end
 
-        -- M+C+n always makes a brand-new desktop here, so its SHIFT twin moves
-        -- the focused window onto one as well.
-        if is_focused(slot) then
-            move_focused_window_to_new_desktop()
-            return
-        end
+    columns.move_column_to_workspace(win.workspace.id, ws.id, win.stable_id)
+end
 
-        local mon = hl.get_active_monitor()
-        local ws = mon and mon.active_workspace
-        if not ws or ws.special then
-            return
-        end
+local function move_column_to_neighbour_desktop(step)
+    local mon = hl.get_active_monitor()
+    move_column_to(mon and neighbour_desktop(mon, step))
+end
 
-        home[ws.id] = identity(slot.monitor)
-        hl.dispatch(hl.dsp.workspace.move({ workspace = ws.id, monitor = slot.monitor.name }))
-        schedule_renumber()
-    end, { description = "Screen " .. n .. ": move this whole desktop there" })
+-- Send the window, or its column, to the nth desktop on this screen -- the
+-- counterpart of focus_desktop_index, and numbered the same way. Nothing
+-- happens when there is no such desktop: these move to a desktop, they do not
+-- mint one, which is what keeps them predictable when the count changes.
+local function move_window_to_desktop_index(n)
+    move_window_to(desktop_at(n))
+end
 
-    -- ALT scopes the move up from the window to its whole column.
-    hl.bind(mainMod .. " + ALT + SHIFT + " .. key, function()
-        local slot = monitor_for(n)
-        if not slot or not slot.monitor then
-            return
-        end
+local function move_column_to_desktop_index(n)
+    move_column_to(desktop_at(n))
+end
 
-        local target = is_focused(slot) and next_desktop(slot.monitor)
-                       or slot.monitor.active_workspace
-        if not target then
-            return
-        end
-
-        local win = hl.get_active_window()
-        if not win or win.floating or not win.workspace then
-            return
-        end
-
-        columns.move_column_to_workspace(win.workspace.id, target.id, win.stable_id)
-    end, { description = "Screen " .. n .. ": move column there" })
+-- How many screens are addressable right now, so modes.lua can say "screen 3"
+-- in a description without inventing screens that are not there. The keys are
+-- bound for all ten slots regardless: a screen plugged in later has to work
+-- without a reload.
+local function screen_count()
+    return #monitor_slots()
 end
 
 -- Keep the per-monitor numbering correct as desktops and monitors come and go.
@@ -755,6 +1124,12 @@ end)
 hl.on("config.reloaded", renumber_desktops)
 hl.on("hyprland.start", renumber_desktops)
 
+-- columns.lua keeps a layout per desktop, keyed by workspace id like
+-- everything else, so a recycled id used to come back with a dead desktop's
+-- columns. Registered here rather than in columns.lua because that file is
+-- required by this one and knows nothing about desktops coming and going.
+on_forget(function(id) columns.forget(id) end)
+
 -- Set by quake.lua, which knows what each desktop is being used for.
 --
 -- Deliberately does not renumber: this is called while the config is still
@@ -765,8 +1140,24 @@ local function set_labeller(fn)
 end
 
 return {
+    -- Actions, called by modes.lua, which owns the keys.
+    focus_screen = focus_screen,
+    move_window_to_screen = move_window_to_screen,
+    move_column_to_screen = move_column_to_screen,
+    move_desktop_to_screen = move_desktop_to_screen,
+    move_desktop_in_row = move_desktop_in_row,
+    toggle_mirror_screen = toggle_mirror_screen,
+    focus_desktop_index = focus_desktop_index,
+    move_window_to_desktop_index = move_window_to_desktop_index,
+    move_column_to_desktop_index = move_column_to_desktop_index,
+    desktop_count = desktop_count,
+    focus_neighbour_desktop = focus_neighbour_desktop,
+    move_window_to_neighbour_desktop = move_window_to_neighbour_desktop,
+    move_column_to_neighbour_desktop = move_column_to_neighbour_desktop,
+    screen_count = screen_count,
+
     set_labeller = set_labeller,
-    set_closing_hook = set_closing_hook,
+    on_forget = on_forget,
     new_desktop_here = new_desktop_here,
     close_desktop_here = close_desktop_here,
     is_persistent = is_persistent,

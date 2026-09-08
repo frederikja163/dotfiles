@@ -396,6 +396,16 @@ check("focus is silently ignored", _G.__provider.layout_msg(empty, "focus l"), t
 check("so is moving a window",     _G.__provider.layout_msg(empty, "movewin up"), true)
 check("so is resizing a column",   _G.__provider.layout_msg(empty, "colresize 0.05"), true)
 
+-- deskbinds calls this when a desktop goes: workspace ids are reused, so a
+-- layout left behind would be inherited by the next desktop given that id.
+print("scenario: a desktop's layout is forgotten with the desktop")
+-- The layout table itself is private, so what can be checked from out here is
+-- that deskbinds has something to call and that calling it is harmless for a
+-- desktop with no layout -- which is the common case, since most desktops
+-- never had one.
+check("forget is exported for deskbinds to call", type(C.forget), "function")
+check("forgetting an unknown desktop is harmless", pcall(C.forget, 12345), true)
+
 print("")
 print(("%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)

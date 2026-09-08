@@ -12,9 +12,10 @@
 --   look         gaps, borders, decoration, animations, layouts
 --   input        keyboard, mouse, touchpad, gestures
 --   windowrules  window, layer and workspace rules
---   keybinds     every bind, each with a description for the cheatsheet
---   deskbinds    monitor + desktop binds on the number keys
+--   keybinds     the letter keys: apps and one-shot window actions
+--   deskbinds    what the screen and desktop keys do, as callable actions
 --   columns      column behaviour: new column, sizing, swap-biggest
+--   modes        every axis key, and the modes they work inside
 --   quake        drop-down terminal, one per desktop
 --   session      what was open and where, written down and put back at login
 --   autostart    processes launched with the session
@@ -27,6 +28,10 @@ require("windowrules")
 require("keybinds")
 require("deskbinds")
 require("columns")
+
+-- After both of the above: it binds the keys that call into them.
+require("modes")
+
 require("quake")
 
 -- After quake and deskbinds, both of which it asks about the session it is

@@ -10,6 +10,8 @@ man-pages
 linux-headers       # required to build out-of-tree / DKMS modules
 lua                 # runs tests/run.sh
 python              # parses hyprctl -j in bin/waybar-main and bin/dotfiles-monitor-order
+wtype               # types into the nested Hyprland in tests/sandbox.sh, the only
+                    # way to test a keybind that enters or leaves a mode
 dotnet-sdk
 aspnet-runtime
 bun

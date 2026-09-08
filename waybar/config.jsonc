@@ -36,44 +36,69 @@
   "hyprland/workspaces": {
     "on-click": "activate",
     "format": "{icon}",
+    // Waybar orders buttons by workspace id unless told otherwise, and the id
+    // is not the order the desktops are in: shuffling one along its row
+    // (SUPER+CTRL+M then h/l) deliberately leaves the id alone, so the bar
+    // ignored the move completely. Sorting by name follows the row, because
+    // deskbinds.lua names every desktop with its own number first.
+    //
+    // Sorting is lexicographic (workspaces.cpp compares the names directly),
+    // which is why the number has to lead and why a tenth desktop on one
+    // screen would sort between the first and the second. Nine per screen is
+    // already more than the number keys address.
+    "sort-by": "name",
+    // Desktop names are "<screen>.<desktop>" only when nothing has labelled
+    // them, and this maps those to the bare desktop number. In practice it
+    // never fires: quake.lua labels every desktop after its terminal's
+    // directory ("~" when it has not been taken anywhere), so what you see is
+    // the name itself -- "2 dotfiles", numbered by deskbinds.lua. Kept as the
+    // fallback for a config without that labeller.
     "format-icons": {
       "1.1": "1",
-      "1.2": "2",
-      "1.3": "3",
-      "1.4": "4",
-      "1.5": "5",
-      "1.6": "6",
-      "1.7": "7",
-      "1.8": "8",
-      "1.9": "9",
-      "2.1": "1",
+      "1.2": "1",
+      "1.3": "1",
+      "1.4": "1",
+      "2.1": "2",
       "2.2": "2",
-      "2.3": "3",
-      "2.4": "4",
-      "2.5": "5",
-      "2.6": "6",
-      "2.7": "7",
-      "2.8": "8",
-      "2.9": "9",
-      "3.1": "1",
-      "3.2": "2",
+      "2.3": "2",
+      "2.4": "2",
+      "3.1": "3",
+      "3.2": "3",
       "3.3": "3",
-      "3.4": "4",
-      "3.5": "5",
-      "3.6": "6",
-      "3.7": "7",
-      "3.8": "8",
-      "3.9": "9",
-      "4.1": "1",
-      "4.2": "2",
-      "4.3": "3",
+      "3.4": "3",
+      "4.1": "4",
+      "4.2": "4",
+      "4.3": "4",
       "4.4": "4",
-      "4.5": "5",
-      "4.6": "6",
-      "4.7": "7",
-      "4.8": "8",
-      "4.9": "9"
+      "5.1": "5",
+      "5.2": "5",
+      "5.3": "5",
+      "5.4": "5",
+      "6.1": "6",
+      "6.2": "6",
+      "6.3": "6",
+      "6.4": "6",
+      "7.1": "7",
+      "7.2": "7",
+      "7.3": "7",
+      "7.4": "7",
+      "8.1": "8",
+      "8.2": "8",
+      "8.3": "8",
+      "8.4": "8",
+      "9.1": "9",
+      "9.2": "9",
+      "9.3": "9",
+      "9.4": "9"
     }
+  },
+  // Which keybind mode is active, from hypr/modes.lua. Empty outside a mode,
+  // and Waybar hides a module with no text, so the bar is unchanged until you
+  // enter one. This is the only thing that says a sticky mode is still on --
+  // size mode is left by Escape, so being able to see it matters.
+  "hyprland/submap": {
+    "format": "  {}",
+    "tooltip": false
   },
   "clock": {
     "format": "{:%H:%M  %a %d %b}",

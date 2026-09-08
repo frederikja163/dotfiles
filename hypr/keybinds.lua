@@ -36,7 +36,7 @@ hl.bind(mainMod .. " + Q", function()
     hl.dispatch(hl.dsp.exec_cmd(command))
 end, { description = "App: terminal (where this desktop is)" })
 -- Closes the focused window; on an empty desktop it closes the desktop, which
--- is the counterpart to M+C+#n making one. Focusing an empty desktop clears the
+-- is the counterpart to SUPER+#f making one. Focusing an empty desktop clears the
 -- focused window, so no active window is exactly that case -- and a quake
 -- terminal in view is a focused window like any other, so that still closes the
 -- terminal rather than the desktop underneath it. deskbinds refuses when the
@@ -51,12 +51,18 @@ local closeWindowBind = hl.bind(mainMod .. " + C", function()
         require("deskbinds").close_desktop_here()
     end
 end, { description = "Window: close (polite), or an empty desktop" })
+-- SHIFT here is the letter-key rule at work: on a letter a modifier marks a
+-- variant of that letter's action, and a force kill is exactly the brutal
+-- variant of a close. It deliberately did not move when everything else did --
+-- this is the one destructive key in the config, and relearning it by accident
+-- is how you lose unsaved work.
 hl.bind(mainMod .. " + SHIFT + C", function()
     hl.dispatch(hl.dsp.exec_cmd("kill -9 $(hyprctl activewindow | awk '/^\tpid:/ { print $2 }')"))
 end, { description = "Window: force kill (abrupt)" })
 -- closeWindowBind:set_enabled(false)
--- M+M is "swap with the biggest window", see columns.lua. Exiting Hyprland is
--- handled by the power menu on M+Escape, which asks for confirmation.
+-- Promoting a window through the widest column used to be SUPER+M; it is `p`
+-- in the size mode now, and M is the move verb. Exiting Hyprland is handled by
+-- the power menu on M+Escape, which asks for confirmation.
 hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(fileManager), { description = "App: file manager" })
 hl.bind(mainMod .. " + W", hl.dsp.exec_cmd(browser),      { description = "App: browser" })
 
@@ -77,36 +83,42 @@ hl.bind(mainMod .. " + O", function()
     hl.dispatch(hl.dsp.exec_cmd(
         ("%s --directory '%s' opencode"):format(terminal, directory:gsub("'", "'\\''"))))
 end, { description = "App: opencode (where this desktop is)" })
-hl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.float({ action = "toggle" }), { description = "Window: toggle floating" })
+-- Fullscreen stays a chord because it is pressed constantly. Floating is the
+-- rarer shape change and lives in the size mode, in modes.lua.
 hl.bind(mainMod .. " + F", hl.dsp.window.fullscreen({ action = "toggle" }), { description = "Window: toggle fullscreen" })
 hl.bind(mainMod .. " + R", hl.dsp.exec_cmd(menu), { description = "App: launcher" })
 
 -- Screenshot of a mouse-selected region, onto the clipboard. In bin/ rather
 -- than inline because it is a pipeline: hl.exec_cmd does not run a shell, so
 -- the "|" into wl-copy would be passed to grim as an argument.
-hl.bind(mainMod .. " + S", hl.dsp.exec_cmd("screenshot-region"),
+-- On Print rather than SUPER+S, which is the size mode now. Print is where
+-- this belongs anyway, and it needs no modifier at all.
+hl.bind("Print", hl.dsp.exec_cmd("screenshot-region"),
         { description = "Screenshot: region to clipboard" })
 
 -- Keybind cheatsheet (this popup)
-hl.bind(mainMod .. " + slash", hl.dsp.exec_cmd("hypr-keybinds"), { description = "App: this keybind list" })
+--
+-- submap_universal, so it works from inside a mode too: being unsure which
+-- keys are live is exactly when this is wanted, and the list is grouped by
+-- mode. Nothing in modes.lua binds slash, so there is nothing for it to
+-- collide with.
+hl.bind(mainMod .. " + slash", hl.dsp.exec_cmd("hypr-keybinds"),
+        { submap_universal = true, description = "App: this keybind list" })
 
 -- Lock / suspend / log out / reboot / shut down
-hl.bind(mainMod .. " + Escape", hl.dsp.exec_cmd("power-menu"), { description = "App: power menu" })
-
-
--- Focus, move and resize all belong to the layout, which knows where the
--- columns are, so they live in columns.lua.
-
--- Workspaces
 --
--- The number keys 1..0 are not bound here. They address monitors and desktops
--- instead, in deskbinds.lua.
+-- Deliberately NOT submap_universal, unlike the cheatsheet above. A universal
+-- bind still matches inside a submap, and every mode binds SUPER+Escape to
+-- leave itself -- so both would fire and getting out of a mode would offer to
+-- log you out. Leaving a mode wins; press it again from normal mode for this.
+hl.bind(mainMod .. " + Escape", hl.dsp.exec_cmd("power-menu"),
+        { description = "App: power menu" })
 
--- Scroll through existing workspaces with mainMod + scroll
-hl.bind(mainMod .. " + mouse_down", hl.dsp.focus({ workspace = "e+1" }),
-        { description = "Screen: next desktop" })
-hl.bind(mainMod .. " + mouse_up",   hl.dsp.focus({ workspace = "e-1" }),
-        { description = "Screen: previous desktop" })
+
+-- Everything on an axis key -- h/j/k/l, Tab, the numbers 1..0 -- is in
+-- modes.lua, along with the modes those keys work inside and the mouse
+-- cyclers. This file is the letter keys: apps, and one-shot actions on the
+-- window in front of you.
 
 
 -- Mouse

@@ -17,8 +17,8 @@ vim.opt.signcolumn = "yes"
 vim.g.mapleader = " "
 
 -- Keymaps
-vim.keymap.set('n', '<leader>c', '<cmd>update<CR> <cmd>source<CR>')
-vim.keymap.set('n', '<leader>q', '<cmd>quit<CR>')
+vim.keymap.set('n', '<leader>r', '<cmd>update<CR> <cmd>source<CR>')
+vim.keymap.set('n', '<leader>c', '<cmd>quit<CR>')
 vim.keymap.set('n', '<leader>w', '<cmd>write<CR>')
 vim.keymap.set('n', '<leader>t', '<cmd>terminal<CR>')
 vim.keymap.set('n', '<Esc>', '<cmd>nohlsearch<CR>')
@@ -27,16 +27,33 @@ vim.keymap.set('i', '<C-j>', '<C-o>j')
 vim.keymap.set('i', '<C-k>', '<C-o>k')
 vim.keymap.set('i', '<C-h>', '<C-o>h')
 vim.keymap.set('i', '<C-l>', '<C-o>l')
--- move window (kept as-is; these do not clash with Hyprland, which grabs SUPER)
+-- focus a window (kept as-is; these do not clash with Hyprland, which grabs
+-- SUPER). Despite the old comment here, wincmd h/j/k/l moves the *cursor*
+-- between windows -- moving a window is wincmd H/J/K/L, which is <leader>m
+-- below.
 vim.keymap.set('n', '<C-j>', '<cmd>wincmd j<CR>')
 vim.keymap.set('n', '<C-k>', '<cmd>wincmd k<CR>')
 vim.keymap.set('n', '<C-h>', '<cmd>wincmd h<CR>')
 vim.keymap.set('n', '<C-l>', '<cmd>wincmd l<CR>')
 
--- Window binds mirroring hypr/hyprland.lua, with <leader> standing in for SUPER:
---   <leader>       + hjkl -> focus window
---   <leader> SHIFT + hjkl -> move window in that direction
---   <leader> CTRL  + hjkl -> resize window
+-- Window binds mirroring hypr/modes.lua, with <leader> standing in for SUPER.
+--
+-- The compositor is modal: a verb key enters a mode and a motion says where.
+-- Here the same grammar is just a two-key mapping, which is nvim's native
+-- idiom -- no mode to be in, but the keys you press are the same ones:
+--
+--   <leader>  + hjkl   focus a window        (SUPER + hjkl)
+--   <leader>m + hjkl   move it there         (SUPER+M then the motion)
+--   <leader>s + hjkl   resize it             (SUPER+S then the motion)
+--   <leader><Tab>      next buffer           (SUPER+Tab, next desktop)
+--
+-- Buffers stand in for desktops: they are the thing you cycle through with
+-- Tab, and SHIFT reverses it, exactly as in the compositor.
+--
+-- What is deliberately gone: <leader>HJKL (move) and <leader><C-hjkl>
+-- (resize). Those were the old chord grammar, where SHIFT meant move and CTRL
+-- meant resize. Keeping them would mean two ways to do the same thing, one of
+-- which contradicts the compositor.
 local resizeStep = 5
 
 local directions = {
@@ -47,10 +64,17 @@ local directions = {
 }
 
 for _, d in ipairs(directions) do
-	vim.keymap.set('n', '<leader>' .. d.key, '<cmd>wincmd ' .. d.focus .. '<CR>')
-	vim.keymap.set('n', '<leader>' .. d.key:upper(), '<cmd>wincmd ' .. d.move .. '<CR>')
-	vim.keymap.set('n', '<leader><C-' .. d.key .. '>', '<cmd>' .. d.resize .. '<CR>')
+	vim.keymap.set('n', '<leader>' .. d.key, '<cmd>wincmd ' .. d.focus .. '<CR>',
+		{ desc = 'Focus the window ' .. d.key })
+	vim.keymap.set('n', '<leader>m' .. d.key, '<cmd>wincmd ' .. d.move .. '<CR>',
+		{ desc = 'Move the window ' .. d.key })
+	vim.keymap.set('n', '<leader>s' .. d.key, '<cmd>' .. d.resize .. '<CR>',
+		{ desc = 'Resize the window ' .. d.key })
 end
+
+-- The desktop axis, which here is the buffer list.
+vim.keymap.set('n', '<leader><Tab>', '<cmd>bnext<CR>', { desc = 'Next buffer' })
+vim.keymap.set('n', '<leader><S-Tab>', '<cmd>bprevious<CR>', { desc = 'Previous buffer' })
 
 -- new window
 vim.keymap.set('n', '<leader>ws', '<cmd>wincmd s<CR>')

@@ -261,7 +261,23 @@ local function cwd_for(desktop_id)
     return cwd_of(terminal_window(desktop_id))
 end
 
-deskbinds.set_labeller(function(ws) return label_for(ws.id) end)
+-- A desktop that has not been taken anywhere adds nothing to its own number,
+-- so it goes unlabelled rather than being called "~".
+--
+-- That matters more than it looks. A label has to be unique across screens --
+-- waybar marks a button active by comparing names, with no monitor check -- and
+-- "~" is the default for *every* untouched desktop, so the first desktop of one
+-- screen collided with the first desktop of the next, every time. deskbinds
+-- disambiguated them into "1 ~ (2)", which is noise on what is really just an
+-- empty desktop. Returning nil hands them the "<screen>.<desktop>" form
+-- instead: unique by construction, and shown as a bare number.
+--
+-- label_for still answers "~", because that is what the desktop's directory is
+-- called; this is only about whether it is worth putting in the name.
+deskbinds.set_labeller(function(ws)
+    local label = label_for(ws.id)
+    return label ~= HOME_LABEL and label or nil
+end)
 
 -- `hyprctl reload` runs this file again from nothing while the terminals are
 -- still open, so the names have to be read back rather than waited for.
@@ -456,25 +472,26 @@ end
 
 hl.on("window.open", opened)
 
--- Nothing here closes a terminal when its desktop merely *goes away*,
--- deliberately.
+-- When a desktop goes, its terminal goes with it -- however it went.
 --
--- A terminal sits in a workspace of its own, which does not count towards
--- making its desktop non-empty, so a desktop whose only content is the terminal
--- is removed by Hyprland the moment you leave it. Tidying up on that signal was
--- tried and is worse than the leak it fixes: drop the terminal on an empty
--- desktop, step away, come back, and it had been killed underneath you.
+-- This used to distinguish the two ways a desktop can end. Closing it with
+-- SUPER+C took the terminal down, while a desktop that merely *lapsed* -- left
+-- empty, and swept up by Hyprland, which is much the commoner case -- kept it.
+-- The argument was that lapsing is not a decision to be rid of anything: drop
+-- the terminal on an empty desktop, step away, come back, and it had been
+-- killed underneath you.
 --
--- So a terminal outlives a desktop that lapsed. Hyprland reuses desktop ids, so
--- a later desktop with the same id inherits it -- which is the same bargain as
--- every other desktop: the id is the identity, and one terminal belongs to it.
+-- What that missed is that the desktop does not come back. Hyprland reuses
+-- workspace ids, so the terminal is not waiting for its own desktop, it is
+-- waiting for whichever unrelated desktop is handed that id next -- and hands
+-- it a stranger's shell, working directory, and therefore its name on the bar.
+-- That is one of several ways a new desktop came up wearing a dead one's
+-- clothes, and it is why deskbinds.lua now forgets a desktop the moment it
+-- stops existing rather than only when it is closed on purpose.
 --
--- A desktop *closed* with SUPER+C is the other case, and gets the opposite
--- treatment. There the desktop was got rid of on purpose, and inheriting its
--- terminal would hand the next desktop with that id the closed one's shell,
--- working directory and therefore its name on the bar. So closing takes the
--- terminal with it, and the desktop that comes next starts at "~" with nothing
--- behind it.
+-- The cost is real and smaller: a shell in a lapsed desktop's terminal is
+-- killed. Anything worth keeping should be on a desktop that has a window on
+-- it, which never lapses.
 --
 -- Everything remembered per desktop goes at the same time. `down` in
 -- particular: left set, sync() would try to show a terminal workspace that no
@@ -497,7 +514,7 @@ local function closed(desktop_id)
     end
 end
 
-deskbinds.set_closing_hook(closed)
+deskbinds.on_forget(closed)
 
 hl.bind(mainMod .. " + grave", toggle, { description = "App: quake terminal" })
 

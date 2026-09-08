@@ -96,3 +96,18 @@ echo "all good"
 # That parks it in a special workspace, which is outside the desktop model and
 # so cannot be reached or shown by accident. It never draws while it is hidden,
 # but it runs: use hyprctl and what the config writes out, not your eyes.
+#
+# Two limits of the sandbox, both found while testing the modes:
+#
+# `./tests/sandbox.sh keys` (wtype) does fire binds, which is the only way to
+# test a key that enters or leaves a mode -- but only because input.lua turns
+# on resolve_binds_by_sym under HYPR_SANDBOX. Without it Hyprland resolves the
+# bind keysym through the config's layout, which does not match the keymap
+# wtype invents, so keys reach clients and no bind ever fires.
+#
+# A hidden nested instance has no *active window*: nothing gives its surface
+# keyboard focus, so `hyprctl activewindow` answers "Invalid" and
+# hl.get_active_window() is nil. Binds still fire and the layout still places
+# windows, but anything whose effect depends on the focused window does
+# nothing in there. Assert those against the stubbed tests, where the world is
+# written down, not against the sandbox.

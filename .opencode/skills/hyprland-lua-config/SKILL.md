@@ -73,6 +73,15 @@ These cost hours each. All verified against Hyprland 0.56.2.
   sets an exact size and keeps the window centred, so `window.move{ window =
   …, x =, y = }` has to follow it. Both are in layout coordinates: the
   monitor's own pixels divided by its `scale`.
+- **`hl.dsp.workspace.change_id` does not renumber a workspace.** It creates a
+  new one under the target id and moves the windows across, leaving the
+  original behind (empty, and still there if it was persistent). Anything
+  keyed by the old id is orphaned -- in this repo a desktop's quake terminal
+  lives in `special:quake-<desktop id>` and stays in the old one, where nothing
+  will find it again. If a desktop needs to move within an ordering, reorder
+  around it rather than renumbering it.
+- **`hl.dsp.workspace.move` only moves the workspace you name if it is the
+  active one.** Naming any other workspace reports `ok` and does nothing.
 - **`hl.exec_cmd` does not run a shell.** Hyprland splits the arguments
   itself, quotes included, so `cmd 'a b'` arrives as one argument `a b` — but
   `>`, `&&` and `|` are not interpreted.

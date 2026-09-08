@@ -29,10 +29,18 @@ window#waybar {
   border-radius: 10px;
 }
 
+/* Every desktop is its own pill, the same shape as the modules on the right.
+   A transparent background looked tidier while the names were bare numbers,
+   and stopped working once they carried words: "2 dotfiles 3 restart" reads as
+   one run of text, with nothing to say where one desktop ends and the next
+   begins. The margin is what separates them; the background is what makes the
+   boundary visible when neither is focused. */
 #workspaces button {
   padding: 0 10px;
+  margin: 4px 2px;
   color: @subtext0;
-  background: transparent;
+  background: @surface0;
+  border-radius: 8px;
 }
 
 /* Shown on its monitor but not the focused one: the other screen's current
@@ -79,6 +87,17 @@ window#waybar {
 
 #clock {
   color: @text;
+  font-weight: bold;
+}
+
+/* The active keybind mode. Coloured rather than grey like the other modules:
+   it appears only while a mode is on, and it is there to be noticed. */
+#submap {
+  padding: 0 10px;
+  margin: 4px 2px;
+  background: @mauve;
+  color: @base;
+  border-radius: 8px;
   font-weight: bold;
 }
 

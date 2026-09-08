@@ -168,111 +168,294 @@ local function last_of(kind)
     end
 end
 
--- Only the number keys belong to deskbinds; columns.lua is loaded alongside it
--- and registers its own.
+-- deskbinds registers no keys at all any more: modes.lua owns them and calls
+-- the actions below. Anything this file does bind would be a leftover.
 local function bind_count()
     local n = 0
-    for keys in pairs(binds) do
-        if keys:match("%d$") then n = n + 1 end
-    end
+    for _ in pairs(binds) do n = n + 1 end
     return n
 end
 
 print("scenario: monitor 1 (eDP-1) focused")
 reset(two_monitors(0))
--- plain, SHIFT, CTRL, CTRL+SHIFT, ALT+SHIFT on each of 10 keys
-check("bind count (10 keys x 5 modifier combinations)", bind_count(), 50)
+check("no keys bound here", bind_count(), 0)
+for _, name in ipairs({
+    "focus_screen", "move_window_to_screen", "move_column_to_screen",
+    "move_desktop_to_screen", "toggle_mirror_screen", "focus_neighbour_desktop",
+    "move_window_to_neighbour_desktop", "move_column_to_neighbour_desktop",
+}) do
+    check("exports " .. name, type(mod[name]), "function")
+end
 
-binds["SUPER + 1"].fn()
-check("M+1 on focused mon -> next desktop id", last().arg.workspace, 2)
+print("scenario: the screen axis")
+reset(two_monitors(0))
+mod.focus_screen(2)
+check("another screen -> focus its workspace", last().arg.workspace, 3)
 
-binds["SUPER + 2"].fn()
-check("M+2 on other mon -> focus its workspace", last().arg.workspace, 3)
+reset(two_monitors(0))
+mod.focus_screen(1)
+check("the screen you are on -> a new desktop, lowest free id", last_of("focus").arg.workspace, 4)
+local persisted_new = nil
+for _, rule in ipairs(rules) do
+    if rule.workspace == "4" then persisted_new = rule.persistent end
+end
+check("...and it is kept while empty", persisted_new, true)
 
-binds["SUPER + SHIFT + 1"].fn()
-check("M+S+1 focused -> move to next desktop", last().arg.workspace, 2)
-check("M+S+1 uses move dispatcher", last().kind, "move")
+reset(two_monitors(0))
+local before = #dispatched
+mod.focus_screen(5)
+check("a screen that is not there -> nothing", #dispatched, before)
 
-binds["SUPER + SHIFT + 2"].fn()
-check("M+S+2 other -> move to that monitor's ws", last().arg.workspace, 3)
+print("scenario: a new desktop lands at the end of its own screen")
+-- The shape that used to get this wrong: a lower id is free, but it belongs
+-- below the desktops this screen already has. mon1 holds ws3 while id 2 is
+-- going spare, so the lowest free id globally would arrive *before* ws3 and
+-- become that screen's desktop 1.
+local gap = two_monitors(1) -- DP-4 focused, holding only ws3
+for i, ws in ipairs(gap.workspaces) do
+    if ws.id == 2 then table.remove(gap.workspaces, i) break end
+end
+reset(gap)
+mod.focus_screen(2) -- the screen you are on: makes a desktop
+check("skips the free id below this screen's own", last_of("focus").arg.workspace, 4)
 
-binds["SUPER + CTRL + 1"].fn()
-check("M+C+1 focused -> new desktop, lowest free id", last_of("focus").arg.workspace, 4)
+-- ...and the gap is still available to the screen it sorts correctly on.
+local gap2 = two_monitors(0) -- eDP-1 focused, holding ws1
+for i, ws in ipairs(gap2.workspaces) do
+    if ws.id == 2 then table.remove(gap2.workspaces, i) break end
+end
+reset(gap2)
+mod.focus_screen(1)
+check("but reuses it where it does sort last", last_of("focus").arg.workspace, 2)
 
-binds["SUPER + CTRL + 2"].fn()
-check("M+C+2 other -> mirror issued", #monitor_calls, 1)
-check("M+C+2 mirror target output", monitor_calls[1].output, "DP-4")
-check("M+C+2 mirrors the focused monitor", monitor_calls[1].mirror, "eDP-1")
+print("scenario: the desktop axis (Tab), which now owns cycling")
+reset(two_monitors(0))
+mod.focus_neighbour_desktop(1)
+check("next desktop", last().arg.workspace, 2)
+check("...by focusing it", last().kind, "focus")
 
-print("scenario: wrap-around, mon0 focused on its LAST desktop (ws2)")
 local w = two_monitors(0)
-w.monitors[1].active_workspace = w.workspaces[2] -- ws2, the highest on mon0
+w.monitors[1].active_workspace = w.workspaces[2] -- ws2, the last one on mon0
 reset(w)
-binds["SUPER + 1"].fn()
-check("M+1 wraps back to first desktop", last().arg.workspace, 1)
+mod.focus_neighbour_desktop(1)
+check("next wraps to the first", last().arg.workspace, 1)
 
-print("scenario: monitor 2 (DP-4) focused, and it has only ONE desktop")
+reset(two_monitors(0))
+mod.focus_neighbour_desktop(-1)
+check("previous wraps backwards to the last", last().arg.workspace, 2)
+
+-- The old behaviour was to create a desktop when a screen had only one, which
+-- made the key mean two different things. Tab cycles and nothing else now.
+local one = two_monitors(1) -- DP-4 focused, only ws3 lives there
+reset(one)
+local before_one = #dispatched
+mod.focus_neighbour_desktop(1)
+check("a lone desktop has nowhere to cycle, and nothing is created", #dispatched, before_one)
+
+print("scenario: a desktop addressed by its number on this screen")
+-- mon0 owns ws1 and ws2, so its desktops are numbered 1 and 2 whatever their
+-- global ids are. mon1 owns ws3, which is *its* desktop 1.
+reset(two_monitors(0))
+mod.focus_desktop_index(1)
+check("desktop 1 here is workspace 1", last().arg.workspace, 1)
+check("...by focusing it", last().kind, "focus")
+
+reset(two_monitors(0))
+mod.focus_desktop_index(2)
+check("desktop 2 here is workspace 2", last().arg.workspace, 2)
+
+-- The numbering is per screen: on the other monitor, desktop 1 is workspace 3.
 reset(two_monitors(1))
-binds["SUPER + 2"].fn()
-check("M+2 with 1 desktop -> creates a second one", last_of("focus").arg.workspace, 4)
-check("...and it is a focus dispatch", last_of("focus").kind, "focus")
-binds["SUPER + 1"].fn()
-check("M+1 on other mon -> focus eDP-1 workspace", last().arg.workspace, 1)
-binds["SUPER + CTRL + 1"].fn()
-check("M+C+1 other -> mirror eDP-1 onto DP-4", monitor_calls[1].mirror, "DP-4")
+mod.focus_desktop_index(1)
+check("desktop 1 on the other screen is workspace 3", last().arg.workspace, 3)
 
-print("scenario: monitor with 2 desktops still cycles, does not create")
-local t = two_monitors(0) -- mon0 has ws1 + ws2
-reset(t)
+reset(two_monitors(0))
+local before_missing = #dispatched
+mod.focus_desktop_index(7)
+check("a desktop that is not there -> nothing", #dispatched, before_missing)
+check("...and none is created", #hl.get_workspaces(), 4)
+
+reset(two_monitors(0))
+check("how many desktops this screen has", mod.desktop_count(), 2)
+reset(two_monitors(1))
+check("...and the other one", mod.desktop_count(), 1)
+
+print("scenario: moving the window")
+reset(two_monitors(0))
+mod.move_window_to_screen(2)
+check("to another screen", last().arg.workspace, 3)
+check("...by moving it", last().kind, "move")
+
+reset(two_monitors(0))
+mod.move_window_to_screen(1)
+check("to a new desktop on the screen you are on", last_of("focus").arg.workspace, 4)
+check("...and the window follows", last_of("move").arg.workspace, 4)
+check("...addressed by window, since focus has moved on", last_of("move").arg.window, "address:0xWIN1")
+
+reset(two_monitors(0))
+mod.move_window_to_neighbour_desktop(1)
+check("to the next desktop", last().arg.workspace, 2)
+check("...by moving it", last().kind, "move")
+
+print("scenario: moving the window or its column to a desktop by number")
+reset(two_monitors(0))
+mod.move_window_to_desktop_index(2)
+check("window to desktop 2 here", last().arg.workspace, 2)
+check("...by moving it", last().kind, "move")
+
+reset(two_monitors(0))
+local before_gap = #dispatched
+mod.move_window_to_desktop_index(6)
+check("no sixth desktop -> nothing, and none is made", #dispatched, before_gap)
+
+local fl2 = two_monitors(0)
+fl2.active_window = { address = "0xFLOAT", stable_id = "f", floating = true }
+reset(fl2)
+local before_fl2 = #dispatched
+mod.move_column_to_desktop_index(2)
+check("a floating window has no column to send", #dispatched, before_fl2)
+
+print("scenario: moving the whole desktop")
+reset(two_monitors(0))
+mod.move_desktop_to_screen(2)
+check("to another screen", moves[1] and moves[1].monitor, "DP-4")
+check("...addressed by workspace id", moves[1] and moves[1].workspace, 1)
+
+reset(two_monitors(0))
+mod.move_desktop_to_screen(1)
+check("to the screen it is already on -> nothing", #moves, 0)
+
+-- Waybar orders its buttons by name (waybar/config.jsonc asks for sort-by:
+-- name, because ordering by workspace id ignores a reordered row). So sorting
+-- the names of one screen's desktops has to give back the row itself --
+-- including when labelled and unlabelled desktops are mixed, which is where
+-- the old "<screen>.<desktop>" form went wrong on any screen but the first.
+print("scenario: names sort into the same order as the row")
+local mixed = two_monitors(0)
+table.insert(mixed.workspaces, { id = 6, special = false, monitor = mixed.monitors[2] })
+table.insert(mixed.workspaces, { id = 7, special = false, monitor = mixed.monitors[2] })
+reset(mixed)
+-- Screen 2 holds three desktops; only the middle one has been anywhere.
+mod.set_labeller(function(ws) return ws.id == 6 and "dotfiles" or nil end)
+mod.renumber_desktops()
+
+local named = {}
+for _, ren in ipairs(renames) do named[ren.workspace] = ren.name end
+
+local row, names = {}, {}
+for _, ws in ipairs(mod.desktops_on(world.monitors[2])) do
+    table.insert(row, named[ws.id])
+    table.insert(names, named[ws.id])
+end
+table.sort(names)
+check("the row on screen 2", table.concat(row, " "), "1.2 2 dotfiles 3.2")
+check("sorting the names gives the same order", table.concat(names, " "), table.concat(row, " "))
+
+print("scenario: shuffling a desktop along its own row")
+-- mon0 gets a row of three: ws1, ws2, ws6.
+local function row_of(mon)
+    local ids = {}
+    for _, ws in ipairs(mod.desktops_on(mon)) do table.insert(ids, ws.id) end
+    return table.concat(ids, ",")
+end
+
+local shuffle = two_monitors(0)
+table.insert(shuffle.workspaces, { id = 6, special = false, monitor = shuffle.monitors[1] })
+shuffle.monitors[1].active_workspace = shuffle.workspaces[2] -- ws2, the middle one
+reset(shuffle)
+check("the row to start with", row_of(world.monitors[1]), "1,2,6")
+
+mod.move_desktop_in_row(1)
+check("moving it right swaps it with the one after", row_of(world.monitors[1]), "1,6,2")
+
+mod.move_desktop_in_row(-1)
+check("and back again", row_of(world.monitors[1]), "1,2,6")
+
+mod.move_desktop_in_row(-1)
+check("moving it left puts it first", row_of(world.monitors[1]), "2,1,6")
+
+-- At the end of the row there is nowhere further to go, and it must not wrap.
+local edge = two_monitors(0)
+table.insert(edge.workspaces, { id = 6, special = false, monitor = edge.monitors[1] })
+edge.monitors[1].active_workspace = edge.workspaces[1] -- ws1, already first
+reset(edge)
+mod.move_desktop_in_row(-1)
+check("already first, so left does nothing", row_of(world.monitors[1]), "1,2,6")
+
+local edge2 = two_monitors(0)
+table.insert(edge2.workspaces, { id = 6, special = false, monitor = edge2.monitors[1] })
+edge2.monitors[1].active_workspace = edge2.workspaces[5] -- ws6, already last
+reset(edge2)
+mod.move_desktop_in_row(1)
+check("already last, so right does nothing", row_of(world.monitors[1]), "1,2,6")
+
+-- The workspace id never changes, which is what keeps its windows, its quake
+-- terminal and its persistence rule attached to it.
+local keep = two_monitors(0)
+table.insert(keep.workspaces, { id = 6, special = false, monitor = keep.monitors[1] })
+keep.monitors[1].active_workspace = keep.workspaces[2]
+reset(keep)
 local before_ids = {}
-binds["SUPER + 1"].fn()
-check("M+1 with 2 desktops -> cycles to existing ws2", last().arg.workspace, 2)
+for _, ws in ipairs(hl.get_workspaces()) do before_ids[ws.id] = true end
+mod.move_desktop_in_row(1)
+local same = true
+for _, ws in ipairs(hl.get_workspaces()) do
+    if not before_ids[ws.id] then same = false end
+end
+check("no workspace was renumbered", same, true)
 
-print("scenario: creating a second desktop picks the lowest free id")
-local q = two_monitors(1)
--- ids 1,2,3,5 exist but 5 sits on mon0, so mon1 still has a single desktop
--- and the lowest free id is 4
-table.insert(q.workspaces, { id = 5, special = false, monitor = q.monitors[1] })
-reset(q)
-binds["SUPER + 2"].fn()
-check("skips occupied ids, picks 4", last_of("focus").arg.workspace, 4)
+print("scenario: a moved desktop lands at the end of the screen it arrives on")
+-- The shape that got this wrong: the desktop being moved has a *lower* id than
+-- the desktops already on the target, so ordering by id alone dropped it into
+-- the middle of that row and renumbered the ones after it.
+local arrive = two_monitors(0) -- eDP-1 focused, showing ws1
+-- Give DP-4 a row of its own with higher ids than ws1.
+table.insert(arrive.workspaces, { id = 8, special = false, monitor = arrive.monitors[2] })
+reset(arrive)
+mod.move_desktop_to_screen(2)
 
-print("scenario: M+S on a focused monitor with ONE desktop moves to a new one")
-local om = two_monitors(1) -- DP-4 focused, only ws3 lives there
-reset(om)
-binds["SUPER + SHIFT + 2"].fn()
-check("M+S+2 creates a fresh desktop", last_of("focus").arg.workspace, 4)
-check("...and moves the window onto it", last_of("move").arg.workspace, 4)
-check("using the move dispatcher", last_of("move").kind, "move")
-check("...addressed by window, not focus", last_of("move").arg.window, "address:0xWIN1")
+-- The stub does not move the workspace itself, so say where it ended up and
+-- then ask what that screen's row looks like.
+world.workspaces[1].monitor = world.monitors[2]
+local row = {}
+for _, ws in ipairs(mod.desktops_on(world.monitors[2])) do table.insert(row, ws.id) end
+check("it goes last, not into the middle", table.concat(row, ","), "3,8,1")
 
-print("scenario: M+C+S on a focused monitor creates a desktop and moves to it")
-local oc = two_monitors(1)
-reset(oc)
-binds["SUPER + CTRL + SHIFT + 2"].fn()
-check("M+C+S+2 creates a fresh desktop", last_of("focus").arg.workspace, 4)
-check("...and moves the window onto it", last_of("move").arg.workspace, 4)
-check("...addressed by window, not focus", last_of("move").arg.window, "address:0xWIN1")
+-- ...and it stays there: the position is remembered, not recomputed.
+local again = {}
+for _, ws in ipairs(mod.desktops_on(world.monitors[2])) do table.insert(again, ws.id) end
+check("and stays there when asked again", table.concat(again, ","), "3,8,1")
 
-print("scenario: M+C+S on a focused monitor with MULTIPLE desktops still makes a new one")
-local om2 = two_monitors(0) -- mon0 has ws1 + ws2
-reset(om2)
-binds["SUPER + CTRL + SHIFT + 1"].fn()
-check("M+C+S+1 creates a fresh desktop anyway", last_of("focus").arg.workspace, 4)
-check("...onto which the window moves", last_of("move").arg.workspace, 4)
-check("...addressed by window, not focus", last_of("move").arg.window, "address:0xWIN1")
+print("scenario: a desktop moved to an empty screen needs no note")
+local lone = two_monitors(0)
+lone.workspaces = { lone.workspaces[1], lone.workspaces[4] } -- eDP-1 keeps ws1; DP-4 has none
+lone.monitors[2].active_workspace = nil
+reset(lone)
+mod.move_desktop_to_screen(2)
+world.workspaces[1].monitor = world.monitors[2]
+local only = {}
+for _, ws in ipairs(mod.desktops_on(world.monitors[2])) do table.insert(only, ws.id) end
+check("it is simply the row", table.concat(only, ","), "1")
 
-print("scenario: M+C+S on ANOTHER monitor still moves the whole desktop")
-local ow = two_monitors(0)
-reset(ow)
-binds["SUPER + CTRL + SHIFT + 2"].fn()
-check("moves the focused desktop to DP-4", moves[1] and moves[1].monitor, "DP-4")
-check("addressed by workspace id", moves[1] and moves[1].workspace, 1)
+print("scenario: moving a column needs a tiled window to read the column from")
+local fl = two_monitors(0)
+fl.active_window = { address = "0xFLOAT", stable_id = "f", floating = true }
+reset(fl)
+local before_float = #dispatched
+mod.move_column_to_screen(2)
+check("a floating window has no column", #dispatched, before_float)
+
+local none = two_monitors(0)
+none.active_window = nil
+reset(none)
+local before_none = #dispatched
+mod.move_column_to_neighbour_desktop(1)
+check("no window, no column", #dispatched, before_none)
 
 print("scenario: duplicate then un-duplicate with the same key")
 local m = two_monitors(0)
 reset(m)
-binds["SUPER + CTRL + 2"].fn()
+mod.toggle_mirror_screen(2)
 check("first press duplicates onto the focused monitor", monitor_calls[1].mirror, "eDP-1")
 check("target is the other monitor", monitor_calls[1].output, "DP-4")
 
@@ -282,7 +465,7 @@ check("slot 2 still exists while duplicating", slots[2] and slots[2].name, "DP-4
 check("and is flagged as duplicating", slots[2] and slots[2].source, "eDP-1")
 check("get_monitors no longer reports it", #hl.get_monitors(), 1)
 
-binds["SUPER + CTRL + 2"].fn()
+mod.toggle_mirror_screen(2)
 check("second press clears the mirror", monitor_calls[2].mirror, "")
 check("waybar refreshed on both toggles", #execs, 2)
 check("by restarting it on the main monitor", execs[1], "waybar-main")
@@ -298,24 +481,20 @@ mon3.active_workspace = ws9
 table.insert(three.monitors, mon3)
 table.insert(three.workspaces, ws9)
 reset(three)
-binds["SUPER + CTRL + 2"].fn() -- duplicate the middle monitor
+mod.toggle_mirror_screen(2) -- duplicate the middle monitor
 local s2 = mod.monitor_slots()
 check("slot 1 unchanged", s2[1].name, "eDP-1")
 check("slot 2 is still the duplicating monitor", s2[2].name, "DP-4")
 check("slot 3 did NOT move up", s2[3].name, "HDMI-1")
 
-print("scenario: plain M+n on a duplicating monitor does nothing")
-local before = #dispatched
-binds["SUPER + 2"].fn()
-check("no dispatch", #dispatched, before)
+print("scenario: a duplicating screen has no desktops of its own")
+local before_dup = #dispatched
+mod.focus_screen(2)
+check("so focusing it does nothing", #dispatched, before_dup)
 
-print("scenario: single monitor, pressing an absent monitor number")
-local s = two_monitors(0)
-s.monitors = { s.monitors[1] }
-reset(s)
-local before = #dispatched
-binds["SUPER + 5"].fn()
-check("M+5 with no monitor 5 -> no dispatch", #dispatched, before)
+print("scenario: how many screens are addressable")
+reset(two_monitors(0))
+check("both of them", mod.screen_count(), 2)
 
 print("scenario: per-monitor desktop numbering")
 -- mon0 owns ids 1 and 2; mon1 owns ids 3 and 5.
@@ -331,10 +510,10 @@ mod.renumber_desktops()
 local named = {}
 for _, ren in ipairs(renames) do named[ren.workspace] = ren.name end
 
-check("mon1 desktop1 (id 1) -> 1.1", named[1], "1.1")
-check("mon1 desktop2 (id 2) -> 1.2", named[2], "1.2")
-check("mon2 desktop1 (id 3) -> 2.1", named[3], "2.1")
-check("mon2 desktop2 (id 5) -> 2.2", named[5], "2.2")
+check("mon1 desktop1 -> 1.1 (desktop 1, screen 1)", named[1], "1.1")
+check("mon1 desktop2 -> 2.1 (desktop 2, screen 1)", named[2], "2.1")
+check("mon2 desktop1 -> 1.2 (desktop 1, screen 2)", named[3], "1.2")
+check("mon2 desktop2 -> 2.2 (desktop 2, screen 2)", named[5], "2.2")
 check("all four renamed", #renames, 4)
 
 -- The whole point: no two desktops may share a name.
@@ -348,8 +527,8 @@ check("no duplicate names across monitors", dupes, 0)
 print("scenario: names already correct are left alone")
 local r2 = two_monitors(0)
 r2.workspaces[1].name = "1.1"
-r2.workspaces[2].name = "1.2"
-r2.workspaces[3].name = "2.1"
+r2.workspaces[2].name = "2.1"
+r2.workspaces[3].name = "1.2"
 r2.workspaces[4].name = "special"
 reset(r2)
 mod.renumber_desktops()
@@ -412,8 +591,10 @@ mod.renumber_desktops()
 by_ws = {}
 for _, ren in ipairs(renames) do by_ws[ren.workspace] = ren.name end
 check("DP-4's desktop (id 3) is now 1.1", by_ws[3], "1.1")
-check("eDP-1's desktops (ids 1, 2) are 2.1 and 2.2", by_ws[1], "2.1")
-check("eDP-1's other desktop", by_ws[2], "2.2")
+-- eDP-1 is screen 2 under this pin order, so its desktops are 1 and 2 *of
+-- screen 2*: the number that leads is the desktop's, not the screen's.
+check("eDP-1's first desktop is 1.2", by_ws[1], "1.2")
+check("eDP-1's second is 2.2", by_ws[2], "2.2")
 
 print("scenario: a transform on a pinned line does not disturb the order")
 set_pin("Dell DELL P3424WE DVYH6T3 transform=1\nBOE 0x0DBB\n")
@@ -449,7 +630,7 @@ mon4.active_workspace = ws9b
 table.insert(thr.monitors, mon4)
 table.insert(thr.workspaces, ws9b)
 reset(thr)
-binds["SUPER + CTRL + 2"].fn() -- duplicate the middle, pinned slot 2
+mod.toggle_mirror_screen(2) -- duplicate the middle, pinned slot 2
 local s4 = mod.monitor_slots()
 check("slot 1 stays HDMI-1", s4[1].name, "HDMI-1")
 check("slot 2 is DP-4, duplicating", s4[2].name, "DP-4")
@@ -461,6 +642,10 @@ set_pin("") -- back to baseline, in case a later scenario runs after this one
 -- quake.lua names a desktop after the directory its terminal is sitting in.
 -- Waybar shows the workspace name whenever its format-icons has no entry, so
 -- the label only has to end up in the name.
+--
+-- The name leads with the desktop's own number, because that number is a key:
+-- SUPER+D then 2 goes to the second desktop on this screen, and a desktop
+-- called just "dotfiles" gave no clue which number that was.
 print("scenario: desktops that have something to call themselves")
 reset(two_monitors(0))
 mod.set_labeller(function(ws)
@@ -469,9 +654,9 @@ end)
 mod.renumber_desktops()
 local by_ws = {}
 for _, ren in ipairs(renames) do by_ws[ren.workspace] = ren.name end
-check("the labelled one takes its name", by_ws[1], "dotfiles")
-check("the other labelled one too", by_ws[3], "runner")
-check("an unlabelled desktop stays a number", by_ws[2], "1.2")
+check("the labelled one is numbered, then named", by_ws[1], "1 dotfiles")
+check("the other one too, numbered per screen", by_ws[3], "1 runner")
+check("an unlabelled desktop stays a number", by_ws[2], "2.1")
 
 -- Names must stay unique across monitors: waybar matches the active workspace
 -- by name alone, so a shared name lights up two buttons at once.
@@ -481,9 +666,10 @@ mod.set_labeller(function() return "dotfiles" end)
 mod.renumber_desktops()
 by_ws = {}
 for _, ren in ipairs(renames) do by_ws[ren.workspace] = ren.name end
-check("the first keeps the plain name", by_ws[1], "dotfiles")
-check("the next carries its number too", by_ws[2], "dotfiles 1.2")
-check("and so does one on another screen", by_ws[3], "dotfiles 2.1")
+check("the first is desktop 1", by_ws[1], "1 dotfiles")
+check("the next is desktop 2, so the names differ already", by_ws[2], "2 dotfiles")
+-- Same index on another screen, same label: the screen number breaks the tie.
+check("a clash across screens keeps the screen number", by_ws[3], "1 dotfiles (2)")
 
 print("scenario: no labeller at all")
 reset(two_monitors(0))
@@ -501,35 +687,38 @@ check("everything is numbered as before", by_ws[1], "1.1")
 print("scenario: a new desktop is born with its name")
 local n = two_monitors(0)
 reset(n)
-n.workspaces[1].name = "~"
-n.workspaces[2].name = "~ 1.2"
-n.workspaces[3].name = "~ 2.1"
+n.workspaces[1].name = "1 ~"
+n.workspaces[2].name = "2 ~"
+n.workspaces[3].name = "1 ~ (2)"
 mod.set_labeller(function() return "~" end)
 dispatched, renames = {}, {}
 mod.new_desktop_here()
 check("created by id", last_of("focus").arg.workspace, 4)
-check("and named straight away", renames[1] and renames[1].name, "~ 1.3")
+-- Third desktop on this screen, so it is born as "3 ~" rather than being
+-- numbered a moment later by the renumbering pass.
+check("and named straight away", renames[1] and renames[1].name, "3 ~")
 check("the same desktop that was created", renames[1] and renames[1].workspace, 4)
 
-print("scenario: a new desktop when the plain name is free")
+print("scenario: a new desktop among unlabelled ones")
 local m = two_monitors(0)
 reset(m)
 m.workspaces[1].name = "1.1"
-m.workspaces[2].name = "1.2"
-m.workspaces[3].name = "2.1"
+m.workspaces[2].name = "2.1"
+m.workspaces[3].name = "1.2"
 mod.set_labeller(function() return "~" end)
 dispatched, renames = {}, {}
 mod.new_desktop_here()
-check("takes the plain name", renames[1] and renames[1].name, "~")
+check("still numbered, since the number is the point", renames[1] and renames[1].name, "3 ~")
 
-print("scenario: no labeller, so nothing to name it")
+print("scenario: no labeller, so it is born with its number")
 reset(two_monitors(0))
 dispatched, renames = {}, {}
 mod.new_desktop_here()
 check("created by id", last_of("focus").arg.workspace, 4)
--- The renumbering pass still numbers it afterwards; what matters is that
--- creating it did not name it first.
-check("nothing named it on the way in", renames[1] and renames[1].workspace, 1)
+-- Named on the way in rather than left to the deferred pass: without this the
+-- bar shows the raw workspace id ("4") for the ~80ms until that runs.
+check("named as it was created", renames[1] and renames[1].workspace, 4)
+check("...with its position and screen", renames[1] and renames[1].name, "3.1")
 
 -- Hyprland sweeps up an empty desktop the moment it stops being visible, so a
 -- desktop asked for outright has to be made persistent or it is gone before it
@@ -542,37 +731,80 @@ local function last_rule_for(id)
     end
 end
 
-print("scenario: M+C+#f makes a desktop that survives being left empty")
+print("scenario: a desktop asked for outright survives being left empty")
+-- The plain screen key, pressed on the screen you are already on. Asking for a
+-- desktop and passing through one are different keys now, and only the first
+-- gets a persistence rule.
 local p1 = two_monitors(0)
 reset(p1)
-binds["SUPER + CTRL + 1"].fn()
+mod.focus_screen(1)
 check("created the desktop", last_of("focus").arg.workspace, 4)
 check("...and asked for it to persist", last_rule_for(4) and last_rule_for(4).persistent, true)
 check("addressed by id as a string", last_rule_for(4) and last_rule_for(4).workspace, "4")
 check("only that one desktop is made persistent", #rules, 1)
 
-print("scenario: the desktops made on the way somewhere are not persistent")
+print("scenario: a persistent desktop's rule names the screen it belongs to")
+-- Issuing any persistent workspace rule makes Hyprland re-place every
+-- persistent workspace it knows about. One whose rule names no monitor is
+-- placed on whichever screen has focus at that moment -- so making an empty
+-- desktop on one screen dragged every empty desktop from the other screen
+-- across to join it.
+reset(two_monitors(0)) -- eDP-1 focused
+mod.focus_screen(1)    -- the screen you are on: makes a desktop, id 4
+local pinned = last_rule_for(4)
+check("the new desktop is kept while empty", pinned and pinned.persistent, true)
+check("...and pinned to the screen it was made on", pinned and pinned.monitor, "eDP-1")
+
+print("scenario: a persistent desktop that moves screens takes its rule along")
+-- Otherwise the next re-placement pass reads the old screen out of the rule
+-- and hauls the desktop back to it.
+reset(two_monitors(0))
+mod.place_desktop(1, nil, true) -- ws1, in view on eDP-1, kept while empty
+check("pinned where it is", last_rule_for(1) and last_rule_for(1).monitor, "eDP-1")
+mod.move_desktop_to_screen(2)
+check("still persistent after the move", last_rule_for(1) and last_rule_for(1).persistent, true)
+check("...and now pinned to the screen it moved to", last_rule_for(1) and last_rule_for(1).monitor, "DP-4")
+
+print("scenario: a desktop made on the way somewhere is not persistent")
 local p2 = two_monitors(1) -- DP-4 focused, a single desktop on it
 reset(p2)
-binds["SUPER + 2"].fn() -- M+#f with one desktop: makes a second
-check("M+2 created one", last_of("focus").arg.workspace, 4)
-check("...with no persistence rule", #rules, 0)
-
-local p3 = two_monitors(1)
-reset(p3)
-binds["SUPER + SHIFT + 2"].fn() -- moves the window onto a fresh desktop
-check("M+S+2 created one", last_of("focus").arg.workspace, 4)
-check("...with no rule either, it has a window on it", #rules, 0)
+mod.move_window_to_screen(2) -- takes the window onto a fresh desktop
+check("created one", last_of("focus").arg.workspace, 4)
+check("...with no rule: it has a window on it, so it cannot lapse", #rules, 0)
 
 -- SUPER+C on an empty desktop: leave it, then drop the rule. That order is
 -- Hyprland's, not a preference -- it will not destroy the workspace it shows.
 print("scenario: closing the empty desktop in view")
-local c1 = two_monitors(0) -- mon0 shows ws1 and also owns ws2
+-- Closing lands on the desktop *before* the one closed: backing out of
+-- somewhere should leave you where you came from. Only when there is nothing
+-- before it does focus go forwards instead, and it never wraps -- the old
+-- behaviour put you on desktop 1 from anywhere.
+local c1 = two_monitors(0) -- mon0 shows ws1, the first, and also owns ws2
 reset(c1)
 check("it closed something", mod.close_desktop_here(), true)
-check("focus moved to the next desktop", last_of("focus").arg.workspace, 2)
+check("nothing before the first, so focus goes forward", last_of("focus").arg.workspace, 2)
 check("persistence dropped for the one left behind", last_rule_for(1).persistent, false)
 check("...by id", last_rule_for(1).workspace, "1")
+
+print("scenario: closing a desktop that has one before it")
+local c2 = two_monitors(0)
+c2.monitors[1].active_workspace = c2.workspaces[2] -- ws2, the last on mon0
+reset(c2)
+check("it closed something", mod.close_desktop_here(), true)
+check("focus goes back to the one before", last_of("focus").arg.workspace, 1)
+
+print("scenario: closing the middle desktop of three")
+local c3 = two_monitors(0)
+table.insert(c3.workspaces, { id = 6, special = false, monitor = c3.monitors[1] })
+c3.monitors[1].active_workspace = c3.workspaces[2] -- ws2, with ws1 before and ws6 after
+reset(c3)
+check("it closed something", mod.close_desktop_here(), true)
+check("focus goes backwards, not forwards", last_of("focus").arg.workspace, 1)
+
+print("scenario: closing the last desktop on a screen is refused")
+local c4 = two_monitors(1) -- DP-4 focused, holding only ws3
+reset(c4)
+check("nowhere to go, so nothing is closed", mod.close_desktop_here(), false)
 
 print("scenario: the focus happens before the rule is dropped")
 -- Both are recorded, so the order can be asserted rather than assumed: the
@@ -596,26 +828,67 @@ hl.dispatch, hl.workspace_rule = real_dispatch, real_rule
 
 -- quake.lua hangs its own tidying up on this: the desktop's terminal is closed
 -- with it, so the next desktop to get this id does not inherit the old one's
--- shell and directory. Called while the desktop is still in view, since that is
--- how anything belonging to it can still be found.
+-- shell and directory.
+-- The bug this exists for: a desktop has two ways to end and only one of them
+-- used to clean up. Closing it with SUPER+C did. *Lapsing* -- left empty and
+-- swept up by Hyprland, which is the commoner case by far -- did not, so its
+-- screen, its place in the row, its persistence rule, its terminal and its
+-- layout were all inherited by the next desktop handed that id.
+print("scenario: a desktop that lapses is forgotten as thoroughly as one that is closed")
+local lapse = two_monitors(0)
+table.insert(lapse.workspaces, { id = 9, special = false, monitor = lapse.monitors[2] })
+reset(lapse)
+
+local forgotten = {}
+mod.on_forget(function(id) table.insert(forgotten, id) end)
+
+-- Let the pass see all four, so it knows they existed.
+mod.renumber_desktops()
+check("nothing has gone yet", #forgotten, 0)
+
+-- ws9 vanishes on its own, the way Hyprland sweeps an empty desktop.
+for i, ws in ipairs(world.workspaces) do
+    if ws.id == 9 then table.remove(world.workspaces, i) break end
+end
+mod.renumber_desktops()
+check("the pass notices it has gone", #forgotten, 1)
+check("...and says which", forgotten[1], 9)
+
+-- ...and having been forgotten once, it is not reported again.
+mod.renumber_desktops()
+check("only reported once", #forgotten, 1)
+
+print("scenario: a lapsed desktop's persistence rule is dropped with it")
+-- Otherwise the rule keeps naming a screen, and Hyprland places the next
+-- desktop given that id there -- a new desktop arriving on the wrong monitor.
+local stale = two_monitors(0)
+table.insert(stale.workspaces, { id = 9, special = false, monitor = stale.monitors[2] })
+reset(stale)
+mod.place_desktop(9, nil, true)     -- id 9 is kept while empty
+mod.renumber_desktops()
+check("pinned to a screen while it exists", last_rule_for(9) and last_rule_for(9).persistent, true)
+
+for i, ws in ipairs(world.workspaces) do
+    if ws.id == 9 then table.remove(world.workspaces, i) break end
+end
+mod.renumber_desktops()
+check("the rule is cleared once it has gone", last_rule_for(9) and last_rule_for(9).persistent, false)
+check("...and it is no longer thought persistent", mod.is_persistent(9), false)
+
 print("scenario: closing a desktop tells whoever asked to be told")
 local h1 = two_monitors(0)
 reset(h1)
-local told, told_at = {}, nil
-mod.set_closing_hook(function(id)
-    table.insert(told, id)
-    told_at = #dispatched
-end)
+local told = {}
+mod.on_forget(function(id) table.insert(told, id) end)
 mod.close_desktop_here()
 check("called once", #told, 1)
 check("with the id of the desktop being closed", told[1], 1)
-check("before anything has been dispatched", told_at, 0)
 
-print("scenario: nothing is closed, so nothing is told")
+print("scenario: nothing is closed, so nothing is forgotten")
 local h2 = two_monitors(1) -- DP-4's only desktop, which cannot be closed
 reset(h2)
 told = {}
-mod.set_closing_hook(function(id) table.insert(told, id) end)
+mod.on_forget(function(id) table.insert(told, id) end)
 check("refused", mod.close_desktop_here(), false)
 check("hook not called", #told, 0)
 

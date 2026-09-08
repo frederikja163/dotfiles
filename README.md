@@ -52,9 +52,10 @@ catppuccin-mocha and JetBrainsMono Nerd Font throughout.
 | `look.lua`        | gaps, borders, decoration, animations                     |
 | `input.lua`       | keyboard, mouse, touchpad, gestures                       |
 | `windowrules.lua` | window, layer and workspace rules                         |
-| `keybinds.lua`    | app and window binds                                      |
-| `deskbinds.lua`   | monitors and desktops on the number keys; desktop naming  |
-| `columns.lua`     | the column layout itself, and its binds                   |
+| `keybinds.lua`    | the letter keys: apps and one-shot window actions         |
+| `deskbinds.lua`   | what the screen and desktop keys do; desktop naming       |
+| `columns.lua`     | the column layout itself                                  |
+| `modes.lua`       | every axis key, and the modes they work inside            |
 | `quake.lua`       | the drop-down terminal, one per desktop                   |
 | `autostart.lua`   | processes launched with the session                       |
 
@@ -79,7 +80,7 @@ dotfiles, and is named after whatever it drives instead.
 | `ide`                    | `SUPER + I`: Rider if the directory holds a solution, else nvim     |
 | `power-menu`             | `SUPER + Escape`: lock, log out, reboot, shut down                  |
 | `proc-cwd`               | the working directory of each pid given                             |
-| `screenshot-region`      | `SUPER + S`: select a region, onto the clipboard                    |
+| `screenshot-region`      | `Print`: select a region, onto the clipboard                        |
 | `terminal-cwd`           | the working directory of a terminal's shell, given its pid          |
 | `waybar-main`            | starts waybar on every monitor, full bar on the largest             |
 
@@ -88,13 +89,39 @@ Shared shell code lives in `lib/`, which is not on `PATH`: see
 
 ## Keys
 
-Each modifier means one thing: **SHIFT** moves · **CTRL** changes geometry ·
-**ALT** scopes up from the window to its whole column · **numbers** address
-screens.
+Verbs and motions, the way vim has operators and motions. A **motion** says
+where, and it is the same vocabulary used to navigate: `h j k l` inside the
+desktop, `Tab` between the desktops on this screen, `1`..`0` between screens.
+A **verb** enters a mode, and inside a mode the motions are bare.
+
+| | |
+| ------------------ | ------------------------------------------------- |
+| `SUPER + motion`   | go there |
+| `SUPER + M`        | move the window — then a motion |
+| `SUPER+SHIFT + M`  | move its whole column |
+| ⤷ `d` then `1`..`0` | …to a desktop by number, rather than a screen |
+| `SUPER+CTRL + M`   | move the whole desktop: `h`/`l` along its row, `1`..`0` to a screen |
+| `SUPER + S`        | size: `hjkl` to resize, `f` float, `p` promote |
+| `SUPER + D`        | desktop: `1`..`0` go to that desktop on this screen, `Tab` to step |
+| `SUPER+SHIFT + D`  | display: `1`..`0` duplicate a screen, `o` re-pin the order, `h` send desktops home |
+
+Inside a mode the motions work **whether or not you keep SUPER held**, so
+`SUPER+S` then `h`, and holding SUPER through `SUPER+S+h`, do the same thing.
+
+All of these except `SUPER + S` are **one-shot**: the mode ends when the action
+fires, like `dw`. `SUPER + S` is **sticky**, because resizing is a nudge you
+repeat — `Escape` (with or without SUPER) leaves it, and Waybar shows which
+mode is on. Any unbound key cancels a one-shot mode. `SUPER + /` lists the keys
+from inside a mode as well.
+
+So the modifiers carry almost nothing: **SHIFT** reverses a motion (`Tab`),
+widens a verb's scope (`M`), or marks the harsher variant of a letter
+(`SUPER+SHIFT+C` force-kills). **CTRL** appears once, on `M`. **ALT** is
+unused.
 
 **SUPER + /** lists every bind, read live from `hyprctl binds`, so it cannot
-drift from the config — that is the reference rather than this file. Binds are
-declared in `keybinds.lua`, `columns.lua`, `deskbinds.lua` and `quake.lua`; one
+drift from the config — that is the reference rather than this file. It groups
+by mode. Binds are declared in `modes.lua`, `keybinds.lua` and `quake.lua`; one
 without a `description` will not appear in the list.
 
 Apps open where the desktop is, meaning the directory of its quake terminal:
@@ -128,27 +155,60 @@ one has pinned yet follow in id order. A screen's line can also carry
 `transform=1..3` — orientation for a panel mounted portrait — which
 `monitors.lua` applies; the same script asks for it, and then for the row's
 direction — monitor 1 on the left (the default `ltr`), on the right (`rtl`),
-or the screens stacked top-to-bottom (`ttb`). The number keys act on that
-screen — or on your own desktops when you are already on it:
+or the screens stacked top-to-bottom (`ttb`). A screen number acts on that
+screen — or, when it is the screen you are already on, on a brand-new desktop
+there. The overload is the same at every scope:
 
-|                    | another screen        | the one you are on              |
-| ------------------ | --------------------- | ------------------------------- |
-| `SUPER + n`        | focus it              | next desktop, or make a second  |
-| `+ SHIFT`          | move window there     | move window to the next desktop |
-| `+ CTRL`           | duplicate/extend      | new desktop, and it stays       |
-| `+ ALT + SHIFT`    | move column there     | move column to the next desktop |
-| `+ CTRL + SHIFT`   | move this desktop there | —                             |
+|                          | another screen    | the one you are on          |
+| ------------------------ | ----------------- | --------------------------- |
+| `SUPER + n`              | go there          | a new desktop, kept while empty |
+| `SUPER+M` then `n`       | window there      | window to a new desktop     |
+| `SUPER+SHIFT+M` then `n` | column there      | column to a new desktop     |
+| `SUPER+CTRL+M` then `n`  | this desktop there | —                          |
+| `SUPER+D` then `n`       | duplicate/extend  | —                           |
 
-Desktops are **named after the directory** their quake terminal is sitting in,
-so the bar reads `dotfiles` rather than `2`; `~` when it has not been taken
-anywhere.
+Cycling desktops is the other axis, on `Tab`, so none of this depends on how
+many desktops happen to exist: `SUPER + n` always makes one, `SUPER + Tab`
+always moves between the ones there are.
+
+A number addresses a *screen*, so going to a particular **desktop** by number
+has a verb of its own: `SUPER + D` then `2` is the second desktop on this
+screen — the second button on the bar — whichever workspace id it happens to
+hold. It does nothing if there is no such desktop; making one is `SUPER + n`.
+
+The same split applies inside a move mode, where a number also means a screen.
+Press `d` there and the numbers start counting desktops instead, so
+`SUPER+M` `d` `3` sends the window to the third desktop on this screen and
+`SUPER+SHIFT+M` `d` `3` sends its whole column. A number can only mean one
+thing at a time, and the key you pressed to get there is what says which.
+
+Desktops are **numbered, then named after the directory** their quake terminal
+is sitting in, so the bar reads `2 dotfiles`. One that has not been taken
+anywhere is just its number. The number leads because it is a key: it is what
+`SUPER + D` and `SUPER+M` `d` take, and it counts per screen.
+
+Names have to stay unique across screens — waybar decides which button is
+active by comparing names, with no monitor check — so an untouched desktop is
+named `<desktop>.<screen>` internally and shown as the bare number, and the
+rare case of two screens holding the same position *and* the same directory
+falls back to `1 dotfiles (2)`.
+
+The number leads in **both** forms because waybar orders its buttons by
+workspace id unless told otherwise, and the id is not the order the desktops
+are in — a desktop shuffled along its row keeps its id. `waybar/config.jsonc`
+therefore sets `sort-by: name`, which only follows the row if the desktop's own
+number comes first.
 
 Hyprland removes an empty desktop as soon as you leave it, which is right for
-one made in passing and wrong for one asked for outright: `SUPER + CTRL + n`
-therefore makes a desktop that **stays while empty**, so it can be set up
-before there is anything on it. `SUPER + C` closes it — the same key that
+one made in passing and wrong for one asked for outright: `SUPER + n` on the
+screen you are already on therefore makes a desktop that **stays while empty**,
+so it can be set up before there is anything on it. The ones minted on the way
+somewhere — by a move verb aimed at the screen you are on — are not kept, since
+they have a window on them and cannot lapse anyway. `SUPER + C` closes it — the same key that
 closes a window, since an empty desktop is the one time it has no window to
-close. It declines on a monitor's last desktop. A desktop kept this way does
+close. Closing leaves you on the desktop **before** the one you closed, or the
+one after it when there was nothing before; it never wraps. It declines on a
+monitor's last desktop. A desktop kept this way does
 not survive `dotfiles-reload`: see the reasoning in `deskbinds.lua`.
 
 Closing a desktop **takes its quake terminal with it**, so the next desktop to
@@ -156,6 +216,17 @@ be given that id starts at `~` rather than inheriting a closed desktop's shell
 and working directory. A desktop that merely lapses — left empty, so Hyprland
 removes it — keeps its terminal, and does pass it on; `quake.lua` says why the
 two differ.
+
+`SUPER+CTRL+M` then `h` or `l` shuffles the desktop one place along its own
+screen's row, swapping with the neighbour rather than renumbering anything, and
+stopping at either end rather than wrapping.
+
+A desktop **moved to another screen lands at the end** of that screen's row
+rather than wherever its workspace id happens to fall. Desktops are ordered by
+id, which is the order they were made in, so a desktop keeps its number when it
+travels; `deskbinds.lua` remembers the position instead of renumbering the
+workspace, because renumbering one moves its windows to a fresh workspace and
+leaves its quake terminal orphaned.
 
 They also remember which screen they belong to, recognised by monitor
 *description* rather than connector name — `DP-4` came back as `DP-5` after a
