@@ -39,18 +39,19 @@ while [ $# -gt 0 ]; do
             # Spelled out rather than sed'd out of the header above, which
             # silently printed the wrong lines the moment the header grew.
             cat <<'EOF'
-dotfiles-update -- pull this repo, then re-run the install scripts if the
-commits that arrived need them.
+dotfiles-update -- pull this repo, then re-run the install script if the
+commits that arrived need it.
 
   dotfiles-update        pull, then ask, with the diff's answer offered
   -y, --yes              pull, then do what the diff says, no questions
-  -a, --all              pull, then run both install scripts regardless
+  -a, --all              pull, then run both halves regardless
   -n, --dry-run          say what a pull would bring and change nothing
   -h, --help             this
 
-install.sh is judged needed when install.sh itself changed; the configs are
-symlinked directories, so their contents are live without relinking.
-install-packages.sh when packages/, system/ or install-packages.sh changed.
+The links half (install.sh links) is judged needed when install.sh itself
+changed; the configs are symlinked directories, so their contents are live
+without relinking. The packages half (install.sh packages) when packages/,
+system/ or install.sh changed.
 EOF
             exit 0
             ;;
@@ -127,7 +128,7 @@ if [ "$before" = "$target" ]; then
 fi
 
 # Checked before anything is printed. Without this a diverged branch got a full
-# plan of work, "install.sh: needed" and all, and only then hit the --ff-only
+# plan of work, "packages: needed" and all, and only then hit the --ff-only
 # refusal below -- an answer to a question the script could not carry out.
 #
 # Being merely ahead is not divergence, and has to be told apart from it: local
@@ -166,7 +167,7 @@ changed_any() {
     return 1
 }
 
-# install.sh is needed when the set of links changes, which means when
+# The links half is needed when the set of links changes, which means when
 # install.sh itself changes -- and essentially only then.
 #
 # It looks like it should also run whenever a config changes, but it must not:
@@ -181,18 +182,19 @@ else
     want_links=0
 fi
 
-# install-packages.sh is needed for a new package, a change to its own steps
-# (the pinned NVIM_VERSION lives there), or a file under system/, which it is
-# what installs into /etc.
-if [ "$force_all" -eq 1 ] || changed_any '^packages/' '^install-packages\.sh$' '^system/'; then
+# The packages half is needed for a new package, a change to the steps
+# themselves (the pinned NVIM_VERSION lives there), or a file under system/,
+# which is what installs into /etc. Both halves live in install.sh, so a change
+# to it flags both -- conservative, and install.sh is edited rarely.
+if [ "$force_all" -eq 1 ] || changed_any '^install\.sh$' '^packages/' '^system/'; then
     want_packages=1
 else
     want_packages=0
 fi
 
 echo
-echo "    install.sh:          $([ "$want_links" -eq 1 ] && echo "needed" || echo "not needed")"
-echo "    install-packages.sh: $([ "$want_packages" -eq 1 ] && echo "needed" || echo "not needed")"
+echo "    packages:          $([ "$want_packages" -eq 1 ] && echo "needed" || echo "not needed")"
+echo "    links:             $([ "$want_links" -eq 1 ] && echo "needed" || echo "not needed")"
 
 if [ "$dry_run" -eq 1 ]; then
     echo
@@ -242,9 +244,9 @@ if [ "$assume_yes" -eq 0 ]; then
     echo
     # The detected answer is the default, so holding Enter through both
     # questions does the right thing while either can still be overridden.
-    ask "run install-packages.sh?" "$([ "$want_packages" -eq 1 ] && echo y || echo n)" \
+    ask "run install.sh packages?" "$([ "$want_packages" -eq 1 ] && echo y || echo n)" \
         && run_packages=1 || run_packages=0
-    ask "run install.sh?" "$([ "$want_links" -eq 1 ] && echo y || echo n)" \
+    ask "run install.sh links?" "$([ "$want_links" -eq 1 ] && echo y || echo n)" \
         && run_links=1 || run_links=0
 fi
 
@@ -252,17 +254,17 @@ fi
 # linked into place if the program reading it is not installed yet.
 if [ "$run_packages" -eq 1 ]; then
     echo
-    echo "==> install-packages.sh"
-    "$REPO/install-packages.sh" || {
-        echo "install-packages.sh failed -- install.sh not run" >&2
+    echo "==> install.sh packages"
+    "$REPO/install.sh" packages || {
+        echo "install.sh packages failed -- links not run" >&2
         exit 1
     }
 fi
 
 if [ "$run_links" -eq 1 ]; then
     echo
-    echo "==> install.sh"
-    "$REPO/install.sh" || exit 1
+    echo "==> install.sh links"
+    "$REPO/install.sh" links || exit 1
 fi
 
 # Not reloaded here, only mentioned. A reload restarts the bar and re-applies

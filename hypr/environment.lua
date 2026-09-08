@@ -12,11 +12,14 @@ hl.env("HYPRCURSOR_SIZE", "24")
 --   bob/nvim-bin                      the bob-managed neovim, which is the only
 --                                     nvim on this machine
 --   JetBrains/Toolbox/scripts         rider
+--   ~/.dotnet/tools                   dotnet global tools (dotnet-script,
+--                                     roslyn-language-server)
 --
--- The last two are what bin/ide reaches for, and it is started from a keybind,
+-- The last three are what bin/ide reaches for, and it is started from a keybind,
 -- where nothing has sourced a shell profile. Missing, the editor simply never
--- appeared: Rider is launched detached with its output discarded, so "command
--- not found" went nowhere at all.
+-- appeared -- Rider is launched detached with its output discarded, so "command
+-- not found" went nowhere at all -- and nvim could not start the dotnet-tool
+-- language servers either.
 --
 -- The guard keeps `hyprctl reload` from prepending the same entries repeatedly.
 local home = os.getenv("HOME")
@@ -26,6 +29,7 @@ local currentPath = os.getenv("PATH") or "/usr/local/bin:/usr/bin:/bin"
 for _, dir in ipairs({
     dataHome .. "/JetBrains/Toolbox/scripts",
     dataHome .. "/bob/nvim-bin",
+    home .. "/.dotnet/tools",
     home .. "/.local/bin",
 }) do
     if not string.find(currentPath, dir, 1, true) then

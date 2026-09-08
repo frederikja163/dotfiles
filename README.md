@@ -1,7 +1,8 @@
 # dotfiles
 
-Arch, Hyprland, kitty, Neovim. `install.sh` symlinks everything out of this repo
-into place, so editing a file here edits the live system.
+Arch, Hyprland, kitty, Neovim. `install.sh` installs the packages and symlinks
+every config out of this repo into place, so editing a file here edits the live
+system.
 
 This is an index. The reasoning lives in the files themselves, at the top of
 each one.
@@ -255,8 +256,8 @@ is still written either way.
 ## Day to day
 
 ```sh
-./install-packages.sh      # packages + neovim (Arch, needs sudo)
-./install.sh               # symlink configs; backs up anything it displaces
+./install.sh             # everything: packages, then symlinked configs (needs sudo)
+./install.sh links       # just the symlinks; backs up anything it displaces
 
 dotfiles-reload            # apply the dotfiles to the running session
                            # kitty: ctrl+shift+f5
@@ -274,7 +275,8 @@ notification for a step that failed.
 exports in `environment.lua` needs a full session restart to be certain —
 `dotfiles-reload` only re-exports them to processes started afterwards.
 
-Both install scripts are safe to re-run and skip whatever is already done.
+`install.sh` is safe to re-run and skips whatever is already done — it is one
+script with two halves, `install.sh packages` and `install.sh links`.
 
 ## Notes
 
@@ -288,7 +290,7 @@ Both install scripts are safe to re-run and skip whatever is already done.
 - **Rider is not installed by the script.** `jetbrains-toolbox` is, and Rider is
   installed from its GUI; Toolbox has no usable CLI.
 - **Neovim** is managed by [bob](https://github.com/MordechaiHadad/bob) and
-  pinned by `NVIM_VERSION` in `install-packages.sh`.
+  pinned by `NVIM_VERSION` in `install.sh`.
 - **Work-machine-only software** (GlobalProtect, Teams, FreeIPA) is left out on
   purpose.
 - **Adding a config** is one `link <path-in-repo> <absolute-destination>` line

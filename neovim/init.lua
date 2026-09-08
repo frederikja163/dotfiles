@@ -89,7 +89,57 @@ vim.keymap.set('n', '<leader>fh', '<cmd>Pick help<CR>')
 
 -- LSP
 vim.pack.add({ { src = "https://github.com/neovim/nvim-lspconfig" } })
-vim.lsp.enable({ "lua_ls", "clangd", "denols", "html", "ts_ls" })
+vim.lsp.enable({ "lua_ls", "clangd", "denols", "html", "ts_ls", "roslyn_ls", "omnisharp" })
+vim.lsp.config('roslyn_ls', {
+  -- roslyn (Microsoft.CodeAnalysis.LanguageServer) is the server VS Code's C#
+  -- extension uses by default. It needs a loaded project to be useful (the
+  -- editor side tells it which sln/csproj to open); a project-less file gets
+  -- nothing back, so it is gated on a project marker and a loose .cs file
+  -- gets no server rather than a dead or silent one. A .csx script is
+  -- OmniSharp's job -- it has a real scripting engine -- so roslyn never
+  -- attaches there either.
+  root_dir = function(bufnr, on_dir)
+    local fname = vim.api.nvim_buf_get_name(bufnr)
+    if fname == '' or fname:match('%.csx$') then
+      return
+    end
+    if vim.fs.find(function(name)
+      return name:match('%.sln$')
+          or name:match('%.slnx$')
+          or name:match('%.csproj$')
+    end, {
+      path = vim.fn.fnamemodify(fname, ':h'),
+      upward = true,
+      type = 'file',
+    })[1] then
+      on_dir(vim.fn.fnamemodify(fname, ':h'))
+    end
+  end,
+  -- The server shim from the dotnet global tool is named roslyn-language-server,
+  -- not the Microsoft.CodeAnalysis.LanguageServer binary lspconfig's default cmd
+  -- reaches for off PATH.
+  cmd = {
+    'roslyn-language-server',
+    '--logLevel',
+    'Information',
+    '--extensionLogDirectory',
+    vim.fs.joinpath(os.getenv('TMPDIR') or '/tmp', 'roslyn_ls/logs'),
+    '--stdio',
+  },
+})
+vim.lsp.config('omnisharp', {
+  -- OmniSharp for one thing only: .csx scripts, which roslyn cannot serve. Its
+  -- scripting engine loads a lone script as a submission (script globals, #load,
+  -- #r "nuget:..." resolved), which is exactly what dotnet-script files need.
+  -- real project-backed .cs files go to roslyn, so this server refuses to start
+  -- on anything but a .csx -- same gate, inverted.
+  root_dir = function(bufnr, on_dir)
+    local fname = vim.api.nvim_buf_get_name(bufnr)
+    if fname:match('%.csx$') then
+      on_dir(vim.fn.fnamemodify(fname, ':h'))
+    end
+  end,
+})
 vim.keymap.set('n', '<leader>d', vim.diagnostic.open_float)
 vim.keymap.set('n', '<leader>cf', vim.lsp.buf.format)
 vim.keymap.set('n', '<leader>ca', vim.lsp.buf.code_action)

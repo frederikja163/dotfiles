@@ -68,3 +68,8 @@ export PATH="$XDG_DATA_HOME/JetBrains/Toolbox/scripts:$PATH"
 # Set explicitly rather than relying on the apphost's built-in default, so a
 # move off /usr/share/dotnet surfaces here.
 export DOTNET_ROOT="/usr/share/dotnet"
+
+# Global tools installed by install.sh (dotnet-script, roslyn-language-server)
+# land in ~/.dotnet/tools. Not on PATH by default; repeated here and in
+# hypr/environment.lua, which nvim started from a keybind inherits.
+export PATH="$HOME/.dotnet/tools:$PATH"

@@ -1,7 +1,8 @@
 # Working in this repo
 
-**This repo is the running system.** `install.sh` symlinks every directory into
-place, so editing a file here changes the live machine immediately. `hypr/` is
+**This repo is the running system.** `install.sh` installs the packages and
+symlinks every directory into place, so editing a file here changes the live
+machine immediately. `hypr/` is
 read by the compositor the user is sitting in right now, and `zsh/` by their
 open shells.
 

@@ -4,3 +4,4 @@
 vscode-langservers-extracted   # html lsp (also css/json/eslint)
 jetbrains-toolbox              # installs/updates Rider; see README
 tasks-bin
+omnisharp-roslyn-bin           # serves .csx scripts; see .omnisharp and neovim/init.lua

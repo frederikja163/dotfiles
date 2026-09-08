@@ -92,8 +92,5 @@ fi
 info "Running install.sh..."
 (cd "$DOTFILES_DIR" && bash install.sh)
 
-info "Running install-packages.sh..."
-(cd "$DOTFILES_DIR" && bash install-packages.sh)
-
 echo ""
 ok "Done. Reload your shell or start a new terminal."
