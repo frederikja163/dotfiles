@@ -238,15 +238,57 @@ install_packages() {
             sudo systemctl restart systemd-logind
         fi
     fi
+}
 
-    # --- manual steps ----------------------------------------------------------
+# --- Rider ------------------------------------------------------------------
 
-    cat <<'EOF'
+# Rider is the one program here that cannot be installed by this script:
+# Toolbox owns it and has no usable CLI. So the most that can be done is to
+# notice it is absent and put Toolbox in front of the user -- at the very end,
+# once nothing else is waiting on the terminal, and only when it is actually
+# missing. It used to print the same paragraph on every run regardless, which
+# is noise on a machine where Rider has been installed for months.
+#
+# Detected by the Toolbox shim rather than `command -v rider` alone, which is
+# what bin/ide uses but is not enough here: the shim directory reaches PATH via
+# zsh/.zshrc and hypr/environment.lua, and this script runs under bash with
+# neither necessarily applied -- on a fresh machine the login shell has not
+# even been zsh until a few lines ago, so an installed Rider would look absent.
+# PATH is still consulted as well, for a Rider that came from somewhere other
+# than Toolbox.
+install_rider() {
+    local shim="${XDG_DATA_HOME:-$HOME/.local/share}/JetBrains/Toolbox/scripts/rider"
+
+    if [ -x "$shim" ] || command -v rider >/dev/null; then
+        echo "==> Rider already installed"
+        return
+    fi
+
+    if ! command -v jetbrains-toolbox >/dev/null; then
+        echo "!! Rider is missing, and so is jetbrains-toolbox to install it from." >&2
+        echo "   Install the jetbrains-toolbox AUR package first, then re-run this." >&2
+        return
+    fi
+
+    # No display, no Toolbox window: run from a bare VT or over ssh the launch
+    # would fail somewhere the user cannot see, so say what to do instead of
+    # appearing to have done it.
+    if [ -z "${WAYLAND_DISPLAY:-}" ] && [ -z "${DISPLAY:-}" ]; then
+        cat <<'EOF'
 
 Remaining manual step:
   Rider — open JetBrains Toolbox and install it from there. Toolbox has no
   usable CLI, so this cannot be scripted.
 EOF
+        return
+    fi
+
+    echo
+    echo "==> Rider is not installed; opening JetBrains Toolbox — install it from there."
+    # Detached for the reason bin/ide gives: this script is about to exit, and
+    # Toolbox has to outlive the shell that started it. -f forks and returns
+    # straight away, which a plain "&" only almost does.
+    setsid -f jetbrains-toolbox </dev/null >/dev/null 2>&1
 }
 
 # --- config symlinks --------------------------------------------------------
@@ -299,8 +341,11 @@ install_links() {
     link .omnisharp "$HOME/.omnisharp"     # global omnisharp.json for .csx scripts
 }
 
+# install_rider comes last in both modes that install anything, rather than at
+# the end of install_packages where the message used to be: it can open a
+# window, and that belongs after the run rather than in the middle of one.
 case "$mode" in
-    all)      install_packages; install_links ;;
-    packages) install_packages ;;
+    all)      install_packages; install_links; install_rider ;;
+    packages) install_packages; install_rider ;;
     links)    install_links ;;
 esac
