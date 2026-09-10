@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Print the working directory of the shell running inside a terminal, given the
-# terminal's own pid.
+# Print the working directory of the shell inside each terminal named, one
+# "<pid>\t<cwd>" line per terminal that has one.
+#
+#   terminal-cwd 1234 5678
 #
 # The terminal is not the process holding the directory. kitty stays in the
 # directory it was launched from and never moves, and it keeps `kitten` helper
@@ -12,22 +14,71 @@
 # and does not shadow it: the shell's directory stays the answer while `vim` or
 # anything else is in the foreground, which is what makes this stable enough to
 # put on a status bar.
+#
+# Batched, and with no external command anywhere, because of who calls it.
+# hypr/quake.lua and hypr/session.lua run this through io.popen from inside
+# Hyprland, which blocks the compositor until it returns: no frame, no
+# keystroke, no animation while it works. That is what made the desktop freeze
+# for the better part of a second every few seconds -- measured at 807ms for
+# one session snapshot, which asks about every terminal on screen.
+#
+# Where the time went, and what replaced it:
+#
+#   pgrep -P <pid>            51 ms  walks all of /proc looking for a parent;
+#                                    455 processes here, and a security agent
+#                                    that makes every one of them slower
+#   /proc/<pid>/task/*/children       the same answer, from the list the
+#                                    kernel already keeps: ~2 ms
+#   cat /proc/<pid>/comm       2 ms  an exec per child
+#   $(</proc/<pid>/comm)              a builtin
+#   readlink /proc/<pid>/cwd   2 ms  an exec per child
+#   cd -P .../cwd                     a builtin, in this shell, so not even a
+#                                    fork -- see the note in bin/proc-cwd
+#
+# ~4 ms a call now, nearly all of it bash starting up, which is why the pids
+# come in one batch rather than one call each. Keep it that way: no pipelines,
+# no pgrep, nothing that execs or forks per pid.
 set -uo pipefail
 
-pid="${1:-}"
-if [ -z "$pid" ]; then
-    echo "usage: terminal-cwd <terminal pid>" >&2
+# A CDPATH inherited from the environment makes `cd` print where it went.
+unset CDPATH
+
+if [ $# -eq 0 ]; then
+    echo "usage: terminal-cwd <terminal pid>..." >&2
     exit 1
 fi
 
-for child in $(pgrep -P "$pid" 2>/dev/null); do
-    [ "$(cat "/proc/$child/comm" 2>/dev/null)" = "kitten" ] && continue
+# A pid that has gone leaves the task glob matching nothing, and without this
+# bash hands the pattern through as a filename and complains about it. A
+# terminal closing while the compositor asks about it is ordinary.
+shopt -s nullglob
 
-    cwd="$(readlink "/proc/$child/cwd" 2>/dev/null)" || continue
-    if [ -n "$cwd" ]; then
-        printf '%s\n' "$cwd"
-        exit 0
-    fi
+for pid in "$@"; do
+    # The kernel lists a *thread's* children, and a process's children are
+    # spread across whichever of its threads forked them, so every task has to
+    # be read. A pid that has gone since the caller asked simply has no files
+    # here, which is not worth a word.
+    #
+    # The status of `read` is no use here: these files end without a newline,
+    # so it reports end-of-file having read the line perfectly well. What it
+    # assigned is the answer; an unreadable file leaves it empty.
+    children=""
+    for file in /proc/"$pid"/task/*/children; do
+        line=""
+        read -r line < "$file" 2>/dev/null
+        children="$children $line"
+    done
+
+    for child in $children; do
+        [ -r "/proc/$child/comm" ] || continue
+        [ "$(</proc/"$child"/comm)" = "kitten" ] && continue
+
+        # cd -P resolves the symlink the way readlink would, without being a
+        # program. A directory that has been deleted underneath the shell
+        # fails here and is skipped, where readlink would hand back
+        # "/gone (deleted)" for the caller to trip over.
+        cd -P "/proc/$child/cwd" 2>/dev/null || continue
+        printf '%s\t%s\n' "$pid" "$PWD"
+        break
+    done
 done
-
-exit 1

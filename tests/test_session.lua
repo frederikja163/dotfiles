@@ -53,7 +53,7 @@ io.popen = function(command)
     return real_popen(command)
 end
 
-local world, execs, dispatched, events, timers, placed, spawned, titled, mod
+local world, execs, dispatched, events, timers, placed, spawned, titled, shell_lookups, mod
 
 -- Timers fire immediately, in order, so a staggered restore runs to completion
 -- inside the call. The real ones are 400ms apart; nothing here depends on the
@@ -69,8 +69,8 @@ end
 
 local function reset(w)
     world = w or {}
-    execs, dispatched, events, timers, placed, spawned, titled =
-        {}, {}, {}, {}, {}, {}, {}
+    execs, dispatched, events, timers, placed, spawned, titled, shell_lookups =
+        {}, {}, {}, {}, {}, {}, {}, {}
 
     _G.hl = {
         on = function(event, fn) events[event] = fn end,
@@ -102,7 +102,16 @@ local function reset(w)
     }
     package.loaded.quake = {
         cwd_for = function(id) return (world.quake_cwds or {})[id] end,
-        terminal_cwd = function(pid) return terminal_cwds[pid] end,
+        -- Asked about every terminal at once, because io.popen blocks the
+        -- compositor: one call for the lot costs about what one call costs.
+        terminal_cwds = function(pids)
+            local answers = {}
+            for _, pid in ipairs(pids) do
+                answers[pid] = terminal_cwds[pid]
+            end
+            table.insert(shell_lookups, #pids)
+            return answers
+        end,
         spawn = function(id, directory)
             table.insert(spawned, { desktop = id, directory = directory })
         end,
@@ -220,6 +229,21 @@ reset(named)
 snap = lines_of(mod.snapshot())
 check("written down, by desktop", (snap.title or {})[1], "title\t2\tcomms")
 check("only the one that has a name", #(snap.title or {}), 1)
+
+-- Every shell-out blocks the compositor: io.popen runs inside Hyprland's own
+-- loop, so nothing is drawn and no key is answered until it returns. The
+-- count is therefore not an efficiency detail but the length of the freeze --
+-- asking per terminal is what made the desktop lock up for the better part of
+-- a second every three seconds.
+print("scenario: the terminals are asked about together")
+local many = two_screens()
+table.insert(many.windows, { pid = 400, class = "kitty", workspace = many.workspaces[2] })
+reset(many)
+process(400, { "kitty", "--directory", "/home/fredandr" })
+terminal_cwds[400] = "/home/fredandr/Projects/other"
+mod.snapshot()
+check("asked once, however many terminals there are", #shell_lookups, 1)
+check("...about both of them, in the one call", shell_lookups[1], 2)
 
 print("scenario: two windows of one process")
 local w = two_screens()
@@ -383,6 +407,18 @@ run_timers()
 check("quoted for the shell", execs[1],
       "[workspace 5 silent] sh -c \"cd '/home/fredandr/dir with space' && exec "
       .. "'kitty' '--title' 'it'\\''s'\"")
+
+-- Making the directory is a shell, and a shell inside the compositor is a
+-- frozen frame, so it is only run when a write has actually failed -- which
+-- means the failing write has to be retried. Last, because it takes the fake
+-- /proc with it.
+print("scenario: the state directory does not exist yet")
+os.execute(("rm -rf '%s'"):format(TMP))
+reset(two_screens())
+mod.arm()
+run_timers()
+check("made on the way, so the session is still written",
+      (read_session() or ""):match("^desktop") ~= nil, true)
 
 print("")
 print(("%d passed, %d failed"):format(pass, fail))

@@ -83,7 +83,7 @@ dotfiles, and is named after whatever it drives instead.
 | `power-menu`             | `SUPER + Escape`: lock, log out, reboot, shut down                  |
 | `proc-cwd`               | the working directory of each pid given                             |
 | `screenshot-region`      | `Print`: select a region, onto the clipboard                        |
-| `terminal-cwd`           | the working directory of a terminal's shell, given its pid          |
+| `terminal-cwd`           | the working directory of each terminal's shell, given their pids    |
 | `title`                  | `title comms`: name the desktop you are on; no argument clears it   |
 | `waybar-main`            | starts waybar on every monitor, full bar on the largest             |
 

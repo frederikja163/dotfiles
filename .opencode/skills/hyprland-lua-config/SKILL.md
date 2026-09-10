@@ -139,6 +139,27 @@ A layout's `layout_msg` returns `true` for "handled" and a **string to report
 an error to the user**. Ordinary situations — an empty desktop, no focused
 window — must return `true`, not an explanation.
 
+## Shelling out freezes the desktop
+
+`io.popen` and `os.execute` run in Hyprland's own loop: nothing is drawn and
+no key is answered until the program exits. Two things make that worse than it
+sounds — a bare `fork`+`exec` costs 2-4ms on this machine (a security agent
+inspects every one), and `pgrep`, or anything else that walks `/proc`, costs
+**50ms** with 450 processes about.
+
+That is how the desktop came to freeze for 0.8s every three seconds: a session
+snapshot ran one `pgrep`-based helper per terminal window. Batch every pid into
+one call, keep helpers free of `pgrep` and of per-item `exec`s (`/proc/<pid>/
+task/*/children`, `$(<file)` and `cd -P` are all builtin), and prefer
+`hl.exec_cmd`, which does not wait, whenever the output is not needed.
+
+Time it from outside, which measures the stall exactly:
+
+```sh
+hyprctl repl 'return "ok"'                              # baseline, ~11ms
+time hyprctl repl 'require("session").snapshot() return "x"'
+```
+
 ## Programs the compositor starts
 
 A program launched from a keybind does not get a shell profile, and two of its

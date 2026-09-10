@@ -159,14 +159,31 @@ local function switch_to(id)
 end
 
 -- quake shells out to bin/terminal-cwd to find where a terminal is sitting.
+-- It asks about every terminal in one call and gets "<pid>\t<cwd>" lines back,
+-- one per terminal that has an answer -- a pid it could not read is missing
+-- from the output rather than present and empty, which is what makes a
+-- terminal that has just gone indistinguishable from one at no directory.
 local real_popen = io.popen
 io.popen = function(cmd)
-    local pid = tonumber(cmd:match("terminal%-cwd (%d+)"))
-    if not pid then
+    local pids = cmd:match("terminal%-cwd ([%d ]+)")
+    if not pids then
         return real_popen(cmd)
     end
-    local cwd = world.cwds[pid] or ""
-    return { read = function() return cwd .. "\n" end, close = function() end }
+
+    local out = {}
+    for pid in pids:gmatch("%d+") do
+        local cwd = world.cwds[tonumber(pid)]
+        if cwd then
+            table.insert(out, pid .. "\t" .. cwd)
+        end
+    end
+    local text = table.concat(out, "\n") .. "\n"
+
+    return {
+        lines = function() return text:gmatch("([^\n]+)") end,
+        read = function() return text end,
+        close = function() end,
+    }
 end
 
 local pass, fail = 0, 0

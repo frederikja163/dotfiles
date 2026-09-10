@@ -298,26 +298,48 @@ local function snapshot()
         end
     end
 
-    local cwd_of = cwds_of(pids)
-
+    -- Command lines first, because which of these windows is a terminal is
+    -- decided by the command being run, and the terminals have to be known
+    -- before they can be asked about together. Reading /proc/<pid>/cmdline is
+    -- an ordinary file read; the two questions below are not.
+    --
+    -- Both shell out, and io.popen blocks the compositor for as long as the
+    -- program it starts takes -- no frame is drawn and no key is answered
+    -- meanwhile. So each is asked exactly once, about every pid at once. This
+    -- used to be one bin/terminal-cwd per terminal window, and with a handful
+    -- of terminals open it froze the desktop for most of a second every time
+    -- the session was written, which is every three seconds while anything is
+    -- happening.
+    local argv_by_pid, terminal_pids = {}, {}
     for _, win in ipairs(windows) do
         local argv = argv_of(win.pid)
+        argv_by_pid[win.pid] = argv
+
+        -- Recognised by the command being run rather than by the window's
+        -- class: the two happen to be the same word for kitty, and there is
+        -- no reason to rely on that.
+        if argv and argv[1]:match("([^/]+)$") == terminal then
+            table.insert(terminal_pids, win.pid)
+        end
+    end
+
+    local cwd_of       = cwds_of(pids)
+    local shell_cwd_of = quake.terminal_cwds(terminal_pids)
+
+    for _, win in ipairs(windows) do
+        local argv = argv_by_pid[win.pid]
         if argv then
             local cwd = cwd_of[win.pid]
 
-            -- A terminal is asked where its *shell* is, not where it is: kitty
-            -- stays in the directory it was launched from for the whole
+            -- A terminal is put back where its *shell* is, not where it is:
+            -- kitty stays in the directory it was launched from for the whole
             -- session, so its own cwd would send every restored terminal back
             -- to wherever the last login started. bin/terminal-cwd knows the
             -- difference. The directory then goes on the command line, because
             -- that is what kitty reads -- and any --directory already there is
             -- from the last launch and would win over it.
-            --
-            -- Recognised by the command being run rather than by the window's
-            -- class: the two happen to be the same word for kitty, and there is
-            -- no reason to rely on that.
-            if argv[1]:match("([^/]+)$") == terminal then
-                local shell_cwd = quake.terminal_cwd(win.pid)
+            do
+                local shell_cwd = shell_cwd_of[win.pid]
                 if shell_cwd then
                     local rebuilt = {}
                     local skip = false
@@ -356,18 +378,27 @@ local function snapshot()
 end
 
 local function write(lines)
-    -- The directory is shared with the pinned monitor order, and may not exist
-    -- on a machine where nothing has written state yet.
-    local dir = PATH:match("^(.*)/[^/]+$")
-    if dir then
-        os.execute(("mkdir -p '%s' 2>/dev/null"):format(dir:gsub("'", "'\\''")))
-    end
-
     -- Written beside and moved into place, so a session that is interrupted
     -- half way through writing leaves the last good file rather than half a
     -- new one.
     local temporary = PATH .. ".new"
     local file = io.open(temporary, "w")
+
+    if not file then
+        -- The directory is shared with the pinned monitor order, and may not
+        -- exist on a machine where nothing has written state yet. Making it
+        -- is a shell, and os.execute blocks the compositor like any other --
+        -- so it happens when the write actually fails rather than before
+        -- every one of them, which on a working machine is never.
+        local dir = PATH:match("^(.*)/[^/]+$")
+        if not dir then
+            return
+        end
+        os.execute(("mkdir -p '%s' 2>/dev/null"):format(dir:gsub("'", "'\\''")))
+
+        file = io.open(temporary, "w")
+    end
+
     if not file then
         return
     end

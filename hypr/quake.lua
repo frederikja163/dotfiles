@@ -163,26 +163,45 @@ local HOME = os.getenv("HOME") or ""
 -- What home is called, and what a desktop with no terminal is called.
 local HOME_LABEL = "~"
 
--- Where the shell inside a terminal is, given the terminal's pid. Exported for
--- session.lua, which asks the same question about ordinary terminal windows: a
--- kitty stays in the directory it was launched from for its whole life, so its
--- own /proc entry is no use to either of us.
+-- Where the shell inside each terminal is, by pid. Exported for session.lua,
+-- which asks the same question about ordinary terminal windows: a kitty stays
+-- in the directory it was launched from for its whole life, so its own /proc
+-- entry is no use to either of us -- bin/terminal-cwd knows the difference.
+--
+-- Takes every pid at once because io.popen *blocks the compositor*: nothing is
+-- drawn and no key is answered until the shell it started has exited. One call
+-- for the lot costs about what one call costs, so asking per terminal was
+-- paying that price over and over -- with a session snapshot asking about
+-- every terminal on screen, it froze the desktop for the better part of a
+-- second, every few seconds. See the note in bin/terminal-cwd.
+local function terminal_cwds(pids)
+    local answers = {}
+    if not pids or #pids == 0 then
+        return answers
+    end
+
+    local pipe = io.popen("terminal-cwd " .. table.concat(pids, " ") .. " 2>/dev/null")
+    if not pipe then
+        return answers
+    end
+    for line in pipe:lines() do
+        local pid, cwd = line:match("^(%d+)\t(.+)$")
+        if pid then
+            answers[tonumber(pid)] = cwd
+        end
+    end
+    pipe:close()
+
+    return answers
+end
+
+-- The one-terminal version, for the relabelling below, which only ever has one
+-- to ask about.
 local function terminal_cwd(pid)
     if not pid then
         return nil
     end
-
-    -- bin/terminal-cwd, because the shell holds the directory rather than the
-    -- terminal. This shells out from the compositor, so it is kept to one call
-    -- per terminal per burst of changes, below.
-    local pipe = io.popen(("terminal-cwd %d 2>/dev/null"):format(pid))
-    if not pipe then
-        return nil
-    end
-    local cwd = (pipe:read("*a") or ""):gsub("%s+$", "")
-    pipe:close()
-
-    return cwd ~= "" and cwd or nil
+    return terminal_cwds({ pid })[pid]
 end
 
 -- The same question asked of a window rather than a pid.
@@ -525,6 +544,7 @@ return {
     spawn = spawn,
     cwd_for = cwd_for,
     terminal_cwd = terminal_cwd,
+    terminal_cwds = terminal_cwds,
     label_for = label_for,
     directory = directory,
     sync = sync,

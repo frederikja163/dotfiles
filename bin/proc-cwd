@@ -16,7 +16,22 @@
 # For a terminal, this is the wrong directory and bin/terminal-cwd is the right
 # one: kitty stays where it was launched while the shell inside it moves. See
 # the note there.
+#
+# `cd -P` rather than `readlink`, for the same reason this is batched at all:
+# io.popen blocks the compositor, so every millisecond here is a frozen frame.
+# readlink is a program, so it was an exec per pid -- 4ms each, 40ms for a
+# snapshot's worth. cd is a builtin, and doing it in this shell rather than in
+# `$( )` avoids even the fork: 10 pids cost 4ms, of which 3.8ms is bash
+# starting up. A cwd that has been deleted fails the cd and is skipped, which
+# is better than readlink's "/gone (deleted)" reaching the session file.
+#
+# Yes, this leaves the shell sitting in the last directory it looked at.
+# Nothing here reads a relative path -- every path below is absolute -- and
+# the process exits at the end of the loop.
 set -uo pipefail
+
+# A CDPATH inherited from the environment makes `cd` print where it went.
+unset CDPATH
 
 if [ $# -eq 0 ]; then
     echo "usage: proc-cwd <pid>..." >&2
@@ -24,7 +39,6 @@ if [ $# -eq 0 ]; then
 fi
 
 for pid in "$@"; do
-    cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null)" || continue
-    [ -n "$cwd" ] || continue
-    printf '%s\t%s\n' "$pid" "$cwd"
+    cd -P "/proc/$pid/cwd" 2>/dev/null || continue
+    printf '%s\t%s\n' "$pid" "$PWD"
 done
