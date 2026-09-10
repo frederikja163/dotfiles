@@ -154,8 +154,8 @@ end
 --
 -- A desktop is whatever you are working on in it, and the terminal is where
 -- that gets decided, so the directory its shell is sitting in is the honest
--- name for it. deskbinds.lua owns desktop names and asks for these through the
--- hook it exposes.
+-- name for it. This file only works the directory out; desknames.lua asks for
+-- it and decides whether it is what the desktop ends up called.
 local labels = {}
 
 local HOME = os.getenv("HOME") or ""
@@ -261,23 +261,18 @@ local function cwd_for(desktop_id)
     return cwd_of(terminal_window(desktop_id))
 end
 
--- A desktop that has not been taken anywhere adds nothing to its own number,
--- so it goes unlabelled rather than being called "~".
+-- Nothing here decides what a desktop is called any more: desknames.lua picks
+-- between this directory, a title, and the program on the desktop. It calls
+-- label_for, and reads HOME_LABEL back to recognise a desktop that has not
+-- been taken anywhere -- one that says "~" is one this file has nothing to
+-- say about, and the name goes to whatever desknames finds instead.
 --
--- That matters more than it looks. A label has to be unique across screens --
--- waybar marks a button active by comparing names, with no monitor check -- and
--- "~" is the default for *every* untouched desktop, so the first desktop of one
--- screen collided with the first desktop of the next, every time. deskbinds
--- disambiguated them into "1 ~ (2)", which is noise on what is really just an
--- empty desktop. Returning nil hands them the "<screen>.<desktop>" form
--- instead: unique by construction, and shown as a bare number.
---
--- label_for still answers "~", because that is what the desktop's directory is
--- called; this is only about whether it is worth putting in the name.
-deskbinds.set_labeller(function(ws)
-    local label = label_for(ws.id)
-    return label ~= HOME_LABEL and label or nil
-end)
+-- Worth knowing before that answer is used as a name: "~" is the default for
+-- *every* untouched desktop, and a label has to be unique across screens --
+-- waybar marks a button active by comparing names, with no monitor check -- so
+-- naming them all "~" made the first desktop of one screen light up the first
+-- desktop of the next. deskbinds disambiguated them into "1 ~ (2)", which is
+-- noise on what is really just an empty desktop.
 
 -- `hyprctl reload` runs this file again from nothing while the terminals are
 -- still open, so the names have to be read back rather than waited for.
@@ -535,4 +530,7 @@ return {
     sync = sync,
     workspace_for = workspace_for,
     CLASS = CLASS,
+    -- What a desktop with nothing to say is called here, so desknames.lua can
+    -- tell that answer from a real directory.
+    HOME_LABEL = HOME_LABEL,
 }

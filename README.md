@@ -58,6 +58,7 @@ catppuccin-mocha and JetBrainsMono Nerd Font throughout.
 | `columns.lua`     | the column layout itself                                  |
 | `modes.lua`       | every axis key, and the modes they work inside            |
 | `quake.lua`       | the drop-down terminal, one per desktop                   |
+| `desknames.lua`   | what a desktop is called: its title, its directory or its program |
 | `autostart.lua`   | processes launched with the session                       |
 
 Also `hyprlock.conf` and `hypridle.conf`, which Hyprland does not read — the
@@ -187,6 +188,28 @@ thing at a time, and the key you pressed to get there is what says which.
 Desktops are **numbered, then named after the directory** their quake terminal
 is sitting in, so the bar reads `2 dotfiles`. The number leads because it is a
 key: it is what `SUPER + D` and `SUPER+M` `d` take, and it counts per screen.
+
+A desktop whose terminal has not been taken anywhere is **named after the one
+program on it** instead — `1 firefox`, `2 steam` — as long as every window
+there is that same program. Terminals and the things that run in them are
+excluded, along with the IDEs and the file manager: their desktop is about the
+directory it is open on, which is the name it already has. `desknames.lua`
+holds the list and the order the three sources are tried in. A name from the
+program is not sticky: open a terminal beside the browser and the desktop goes
+back to its number until that window closes.
+
+`title comms` in any terminal **names the desktop in front** instead, and the
+name then holds: `cd` no longer renames it. (In zsh that word is oh-my-zsh's
+first — it has a `title` function of its own for the terminal's title, which
+`zsh/.zshrc` keeps for the hooks that use it while sending a `title` typed at
+the prompt to `bin/title`.) The number is not part of the
+title and cannot be typed away — a titled desktop moved along its row or sent
+to another screen is renumbered like any other. `title` with no argument goes
+back to the directory. Naming a desktop also **keeps it open**, as `SUPER + n`
+does, since a desktop whose only content is its terminal would otherwise be
+swept up the moment you looked away, name and all. The title is written into
+the session, so it survives the compositor going down and coming back, and it
+goes when the desktop does.
 
 Names have to stay unique across screens — waybar decides which button is
 active by comparing names, with no monitor check — so an untouched desktop is

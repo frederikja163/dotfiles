@@ -108,11 +108,27 @@ its monitor spills onto the monitor next door.
 
 ## Events that exist and carry an argument
 
-`window.open`, `window.close`, `window.title` (each passed the window, with
-`class`, `title`, `pid`, `address`, `workspace`), `workspace.created`,
-`workspace.removed`, `workspace.active`, `workspace.move_to_monitor`,
-`monitor.added`, `monitor.removed`, `monitor.focused`, `config.reloaded`,
-`hyprland.start`.
+Used and verified here: `window.open`, `window.close`, `window.title`,
+`window.move_to_workspace` (each passed the window, with `class`, `title`,
+`pid`, `address`, `workspace`), `workspace.created`, `workspace.removed`,
+`workspace.active`, `workspace.move_to_monitor`, `monitor.added`,
+`monitor.removed`, `monitor.focused`, `config.reloaded`, `hyprland.start`.
+
+`window.move_to_workspace` is the only signal that a window changed desktop:
+nothing opens or closes and focus does not necessarily follow, so anything
+derived from what is *on* a desktop goes stale without it. It fires with the
+window already on its new desktop.
+
+That list is what this repo uses, not all there is. The binary knows more —
+`window.active`, `window.fullscreen`, `window.pin`, `window.urgent`,
+`window.destroy`, `window.open_early`, `window.update_rules`, `window.class`,
+`workspace.special_active`, `monitor.layout_changed`, `hyprland.shutdown`,
+`config.props_refreshed` — none of which have been tried. Grep the Hyprland
+binary for the rest:
+
+```sh
+strings /usr/bin/Hyprland | grep -E '^(window|workspace|monitor|hyprland|config|layer)\.[a-z_]+$' | sort -u
+```
 
 A freshly created workspace is **not in `hl.get_workspaces()`** when
 `workspace.created` fires; it appears a few milliseconds later.

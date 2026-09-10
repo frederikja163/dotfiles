@@ -721,6 +721,18 @@ local function last_rule_for(id)
     end
 end
 
+-- A label does not have to be a directory: desknames.lua answers with the
+-- program on the desktop when it is only the one (a browser, a game), and
+-- this file cannot tell the difference -- which is the point of the hook.
+print("scenario: a desktop named after the program on it")
+reset(two_monitors(0))
+mod.set_labeller(function(ws)
+    return ({ [1] = "firefox" })[ws.id]
+end)
+mod.renumber_desktops()
+check("numbered like any other name", world.workspaces[1].name, "1 firefox")
+check("and the ones with nothing to say stay numbers", world.workspaces[2].name, "2.1")
+
 -- bin/title: a desktop that is "comms" rather than a directory. The label is
 -- what a desktop is called when nobody has said; a title is somebody saying.
 local function renamed(id)

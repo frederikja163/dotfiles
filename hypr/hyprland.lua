@@ -17,6 +17,7 @@
 --   columns      column behaviour: new column, sizing, swap-biggest
 --   modes        every axis key, and the modes they work inside
 --   quake        drop-down terminal, one per desktop
+--   desknames    what a desktop is called: its title, directory or program
 --   session      what was open and where, written down and put back at login
 --   autostart    processes launched with the session
 
@@ -33,6 +34,11 @@ require("columns")
 require("modes")
 
 require("quake")
+
+-- After quake, whose directory label is one of the names it picks between, and
+-- before anything can rename a desktop: it sets the hook deskbinds renames
+-- through, and the first pass runs on an event, once all of this has loaded.
+require("desknames")
 
 -- After quake and deskbinds, both of which it asks about the session it is
 -- writing down.
