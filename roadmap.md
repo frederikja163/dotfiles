@@ -28,4 +28,3 @@ fredandr
 Fingeprint
 Add user to screen
 Auto login to wifi
-Keyboard drivers when unlocking the disc
