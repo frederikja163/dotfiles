@@ -663,22 +663,63 @@ local function focused_desktop()
     return nil
 end
 
--- Give a desktop a name of its own. nil or "" clears it, and the desktop goes
--- back to being named after its terminal's directory.
+-- Told whenever a title changes, so session.lua can write it down at once.
 --
--- Deferred, like every other renaming: this is called once per restored
--- desktop at login, and one pass at the end of that is enough.
+-- A title is the one thing about a desktop that nothing else can reconstruct,
+-- and renaming a workspace raises no event of its own -- no workspace.created,
+-- no workspace.active -- so without this the session file would not learn
+-- about a new title until something unrelated happened to trigger a save. The
+-- gap mattered the moment titles had to survive a reload, which is the file
+-- handing them over.
+local title_hooks = {}
+
+local function on_title_changed(fn)
+    table.insert(title_hooks, fn)
+end
+
+-- Give a desktop a name of its own. nil or "" clears it, and the desktop goes
+-- back to being named after its terminal's directory or the program on it.
+--
+-- Renames nothing by itself: the caller says when, because one of them --
+-- session.lua putting titles back across a reload -- runs while the config is
+-- still loading, where creating a timer takes the whole compositor down. Both
+-- of the others renumber a moment later anyway.
 local function set_title(id, title)
     if title == "" then
         title = nil
     end
 
     titles[id] = title
-    schedule_renumber()
+
+    for _, fn in ipairs(title_hooks) do
+        fn(id, title)
+    end
 end
 
 local function title_of(id)
     return titles[id]
+end
+
+-- Keep a desktop open although it is empty, as naming one does -- for a
+-- desktop that already exists and is already where it belongs.
+--
+-- The rule is pinned to the screen the desktop is on *now*, read back from
+-- Hyprland rather than remembered, because a persistent rule that names no
+-- monitor is placed on whichever screen has focus and drags the desktop
+-- there. The workspace knows its monitor even during a reload, which is when
+-- this is called (session.lua, putting titles back): verified in a nested
+-- instance, where get_workspaces() at that moment carries the monitor.
+--
+-- Creates no timer for the same reason, so it renames nothing; the caller
+-- renumbers when it has finished.
+local function keep_open(id)
+    for _, ws in ipairs(hl.get_workspaces() or {}) do
+        if ws.id == id and not ws.special then
+            set_persistent(id, true, ws.monitor and ws.monitor.name)
+            return true
+        end
+    end
+    return false
 end
 
 -- The same for the desktop in view, which is what bin/title asks for through
@@ -1297,10 +1338,12 @@ return {
 
     set_labeller = set_labeller,
     -- Naming a desktop outright: set_title_here is bin/title's entry point,
-    -- the other two are session.lua putting a title back after a restart.
+    -- the rest are session.lua writing titles down and putting them back.
     set_title_here = set_title_here,
     set_title = set_title,
     title_of = title_of,
+    on_title_changed = on_title_changed,
+    keep_open = keep_open,
     on_forget = on_forget,
     new_desktop_here = new_desktop_here,
     close_desktop_here = close_desktop_here,

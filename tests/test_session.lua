@@ -53,7 +53,8 @@ io.popen = function(command)
     return real_popen(command)
 end
 
-local world, execs, dispatched, events, timers, placed, spawned, titled, shell_lookups, mod
+local world, execs, dispatched, events, timers, placed, spawned, titled, shell_lookups
+local title_hook, renumbers, kept, mod
 
 -- Timers fire immediately, in order, so a staggered restore runs to completion
 -- inside the call. The real ones are 400ms apart; nothing here depends on the
@@ -71,6 +72,7 @@ local function reset(w)
     world = w or {}
     execs, dispatched, events, timers, placed, spawned, titled, shell_lookups =
         {}, {}, {}, {}, {}, {}, {}, {}
+    title_hook, renumbers, kept = nil, 0, {}
 
     _G.hl = {
         on = function(event, fn) events[event] = fn end,
@@ -99,6 +101,11 @@ local function reset(w)
         end,
         title_of = function(id) return (world.titles or {})[id] end,
         set_title = function(id, title) table.insert(titled, { id = id, title = title }) end,
+        -- Renaming a workspace raises no event of its own, so deskbinds says
+        -- so directly and this file writes the session down for it.
+        on_title_changed = function(fn) title_hook = fn end,
+        renumber_desktops = function() renumbers = renumbers + 1 end,
+        keep_open = function(id) table.insert(kept, id) return true end,
     }
     package.loaded.quake = {
         cwd_for = function(id) return (world.quake_cwds or {})[id] end,
@@ -292,6 +299,49 @@ events["config.reloaded"]()
 events["window.open"]()
 run_timers()
 check("a reload writes", (read_session() or ""):match("desktop") ~= nil, true)
+
+-- A reload re-runs every module from nothing, and a title is the one thing
+-- about a desktop that cannot be worked out again from what is on screen.
+-- The file was written seconds ago and still has it.
+print("scenario: titles survive a reload")
+write_session("desktop\t1\t0\tBOE 0x0DBB\ntitle\t1\tcomms\ntitle\t7\tgone\n")
+reset(two_screens())
+events["config.reloaded"]()
+check("the named desktop is named again", #titled, 1)
+check("...the one that is still there", titled[1] and titled[1].id, 1)
+check("...with the name it had", titled[1] and titled[1].title, "comms")
+check("and renamed on the spot, not on a timer", renumbers, 1)
+-- The other half of having been named: the rule that keeps an empty desktop
+-- open is rebuilt from the config on a reload, so it has to be re-issued or
+-- the desktop is swept up the moment it is empty and out of view.
+check("kept open again too", #kept, 1)
+check("...the same desktop", kept[1], 1)
+
+-- Ids are reused. A title from a session that has ended must not land on a
+-- stranger's desktop, so a record with no desktop to go with it is dropped --
+-- which is also what makes this harmless at the first load, where Hyprland
+-- has no workspaces at all yet.
+print("scenario: a fresh start, where the file describes a session that is over")
+write_session("desktop\t1\t0\tBOE 0x0DBB\ntitle\t1\tcomms\n")
+local empty = two_screens()
+empty.workspaces = {}
+reset(empty)
+events["config.reloaded"]()
+check("nothing to put a title on, so none is", #titled, 0)
+
+-- Writing it down cannot wait for an unrelated event, or a reload in the gap
+-- would lose it.
+print("scenario: a title is written down as soon as it is set")
+write_session("")
+reset(two_screens())
+mod.arm()
+run_timers()
+local before = read_session()
+world.titles = { [2] = "comms" }
+title_hook(2, "comms")
+run_timers()
+check("the session was rewritten for it", read_session() ~= before, true)
+check("...with the title in it", (read_session() or ""):match("title\t2\tcomms") ~= nil, true)
 
 write_session("desktop\t9\t1\tBOE 0x0DBB\n")
 reset(two_screens())

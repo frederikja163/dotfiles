@@ -806,6 +806,20 @@ check("the next desktop with that id is a number again", world.workspaces[1].nam
 -- Created by id and renamed at once. Asking for "name:" instead would work and
 -- would hand the desktop a negative id, which sorts ahead of every other
 -- desktop and renumbers the lot.
+-- session.lua calls this while the config is loading, to put back the rule a
+-- reload rebuilt away. The screen has to come from the desktop rather than
+-- from whatever has focus: a persistent rule naming no monitor is placed on
+-- the focused screen, and the desktop goes with it.
+print("scenario: keeping an existing desktop open again")
+reset(two_monitors(0))          -- eDP-1 focused; ws3 lives on DP-4
+check("says it did it", mod.keep_open(3), true)
+check("kept open", last_rule_for(3) and last_rule_for(3).persistent, true)
+check("...pinned to its own screen, not the focused one",
+      last_rule_for(3) and last_rule_for(3).monitor, "DP-4")
+
+check("a desktop that is not there is not invented", mod.keep_open(99), false)
+check("...and no rule is issued for it", last_rule_for(99), nil)
+
 print("scenario: a new desktop is born with its name")
 local n = two_monitors(0)
 reset(n)

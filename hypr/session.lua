@@ -601,7 +601,64 @@ local function restore()
 end
 
 -- ---------------------------------------------------------------------------
+-- Across a reload
+
+-- `hyprctl reload` re-runs every module from nothing, and a desktop outlives
+-- that: its windows, its terminal and its id are all still there afterwards.
+-- Most of what this config remembers can be worked out again from what is on
+-- screen -- the column layout cannot, and says so -- but a *title* has no
+-- source at all. It is a word you typed. So every named desktop lost its name
+-- a moment after a reload and fell back to its directory.
+--
+-- This file already holds the answer: the session was written seconds ago and
+-- has a title record per named desktop, and the copy read at module load is
+-- the one from before the reload. Putting them back is all that is needed.
+--
+-- Only for desktops that exist right now, which is also what makes this safe
+-- at the *first* load, where the file describes a session that has ended and
+-- its ids mean nothing. Hyprland has no workspaces at all that early --
+-- verified in a nested instance: none at module load, none at
+-- config.reloaded, one by hyprland.start -- so nothing matches and nothing is
+-- applied. On a reload they are all there, which is the difference.
+local function reapply_titles()
+    local live = {}
+    for _, ws in ipairs(hl.get_workspaces() or {}) do
+        if not ws.special then
+            live[ws.id] = true
+        end
+    end
+
+    local any = false
+    for id, title in pairs(saved.titles) do
+        if live[id] then
+            deskbinds.set_title(id, title)
+
+            -- And kept open again, which is the other half of having been
+            -- named: the rule that does it is rebuilt from the config on a
+            -- reload like every other, so a named desktop came back with its
+            -- name and without the thing stopping Hyprland sweeping it up the
+            -- moment it was empty and out of view.
+            deskbinds.keep_open(id)
+            any = true
+        end
+    end
+
+    -- Renamed here rather than left to deskbinds' own pass: this runs during
+    -- the reload, and the deferred pass is a timer, which cannot be created
+    -- while the config is loading. Directly is also sooner -- the bar never
+    -- shows the fallback name.
+    if any then
+        deskbinds.renumber_desktops()
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- When to write
+
+-- Renaming a workspace raises no event, so a title would otherwise sit
+-- unwritten until something unrelated happened -- and a reload in that window
+-- would lose it, which is the one thing the file is now relied on for.
+deskbinds.on_title_changed(save)
 
 for _, event in ipairs({
     "window.open",
@@ -629,6 +686,12 @@ end
 -- to come. The order of the two is Hyprland's and was checked against a nested
 -- instance: config.reloaded, then hyprland.start.
 hl.on("config.reloaded", function()
+    -- Before arming, deliberately. Putting titles back calls into deskbinds,
+    -- which tells this file a title changed, which would ask for a snapshot
+    -- -- and a snapshot means a timer, which is fatal while the config is
+    -- loading. Disarmed, save() returns at once and nothing is created.
+    reapply_titles()
+
     armed = true
 end)
 
