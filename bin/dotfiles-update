@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Pull this repo, then re-run the install scripts if the commits that arrived
-# actually need them.
+# actually need them -- and also when nothing arrived, because install.sh is
+# safe to re-run and a routine update is the time everything gets checked. The
+# links and packages are applied to the running session by dotfiles-reload when
+# it is done (see lib/dotfiles-lib.sh's dotfiles_apply).
 #
 # The companion to bin/dotfiles-check-updates, which only says you are behind.
 # This is the deliberate act it asks for, so it is interactive by default and
@@ -47,6 +50,9 @@ commits that arrived need it.
   -a, --all              pull, then run both halves regardless
   -n, --dry-run          say what a pull would bring and change nothing
   -h, --help             this
+
+Install.sh runs every time -- even with nothing to pull -- and the session is
+reloaded (dotfiles-reload) once the links and packages are in place.
 
 The links half (install.sh links) is judged needed when install.sh itself
 changed; the configs are symlinked directories, so their contents are live
@@ -124,6 +130,11 @@ target="$(git rev-parse FETCH_HEAD)" || exit 1
 
 if [ "$before" = "$target" ]; then
     echo "    already up to date at ${before:0:8}"
+    echo
+    echo "    Running install.sh anyway (safe to re-run, skips what is done)."
+    dotfiles_apply all || exit 1
+    echo
+    echo "done"
     exit 0
 fi
 
@@ -251,38 +262,19 @@ if [ "$assume_yes" -eq 0 ]; then
 fi
 
 # Packages before links, matching the order in the README: a config is no use
-# linked into place if the program reading it is not installed yet.
+# linked into place if the program reading it is not installed yet. dotfiles_apply
+# runs whichever halves were chosen and then dotfiles-reload once, at the end.
+modes=()
 if [ "$run_packages" -eq 1 ]; then
-    echo
-    echo "==> install.sh packages"
-    "$REPO/install.sh" packages || {
-        echo "install.sh packages failed -- links not run" >&2
-        exit 1
-    }
+    modes+=(packages)
 fi
-
 if [ "$run_links" -eq 1 ]; then
-    echo
-    echo "==> install.sh links"
-    "$REPO/install.sh" links || exit 1
+    modes+=(links)
 fi
 
-# Not reloaded here, only mentioned. A reload restarts the bar and re-applies
-# every window rule in the session you are sitting in; that belongs to whoever
-# is at the keyboard, not to a script they ran to fetch some commits.
-#
-# bin/dotfiles-reload rather than a bare `hyprctl reload`, because a reload
-# leaves waybar, hyprpaper and hypridle on their old config and that script is
-# what covers them. Guarded on it existing: it arrives in a commit of its own,
-# and someone running an older checkout of this script will not have it.
-if changed_any '^hypr/' '^waybar/'; then
+if [ ${#modes[@]} -gt 0 ]; then
     echo
-    echo "hypr/ or waybar/ changed. They are linked, so the new config is on"
-    if command -v dotfiles-reload >/dev/null; then
-        echo "disk but not loaded. Apply it when convenient:  dotfiles-reload"
-    else
-        echo "disk but not loaded. Apply it when convenient:  hyprctl reload"
-    fi
+    dotfiles_apply "${modes[@]}" || exit 1
 fi
 
 echo

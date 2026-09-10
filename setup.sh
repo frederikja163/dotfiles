@@ -90,7 +90,8 @@ fi
 # ── 6. Install ───────────────────────────────────────────────────────────────
 
 info "Running install.sh..."
-(cd "$DOTFILES_DIR" && bash install.sh)
+. "$DOTFILES_DIR/lib/dotfiles-lib.sh" || die "could not source dotfiles-lib.sh"
+dotfiles_apply all
 
 echo ""
 ok "Done. Reload your shell or start a new terminal."
