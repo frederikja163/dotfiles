@@ -142,3 +142,23 @@ inherited properties lie:
 ```sh
 hyprctl dispatch 'hl.dsp.exec_cmd("kitty")'
 ```
+
+It is **only** for dispatchers, though: it wraps what it is given in
+`hl.dispatch(...)`, so anything else fails with *"expected a dispatcher"* —
+after having run, which makes `hyprctl dispatch 'f() or hl.dsp.exec_cmd("true")'`
+a trap rather than a trick.
+
+To call into the config, use `hyprctl repl`, which runs a string in the
+config's own Lua state and **prints what it returns** — modules included, since
+`package.loaded` is that state:
+
+```sh
+hyprctl repl 'return require("deskbinds").desktop_count()'   # 2
+hyprctl repl 'return nil'                                    # nil
+hyprctl repl 'require("quake").toggle()'                     # ok  (returned nothing)
+hyprctl repl 'nosuch()'                                      # error: [string ...]
+```
+
+`hyprctl eval` runs the same way but always answers `ok`, so it says nothing
+about what happened. `bin/title` is the worked example: a shell script driving
+the config through `repl` and reading the answer back.

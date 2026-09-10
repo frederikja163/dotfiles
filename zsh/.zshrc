@@ -24,6 +24,37 @@ mkdir -p "${ZSH_COMPDUMP:h}"
 
 source "$ZSH/oh-my-zsh.sh"
 
+# --- title -----------------------------------------------------------------
+# `title comms` names the desktop you are on -- bin/title -- but oh-my-zsh
+# gets that word first: lib/termsupport.zsh defines a `title` function that
+# sets the *terminal's* title, and a shell function beats anything on PATH. So
+# the command appeared to work and did nothing: no error, no change on the
+# bar. That is what this section exists for.
+#
+# Both are kept, because oh-my-zsh's is not decoration. Its precmd and preexec
+# hooks call `title` on every prompt and every command, and those escape
+# sequences are the signal hypr/quake.lua watches to notice a `cd` and rename
+# the desktop after its new directory. Take them away -- DISABLE_AUTO_TITLE
+# and `unfunction title`, which is the obvious fix -- and every desktop name
+# on the bar freezes, which is the opposite of the point.
+#
+# So oh-my-zsh keeps its function under another name, and only a `title` typed
+# at the prompt reaches the script. The test is the function stack: the hooks
+# call it from omz_termsupport_precmd/preexec, which leaves that name below
+# this one on the stack, while a command typed at the prompt has nothing under
+# it at all.
+if (( $+functions[title] )); then
+  functions[omz-title]=$functions[title]
+
+  title() {
+    if (( $#funcstack > 1 )); then
+      omz-title "$@"     # oh-my-zsh's hooks: the terminal's own title
+      return
+    fi
+    command title "$@"   # typed at the prompt: the name of the desktop
+  }
+fi
+
 # --- prompt pinned to the bottom --------------------------------------------
 # A terminal fills from the top, so a fresh window leaves the prompt at row 1
 # with the whole screen empty below it. Pad with blank lines before drawing the

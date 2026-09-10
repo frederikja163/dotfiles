@@ -28,6 +28,7 @@
 -- writing a JSON encoder in Lua to be read back by a Lua parser.
 --
 --   desktop <id> <0|1 kept open while empty> <screen identity>
+--   title   <id> <name given to it with bin/title>
 --   quake   <id> <directory>
 --   window  <id> <directory> <argv0> <argv1> ...
 --   focus   <id>
@@ -107,7 +108,7 @@ local function split(line)
 end
 
 local function load_file()
-    local saved = { desktops = {}, quake = {}, windows = {}, focus = nil }
+    local saved = { desktops = {}, titles = {}, quake = {}, windows = {}, focus = nil }
 
     local file = io.open(PATH, "r")
     if not file then
@@ -128,6 +129,14 @@ local function load_file()
                     -- which is what an unnamed headless output looks like.
                     identity   = fields[4] ~= "" and fields[4] or nil,
                 })
+            end
+        elseif kind == "title" then
+            -- Keyed by desktop rather than appended in order: a title belongs
+            -- to the desktop record above it, and only desktops that are put
+            -- back have any use for one.
+            local id = tonumber(fields[2])
+            if id and fields[3] and fields[3] ~= "" then
+                saved.titles[id] = fields[3]
             end
         elseif kind == "quake" then
             local id = tonumber(fields[2])
@@ -254,6 +263,15 @@ local function snapshot()
             deskbinds.is_persistent(ws.id) and "1" or "0",
             (ws.monitor and identity_of[ws.monitor.id]) or "",
         })
+
+        -- A name given with bin/title, which is a decision about what the
+        -- desktop is *for* and so outlives the session that made it. Nothing
+        -- else can reconstruct it: unlike the directory below, a title has no
+        -- source to be read back from.
+        local title = deskbinds.title_of(ws.id)
+        if title then
+            record(lines, { "title", ws.id, title })
+        end
 
         -- The terminal's directory is what the desktop is called and where
         -- SUPER+Q opens the next one, so it is the one piece of a desktop worth
@@ -475,6 +493,18 @@ local function restore()
         local keep = desktop.persistent or only_terminal
         if keep or wanted[desktop.id] then
             deskbinds.place_desktop(desktop.id, desktop.identity, keep)
+            -- A titled desktop always reaches here, with no condition of its
+            -- own to add above: naming one keeps it open (deskbinds.lua), so
+            -- it is written down with the kept flag set and comes back for
+            -- that reason.
+            --
+            -- Named before the terminal is started rather than after: the
+            -- terminal coming up names its desktop after its directory, and a
+            -- desktop that was titled must not flicker through that name on
+            -- the way back.
+            if saved.titles[desktop.id] then
+                deskbinds.set_title(desktop.id, saved.titles[desktop.id])
+            end
             restored[desktop.id] = true
             desktops = desktops + 1
         end

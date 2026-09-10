@@ -173,6 +173,25 @@ local function sort_key(ws)
     return position[ws.id] or ws.id
 end
 
+-- A name a desktop has been given outright: [workspace id] = title.
+--
+-- bin/title writes these. A desktop is otherwise named after whatever it is
+-- being used for -- the directory its quake terminal is sitting in, through
+-- the labeller below -- which is right until you want a desktop called
+-- something the filesystem has no word for. A title replaces that and then
+-- holds: the labeller is not consulted again until the title is cleared, so a
+-- `cd` no longer renames the desktop, which is the whole point of asking for
+-- one.
+--
+-- The number in front is not part of the title. It is put back by every
+-- renumbering pass, so a titled desktop shuffled along its row or sent to
+-- another screen is renumbered like any other and keeps its name.
+--
+-- Keyed by workspace id like everything else here, and forgotten with the
+-- desktop in forget_desktop -- ids are reused, and a new desktop must not come
+-- up wearing a dead one's name.
+local titles = {}
+
 ----------------------------------------------------------------------------
 -- Forgetting a desktop
 ----------------------------------------------------------------------------
@@ -232,6 +251,7 @@ local function forget_desktop(id)
     position[id] = nil
     home[id] = nil
     seen[id] = nil
+    titles[id] = nil
 
     unbind_desktop(id)
 
@@ -372,8 +392,9 @@ end
 -- number is a key you press: SUPER+D then 2 goes to the second desktop here.
 -- A desktop called only "dotfiles" gave no clue what to press.
 --
+-- With a title:    "2 comms"      (bin/title, and it stays put)
 -- With a label:    "2 dotfiles"   (quake.lua's, the terminal's directory)
--- Without one:     "2.1"          "<desktop>.<screen>"
+-- Without either:  "2.1"          "<desktop>.<screen>"
 --
 -- Both are deliberately unique across monitors rather than plain "2". Waybar
 -- marks a button active when the workspace name equals the globally focused
@@ -471,7 +492,10 @@ local function renumber_desktops()
             -- what shows "2 dotfiles".
             local want = ("%d.%d"):format(index, mon_index)
 
-            local label = labeller and labeller(ws)
+            -- A title wins over the labeller and is not asked again: that is
+            -- what makes it frozen against the terminal wandering off to
+            -- another directory.
+            local label = titles[ws.id] or (labeller and labeller(ws))
             if label and label ~= "" then
                 want = ("%d %s"):format(index, label)
                 if taken[want] then
@@ -516,7 +540,9 @@ end
 --
 -- The name has to be settled before the desktop exists, so the labeller is
 -- called with a desktop that has no id yet and is expected to answer with
--- whatever it calls one it knows nothing about.
+-- whatever it calls one it knows nothing about. A title cannot apply: the id
+-- has only just been minted, and forget_desktop dropped whatever the last
+-- desktop to hold it was called.
 --
 -- Unique, because two desktops sharing a name light up each other's buttons on
 -- the bar, and because the renaming pass would only have to undo it.
@@ -615,6 +641,89 @@ end
 
 local function is_persistent(id)
     return persisted[id] == true
+end
+
+----------------------------------------------------------------------------
+-- Titling a desktop
+----------------------------------------------------------------------------
+
+-- The desktop in view, or nil when what is in view is not one.
+--
+-- A monitor reports its desktop and its special workspace separately, so this
+-- is still the desktop while the quake terminal has the keyboard -- which is
+-- exactly where `title` is typed. It is nil only while focus is inside a
+-- special workspace outright, which happens for a moment as a window is moved
+-- out of one.
+local function focused_desktop()
+    local mon = hl.get_active_monitor()
+    local ws  = mon and mon.active_workspace
+    if ws and not ws.special then
+        return ws
+    end
+    return nil
+end
+
+-- Give a desktop a name of its own. nil or "" clears it, and the desktop goes
+-- back to being named after its terminal's directory.
+--
+-- Deferred, like every other renaming: this is called once per restored
+-- desktop at login, and one pass at the end of that is enough.
+local function set_title(id, title)
+    if title == "" then
+        title = nil
+    end
+
+    titles[id] = title
+    schedule_renumber()
+end
+
+local function title_of(id)
+    return titles[id]
+end
+
+-- The same for the desktop in view, which is what bin/title asks for through
+-- `hyprctl repl`. Returns the name the desktop now goes by, number and all,
+-- or nil when there was no desktop to name.
+--
+-- Renamed on the spot rather than left to the deferred pass, so that answer is
+-- true by the time the script sees it -- and so a name typed into a terminal
+-- appears on the bar with the keypress rather than a tick later.
+local function set_title_here(title)
+    local ws = focused_desktop()
+    if not ws then
+        return nil
+    end
+
+    set_title(ws.id, title)
+
+    -- Naming a desktop is asking for it, so it is kept open from here on, the
+    -- way one made with SUPER+n on the screen you are already on is.
+    --
+    -- Without this a named desktop can evaporate while you are looking away,
+    -- which is exactly what happened the first time this was tried in a nested
+    -- instance. A desktop whose only content is its quake terminal counts as
+    -- empty -- the terminal sits in a special workspace of its own -- so
+    -- stepping to the next desktop had Hyprland sweep the named one up, taking
+    -- the name, the terminal and the shell's directory with it.
+    --
+    -- Clearing a title deliberately does not undo this. Un-persisting an empty
+    -- desktop deletes it, and typing `title` to go back to the directory name
+    -- is not a request to close anything; SUPER+C is how a desktop goes.
+    if titles[ws.id] and not persisted[ws.id] then
+        local mon = hl.get_active_monitor()
+        set_persistent(ws.id, true, mon and mon.name)
+    end
+
+    renumber_desktops()
+
+    -- Read back rather than rebuilt: the pass decides the number, and whether
+    -- a name that collides with another screen's gains a "(2)".
+    for _, other in ipairs(hl.get_workspaces() or {}) do
+        if other.id == ws.id then
+            return other.name
+        end
+    end
+    return nil
 end
 
 local function monitor_named(wanted)
@@ -1187,6 +1296,11 @@ return {
     screen_count = screen_count,
 
     set_labeller = set_labeller,
+    -- Naming a desktop outright: set_title_here is bin/title's entry point,
+    -- the other two are session.lua putting a title back after a restart.
+    set_title_here = set_title_here,
+    set_title = set_title,
+    title_of = title_of,
     on_forget = on_forget,
     new_desktop_here = new_desktop_here,
     close_desktop_here = close_desktop_here,

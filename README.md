@@ -32,7 +32,7 @@ curl -fsSL https://raw.githubusercontent.com/frederikja163/dotfiles/main/setup.s
 | `kitty`    | `~/.config/kitty`             | `kitty.conf`                         |
 | `dunst`    | `~/.config/dunst`             | `dunstrc`                            |
 | `fuzzel`   | `~/.config/fuzzel`            | `fuzzel.ini`                         |
-| `zsh`      | `~/.zshenv`, `~/.config/zsh/` | oh-my-zsh setup, `PATH`, prompt      |
+| `zsh`      | `~/.zshenv`, `~/.config/zsh/` | oh-my-zsh setup, `PATH`, prompt, `title` |
 | `git`      | `~/.config/git`               | identity and settings                |
 | `bin`      | `~/.local/bin`                | small scripts, on `PATH`             |
 | `system`   | `/etc`                        | system config (needs root)           |
@@ -83,6 +83,7 @@ dotfiles, and is named after whatever it drives instead.
 | `proc-cwd`               | the working directory of each pid given                             |
 | `screenshot-region`      | `Print`: select a region, onto the clipboard                        |
 | `terminal-cwd`           | the working directory of a terminal's shell, given its pid          |
+| `title`                  | `title comms`: name the desktop you are on; no argument clears it   |
 | `waybar-main`            | starts waybar on every monitor, full bar on the largest             |
 
 Shared shell code lives in `lib/`, which is not on `PATH`: see
@@ -184,9 +185,8 @@ Press `d` there and the numbers start counting desktops instead, so
 thing at a time, and the key you pressed to get there is what says which.
 
 Desktops are **numbered, then named after the directory** their quake terminal
-is sitting in, so the bar reads `2 dotfiles`. One that has not been taken
-anywhere is just its number. The number leads because it is a key: it is what
-`SUPER + D` and `SUPER+M` `d` take, and it counts per screen.
+is sitting in, so the bar reads `2 dotfiles`. The number leads because it is a
+key: it is what `SUPER + D` and `SUPER+M` `d` take, and it counts per screen.
 
 Names have to stay unique across screens — waybar decides which button is
 active by comparing names, with no monitor check — so an untouched desktop is

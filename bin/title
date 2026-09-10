@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# Name the desktop you are on, and freeze the name there.
+#
+#   title comms           the bar reads "2 comms"
+#   title my project      spaces need no quoting; every argument is the title
+#   title                 clears it, back to the terminal's directory
+#
+# A desktop is otherwise named after the directory its quake terminal is
+# sitting in (hypr/quake.lua), which follows every `cd` -- right for a desktop
+# that *is* a project, wrong for one that is "comms" or "reading" and has no
+# directory to be named after. A title replaces that name and then holds: the
+# directory is not consulted again until the title is cleared.
+#
+# The desktop's number is not part of the title and cannot be typed away.
+# hypr/deskbinds.lua puts it back on every renumbering pass, so a titled
+# desktop shuffled along its row or sent to another screen is renumbered like
+# any other and keeps its name.
+#
+# The title lives as long as the desktop does. It is written into the session
+# (hypr/session.lua), so it survives the compositor going down and coming back,
+# and it is dropped the moment the desktop goes -- workspace ids are reused,
+# and the next desktop handed this one's id must not inherit its name.
+#
+# In zsh this script is only reached because zsh/.zshrc arranges it.
+# oh-my-zsh's lib/termsupport.zsh defines a `title` *function* for setting the
+# terminal's own title, and a function beats anything on PATH -- so `title
+# comms` set the tab title, said nothing, and left the bar alone. The rc keeps
+# both: oh-my-zsh's hooks go on calling theirs (quake.lua needs those escape
+# sequences to notice a `cd`), and a `title` typed at the prompt comes here.
+#
+# `hyprctl repl` rather than `hyprctl dispatch`: the config is Lua, and a
+# desktop's title is a table in deskbinds.lua rather than anything a
+# dispatcher can reach. `dispatch` is not an alternative -- it wraps whatever
+# it is given in hl.dispatch() and rejects anything that is not a dispatcher.
+# `repl` runs the string in the config's own Lua state and prints what it
+# returns, which is how the new name gets back here to be checked.
+set -uo pipefail
+
+case "${1:-}" in
+    -h|--help)
+        sed -n '2,6p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
+        exit 0
+        ;;
+esac
+
+title="$*"
+
+# A tab or a newline would be a field separator in the session file and would
+# get the title dropped from it silently; a name is a line of text anyway.
+title="${title//[$'\t\n\r']/ }"
+title="${title#"${title%%[![:space:]]*}"}"
+title="${title%"${title##*[![:space:]]}"}"
+
+# Into a Lua string literal. Backslash first, or it would escape the escapes
+# added after it.
+lua="${title//\\/\\\\}"
+lua="${lua//\"/\\\"}"
+
+answer="$(hyprctl repl "return require('deskbinds').set_title_here(\"$lua\")" 2>&1)" || {
+    printf 'title: hyprland did not answer: %s\n' "$answer" >&2
+    exit 1
+}
+
+# The Lua side answers with the desktop's new name, or nil when what is in
+# front is not a desktop at all -- focus inside a special workspace, which is
+# where a window on its way out of one briefly sits.
+case "$answer" in
+    ""|nil)
+        echo "title: no desktop in front to name" >&2
+        exit 1
+        ;;
+    error:*|"unknown request"*)
+        printf 'title: %s\n' "$answer" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

@@ -53,7 +53,7 @@ io.popen = function(command)
     return real_popen(command)
 end
 
-local world, execs, dispatched, events, timers, placed, spawned, mod
+local world, execs, dispatched, events, timers, placed, spawned, titled, mod
 
 -- Timers fire immediately, in order, so a staggered restore runs to completion
 -- inside the call. The real ones are 400ms apart; nothing here depends on the
@@ -69,7 +69,8 @@ end
 
 local function reset(w)
     world = w or {}
-    execs, dispatched, events, timers, placed, spawned = {}, {}, {}, {}, {}, {}
+    execs, dispatched, events, timers, placed, spawned, titled =
+        {}, {}, {}, {}, {}, {}, {}
 
     _G.hl = {
         on = function(event, fn) events[event] = fn end,
@@ -96,6 +97,8 @@ local function reset(w)
         place_desktop = function(id, identity, persistent)
             table.insert(placed, { id = id, identity = identity, persistent = persistent })
         end,
+        title_of = function(id) return (world.titles or {})[id] end,
+        set_title = function(id, title) table.insert(titled, { id = id, title = title }) end,
     }
     package.loaded.quake = {
         cwd_for = function(id) return (world.quake_cwds or {})[id] end,
@@ -206,6 +209,17 @@ check("anything else keeps its own command line and directory",
       snap.window[2],
       "window\t3\t/home/fredandr/Projects/runner\t/opt/rider/bin/rider\tRunner.slnx")
 check("the focused desktop is noted", (snap.focus or {})[1], "focus\t1")
+check("an untitled desktop writes no title", snap.title, nil)
+
+-- A title is a decision about what a desktop is for, and nothing can
+-- reconstruct it the way the terminal's directory reconstructs a label.
+print("scenario: a desktop that has been given a name")
+local named = two_screens()
+named.titles = { [2] = "comms" }
+reset(named)
+snap = lines_of(mod.snapshot())
+check("written down, by desktop", (snap.title or {})[1], "title\t2\tcomms")
+check("only the one that has a name", #(snap.title or {}), 1)
 
 print("scenario: two windows of one process")
 local w = two_screens()
@@ -268,6 +282,7 @@ write_session(table.concat({
     "desktop\t1\t0\tBOE 0x0DBB",
     "desktop\t2\t1\tBOE 0x0DBB",
     "desktop\t3\t0\tDell DELL P3424WE DVYH6T3",
+    "title\t3\tcomms",
     "quake\t1\t/home/fredandr/dotfiles",
     "quake\t3\t/home/fredandr/Projects/runner",
     "window\t1\t/home/fredandr/dotfiles\tkitty\t--directory\t/home/fredandr/dotfiles",
@@ -285,6 +300,12 @@ check("...in id order", placed[1].id, 1)
 check("...on the screen they were on", placed[3].identity, "Dell DELL P3424WE DVYH6T3")
 check("...and the kept one is kept again", placed[2].persistent, true)
 check("summary counts them", summary, "3 desktops, 2 windows")
+
+-- Before the terminals are started, or the desktop would come back called
+-- after its directory and be renamed a moment later.
+check("the titled desktop is named again", #titled, 1)
+check("...the same desktop", titled[1].id, 3)
+check("...with the name it was given", titled[1].title, "comms")
 
 run_timers()
 

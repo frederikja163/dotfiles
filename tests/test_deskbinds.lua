@@ -133,6 +133,13 @@ local function reset(w)
             workspace = {
                 rename = function(a)
                     table.insert(renames, a)
+                    -- Hyprland renames the workspace there and then, so the
+                    -- next pass finds nothing to do and the bar does not
+                    -- flicker. Modelled because bin/title reads the new name
+                    -- straight back out of get_workspaces().
+                    for _, ws in ipairs(world.workspaces) do
+                        if ws.id == a.workspace then ws.name = a.name end
+                    end
                     return { kind = "rename", arg = a }
                 end,
                 move = function(a)
@@ -714,6 +721,79 @@ local function last_rule_for(id)
     end
 end
 
+-- bin/title: a desktop that is "comms" rather than a directory. The label is
+-- what a desktop is called when nobody has said; a title is somebody saying.
+local function renamed(id)
+    for _, ren in ipairs(renames) do
+        if ren.workspace == id then return true end
+    end
+    return false
+end
+
+print("scenario: naming a desktop outright")
+reset(two_monitors(0))
+mod.set_labeller(function() return "dotfiles" end)
+mod.renumber_desktops()
+check("named after its directory to begin with", world.workspaces[1].name, "1 dotfiles")
+check("titling answers with the new name", mod.set_title_here("comms"), "1 comms")
+check("...which is what the desktop is called", world.workspaces[1].name, "1 comms")
+check("...and its neighbour is untouched", world.workspaces[2].name, "2 dotfiles")
+
+-- A desktop whose only content is its quake terminal is empty as far as
+-- Hyprland is concerned, so a named one would be swept up the moment you
+-- looked away -- name, terminal and all. Naming it is asking for it.
+check("a named desktop is kept open", mod.is_persistent(1), true)
+check("...pinned to the screen it is on", last_rule_for(1) and last_rule_for(1).monitor, "eDP-1")
+
+print("scenario: a title is frozen against the terminal wandering off")
+-- The label changes on every `cd`; that is the thing a title is asked for to
+-- stop. Only the untitled desktops follow it.
+renames = {}
+mod.set_labeller(function() return "somewhere-else" end)
+mod.renumber_desktops()
+check("the titled desktop is left alone", renamed(1), false)
+check("...still by its name", world.workspaces[1].name, "1 comms")
+check("while an untitled one follows its directory", world.workspaces[2].name, "2 somewhere-else")
+
+print("scenario: the number is not part of the title")
+-- Moving the desktop along its row renumbers it like any other, and the name
+-- it was given rides along.
+mod.move_desktop_in_row(1)
+check("renumbered where it landed", world.workspaces[1].name, "2 comms")
+check("...and the one it passed took the number it left", world.workspaces[2].name, "1 somewhere-else")
+
+print("scenario: clearing a title")
+check("answers with the name it falls back to", mod.set_title_here(""), "2 somewhere-else")
+check("...which is its directory again", world.workspaces[1].name, "2 somewhere-else")
+
+print("scenario: there is nothing in front to name")
+local sp = two_monitors(0)
+sp.monitors[1].active_workspace = sp.workspaces[4] -- the special one
+reset(sp)
+check("no desktop, so no name", mod.set_title_here("comms"), nil)
+
+print("scenario: a desktop's title goes with the desktop")
+-- Ids are reused, and a title left behind would be inherited: the next
+-- desktop handed this id would come up called "comms".
+local gone_title = two_monitors(0)
+reset(gone_title)
+mod.set_labeller(function() return nil end)
+mod.set_title_here("comms")
+check("named", world.workspaces[1].name, "1 comms")
+
+table.remove(world.workspaces, 1) -- as Hyprland sweeps an empty desktop up
+mod.renumber_desktops()
+table.insert(world.workspaces, 1,
+    { id = 1, special = false, monitor = world.monitors[1] })
+mod.renumber_desktops()
+check("the next desktop with that id is a number again", world.workspaces[1].name, "1.1")
+
+-- A desktop is created by focusing something that does not exist yet, and it is
+-- called whatever it was asked for until something renames it. Asking for the
+-- name means there is never a number on the bar to correct.
+-- Created by id and renamed at once. Asking for "name:" instead would work and
+-- would hand the desktop a negative id, which sorts ahead of every other
+-- desktop and renumbers the lot.
 print("scenario: a new desktop is born with its name")
 local n = two_monitors(0)
 reset(n)
