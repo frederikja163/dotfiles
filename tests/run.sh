@@ -32,6 +32,17 @@ for test in tests/test_*.lua; do
   echo
 done
 
+# The shell ones, which stub the programs they drive rather than the hl API:
+# bin/ scripts get to be wrong in their own ways.
+for test in tests/test_*.sh; do
+  [ -e "$test" ] || continue
+  echo "==> $test"
+  if ! "$test"; then
+    failed=1
+  fi
+  echo
+done
+
 # Catches syntax errors and anything that breaks at config load, without
 # applying the config to the running session.
 if command -v Hyprland >/dev/null; then

@@ -1,11 +1,19 @@
--- What was open, and where, across a restart.
+-- What was open, and where, across a compositor going down.
 --
 -- Wayland has no session protocol: nothing hands a window back to the program
 -- that had it, and Hyprland forgets everything when it exits. So this is a
 -- snapshot and a relaunch, not a restore in the strict sense. It writes down
 -- the desktops, which screen each belongs to, and the command line of every
--- window's process; at the next login it recreates the desktops and starts
--- those command lines again in them.
+-- window's process; asked to, it recreates the desktops and starts those
+-- command lines again in them.
+--
+-- Note *asked to*: booting the machine does not ask. Nothing here is put back
+-- at the start of a day -- a login that relaunched a dozen programs is not
+-- what anyone wants, and it is why this file was nearly deleted. The case it
+-- is kept for is Hyprland going down and coming back while the machine stays
+-- up, where everything that was open a moment ago should still be open.
+-- bin/dotfiles-session-restore is what tells the two apart; this file only
+-- ever does as it is told.
 --
 -- What comes back therefore is: the desktops, on the right screens, each
 -- keeping its number; the quake terminal of each, in the directory its shell

@@ -1,12 +1,31 @@
 #!/usr/bin/env bash
-# Put the last session back: the desktops that were open, on the screens they
-# were on, with their quake terminals and their windows. Started once per login
-# by hypr/autostart.lua; hypr/session.lua does the actual work and writes the
-# file this reads.
+# Put a session back: the desktops that were open, on the screens they were on,
+# with their quake terminals and their windows. Started once per login by
+# hypr/autostart.lua; hypr/session.lua does the actual work and writes the file
+# this reads.
 #
-#   dotfiles-session-restore          restore, if there is anything to restore
-#   dotfiles-session-restore --off    stop restoring at login, from now on
+#   dotfiles-session-restore          what autostart runs; see below
+#   dotfiles-session-restore --now    put the session back, whatever the rules
+#   dotfiles-session-restore --off    never restore, not even after a crash
 #   dotfiles-session-restore --on     start again
+#
+# **A fresh boot does not get its session back.** Booting the machine is
+# starting the day, not resuming yesterday, and having a dozen windows relaunch
+# themselves at login was the reason this nearly got deleted. What it is for is
+# the other case: the compositor going down and coming back while the machine
+# stays up -- a crash, or a config change that took Hyprland with it -- where
+# everything that was open a moment ago should still be open.
+#
+# The two are told apart by a marker in $XDG_RUNTIME_DIR, which the system
+# clears when the machine reboots (and when the last session for this user
+# ends). No marker means this is the first compositor since the machine came
+# up, so nothing is restored; the marker is dropped and the session starts
+# being written again from here. A marker means Hyprland has already run since
+# boot and this start is a second one, so the session goes back.
+#
+# `--now` is the escape hatch either way, and the only way to get yesterday's
+# session back -- though only for as long as it is still on disk, which after
+# a boot is the three seconds before this session overwrites it.
 #
 # This exists as a script, rather than as a hyprland.start hook, because the
 # work cannot be done from inside the config while it is loading: the monitor
@@ -17,13 +36,19 @@
 # It always hands over, even when it is not restoring anything: session.lua
 # writes nothing until it has been told the restore is done or declined, so a
 # silent early exit here would mean no session was ever saved again. That is
-# also why the --off switch is honoured by telling the compositor to arm rather
-# than by returning.
+# why both the --off switch and the fresh-boot case above arm the compositor
+# rather than simply returning.
 set -uo pipefail
 
 STATE="${XDG_DATA_HOME:-$HOME/.local/share}/hypr"
 OFF="$STATE/session.off"
 MARKER="$STATE/session.restored"
+
+# Cleared by a reboot, which is the whole point of putting it here rather than
+# next to the others in ~/.local/share. With no runtime directory to put it in
+# there is no way to tell a boot from a restart, and the safe answer is the one
+# that does not relaunch a dozen programs: treat it as a boot.
+BOOT_MARKER="${XDG_RUNTIME_DIR:-}/hypr-session-booted"
 
 # Deliberately not the session file itself. Which file that is belongs to
 # session.lua, which can be pointed elsewhere for a nested instance -- and it
@@ -43,7 +68,11 @@ dispatch_lua() {
     hyprctl dispatch "(function() $1 end)() or hl.dsp.no_op()" >/dev/null
 }
 
+forced=""
 case "${1:-}" in
+    --now|--force)
+        forced=1
+        ;;
     --off)
         mkdir -p "$STATE" && : > "$OFF" || exit 1
         echo "session restore off (remove $OFF, or --on, to undo)"
@@ -56,7 +85,7 @@ case "${1:-}" in
         ;;
     "") ;;
     *)
-        echo "usage: dotfiles-session-restore [--off|--on]" >&2
+        echo "usage: dotfiles-session-restore [--now|--off|--on]" >&2
         exit 1
         ;;
 esac
@@ -77,7 +106,7 @@ if [ -z "$signature" ]; then
     exit 1
 fi
 
-if [ "$(cat "$MARKER" 2>/dev/null)" = "$signature" ]; then
+if [ -z "$forced" ] && [ "$(cat "$MARKER" 2>/dev/null)" = "$signature" ]; then
     exit 0
 fi
 
@@ -98,12 +127,29 @@ mkdir -p "$STATE"
 # retry would relaunch whatever had already started a second time.
 printf '%s' "$signature" > "$MARKER"
 
-if [ -e "$OFF" ]; then
+if [ -z "$forced" ] && [ -e "$OFF" ]; then
     # Restoring is switched off, but the compositor still has to be told it may
     # start writing the session down -- being switched off means not putting the
     # last one back, not forgetting this one.
     dispatch_lua 'require("session").arm()'
     exit 0
+fi
+
+# The machine has just come up, so this is the start of a day rather than the
+# resumption of one: mark that Hyprland has now run, and write the session down
+# from here on without putting the old one back. The marker goes with the
+# reboot, so the *next* compositor of this boot -- the one that only happens
+# because something went wrong -- finds it and does restore.
+#
+# --now says otherwise, and is the only way back to a session from before the
+# reboot. It has to be quick: three seconds after this line the file describes
+# the desktop you are looking at instead.
+if [ -z "$forced" ]; then
+    if [ -z "${XDG_RUNTIME_DIR:-}" ] || [ ! -e "$BOOT_MARKER" ]; then
+        [ -n "${XDG_RUNTIME_DIR:-}" ] && : > "$BOOT_MARKER"
+        dispatch_lua 'require("session").arm()'
+        exit 0
+    fi
 fi
 
 # Over to session.lua, which relaunches everything on its own timers and raises
