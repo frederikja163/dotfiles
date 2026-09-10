@@ -292,7 +292,8 @@ script with two halves, `install.sh packages` and `install.sh links`.
 - **Suspend is disabled deliberately**, by every route — see
   `system/90-no-suspend.conf` for why and how to undo it.
 - **Rider is not installed by the script.** `jetbrains-toolbox` is, and Rider is
-  installed from its GUI; Toolbox has no usable CLI.
+  installed from its GUI; Toolbox has no usable CLI. When Rider is missing,
+  `install.sh` opens Toolbox at the end of the run so it is one click away.
 - **Neovim** is managed by [bob](https://github.com/MordechaiHadad/bob) and
   pinned by `NVIM_VERSION` in `install.sh`.
 - **Work-machine-only software** (GlobalProtect, Teams, FreeIPA) is left out on
