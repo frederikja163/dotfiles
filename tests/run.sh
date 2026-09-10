@@ -73,6 +73,13 @@ echo "all good"
 # only while it is out of view, so the order (focus away, then drop the rule)
 # is load-bearing -- the stub cannot see that either way round. `hyprctl
 # reload` rebuilds the rule list, dropping every rule made since config load.
+# A rule's `monitor` *binds* that id to a screen, and Hyprland reads the
+# binding when a workspace with the id is created -- ahead of the focused
+# screen, and whether or not the rule still asks for persistence, so a rule
+# outliving its desktop sends the next one born with that id to the wrong
+# screen. It cannot be unbound with `monitor = ""`, which is ignored and
+# leaves the old screen winning; `monitor = "current"` is the way, naming
+# whichever screen is in front, which is what an unbound id already gets.
 # window.close does take window = "address:0x..." and closes that window rather
 # than the focused one, which is how a desktop closes its own quake terminal.
 # Dispatcher tables are not field-validated, so --verify-config accepts any

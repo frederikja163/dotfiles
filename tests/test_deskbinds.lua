@@ -25,12 +25,12 @@ local function set_pin(contents)
 end
 set_pin("") -- baseline: nothing pinned, so id order, as before
 
-local binds, dispatched, monitor_calls, world, events, renames, execs, moves, rules, mod
+local binds, dispatched, monitor_calls, world, events, renames, execs, moves, rules, bound, mod
 
 local function reset(w)
     world = w
-    binds, dispatched, monitor_calls, events, renames, execs, moves, rules =
-        {}, {}, {}, {}, {}, {}, {}, {}
+    binds, dispatched, monitor_calls, events, renames, execs, moves, rules, bound =
+        {}, {}, {}, {}, {}, {}, {}, {}, {}
 
     _G.hl = {
         -- deskbinds requires columns, which registers the layout on load.
@@ -63,7 +63,24 @@ local function reset(w)
         -- dispatch, so these are recorded separately. Hyprland replaces the
         -- rule for a selector it already has, which is why the last one for an
         -- id is what counts.
-        workspace_rule = function(rule) table.insert(rules, rule) end,
+        --
+        -- The rule's monitor also *binds* the id to a screen, and Hyprland
+        -- reads that binding when a workspace with that id is created --
+        -- ahead of the focused screen, and whether or not the rule still asks
+        -- for persistence. An empty string does not unbind it (it is ignored,
+        -- and the old screen goes on winning); "current" does, by naming
+        -- whichever screen is in front, which is what an unbound id already
+        -- gets. All three verified in a nested instance, and modelled here
+        -- because a rule outliving its desktop is what sent new desktops to
+        -- the wrong screen.
+        workspace_rule = function(rule)
+            table.insert(rules, rule)
+            if rule.monitor == "current" then
+                bound[rule.workspace] = nil
+            elseif rule.monitor and rule.monitor ~= "" then
+                bound[rule.workspace] = rule.monitor
+            end
+        end,
         get_workspace_windows = function(id)
             return (world.windows_on or {})[id] or {}
         end,
@@ -95,6 +112,13 @@ local function reset(w)
                         local mon
                         for _, m in ipairs(world.monitors) do
                             if m.id == world.focused_monitor_id then mon = m end
+                        end
+                        -- A workspace rule naming a monitor decides this
+                        -- ahead of the focused screen, which is the whole
+                        -- reason a dead desktop's rule has to go: see the
+                        -- workspace_rule stub above.
+                        for _, m in ipairs(world.monitors) do
+                            if m.name == bound[tostring(a.workspace)] then mon = m end
                         end
                         table.insert(world.workspaces,
                             { id = a.workspace, special = false, monitor = mon })
@@ -678,12 +702,18 @@ by_ws = {}
 for _, ren in ipairs(renames) do by_ws[ren.workspace] = ren.name end
 check("everything is numbered as before", by_ws[1], "1.1")
 
--- A desktop is created by focusing something that does not exist yet, and it is
--- called whatever it was asked for until something renames it. Asking for the
--- name means there is never a number on the bar to correct.
--- Created by id and renamed at once. Asking for "name:" instead would work and
--- would hand the desktop a negative id, which sorts ahead of every other
--- desktop and renumbers the lot.
+-- The rule an id ended up with. Hyprland replaces the rule for a selector it
+-- already has, so the last one issued for an id is the one in force -- and
+-- since an empty desktop only survives being left by way of a `persistent`
+-- rule, this is how "kept open" is asserted.
+local function last_rule_for(id)
+    for i = #rules, 1, -1 do
+        if rules[i].workspace == tostring(id) then
+            return rules[i]
+        end
+    end
+end
+
 print("scenario: a new desktop is born with its name")
 local n = two_monitors(0)
 reset(n)
@@ -719,17 +749,6 @@ check("created by id", last_of("focus").arg.workspace, 4)
 -- bar shows the raw workspace id ("4") for the ~80ms until that runs.
 check("named as it was created", renames[1] and renames[1].workspace, 4)
 check("...with its position and screen", renames[1] and renames[1].name, "3.1")
-
--- Hyprland sweeps up an empty desktop the moment it stops being visible, so a
--- desktop asked for outright has to be made persistent or it is gone before it
--- has been used for anything.
-local function last_rule_for(id)
-    for i = #rules, 1, -1 do
-        if rules[i].workspace == tostring(id) then
-            return rules[i]
-        end
-    end
-end
 
 print("scenario: a desktop asked for outright survives being left empty")
 -- The plain screen key, pressed on the screen you are already on. Asking for a
@@ -785,6 +804,10 @@ check("it closed something", mod.close_desktop_here(), true)
 check("nothing before the first, so focus goes forward", last_of("focus").arg.workspace, 2)
 check("persistence dropped for the one left behind", last_rule_for(1).persistent, false)
 check("...by id", last_rule_for(1).workspace, "1")
+-- And the rule stops naming a screen, or the next desktop given this id is
+-- born on it. There is no way to name none, so "current" -- the screen in
+-- front -- stands in for it.
+check("...and it no longer binds the id to a screen", last_rule_for(1).monitor, "current")
 
 print("scenario: closing a desktop that has one before it")
 local c2 = two_monitors(0)
@@ -800,6 +823,44 @@ c3.monitors[1].active_workspace = c3.workspaces[2] -- ws2, with ws1 before and w
 reset(c3)
 check("it closed something", mod.close_desktop_here(), true)
 check("focus goes backwards, not forwards", last_of("focus").arg.workspace, 1)
+
+print("scenario: a closed desktop does not decide where the next one is born")
+-- The bug, end to end: ask for a desktop on one screen, close it again, then
+-- ask for one on the other screen -- and the new desktop appeared back on the
+-- first screen. Its id had been freed and handed out again, and the dead
+-- desktop's workspace rule still bound that id to the screen it had lived on.
+local function ws_by_id(id)
+    for _, ws in ipairs(world.workspaces) do
+        if ws.id == id then return ws end
+    end
+end
+
+local function drop_ws(id)
+    for i, ws in ipairs(world.workspaces) do
+        if ws.id == id then table.remove(world.workspaces, i) return end
+    end
+end
+
+local reuse = two_monitors(0) -- eDP-1 focused, holding ws1 and ws2
+reset(reuse)
+
+mod.focus_screen(1) -- the screen you are on: makes a desktop, id 4
+local first = last_of("focus").arg.workspace
+check("made on the screen in front", ws_by_id(first).monitor.name, "eDP-1")
+
+-- Hyprland shows a desktop it has just created; the stub does not follow
+-- focus on its own, so say so before closing the thing.
+world.monitors[1].active_workspace = ws_by_id(first)
+check("closed it again", mod.close_desktop_here(), true)
+drop_ws(first) -- as Hyprland removes it
+world.monitors[1].active_workspace = ws_by_id(1)
+
+-- Over on the other screen, where the freed id is the next one going.
+world.focused_monitor_id = 1
+mod.focus_screen(2)
+local second = last_of("focus").arg.workspace
+check("the same id is handed out again", second, first)
+check("...and the new desktop is born where it was asked for", ws_by_id(second).monitor.name, "DP-4")
 
 print("scenario: closing the last desktop on a screen is refused")
 local c4 = two_monitors(1) -- DP-4 focused, holding only ws3

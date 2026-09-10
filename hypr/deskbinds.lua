@@ -198,17 +198,42 @@ local function on_forget(fn)
     table.insert(forget_hooks, fn)
 end
 
+-- Hyprland's own note about a desktop is its workspace rule, and it outlives
+-- the desktop just as this file's tables do. The rule names a screen, and that
+-- binding is read whenever a workspace with that id is *created* -- by
+-- getBoundMonitorForWS, before the focused monitor is even considered, and
+-- whether or not the rule still asks for persistence. So a dead desktop's rule
+-- decides where a live one is born: make a desktop on one screen, close it,
+-- then ask for one on another screen, and the new desktop appears back on the
+-- first. Verified in a nested instance, and this is the whole reason the rule
+-- is dropped here rather than only where persistence is switched off.
+--
+-- Dropping it means naming a monitor, because there is no way to name none:
+-- `monitor = ""` is ignored and leaves the previous binding standing (also
+-- verified -- the desktop still came up on the old screen). `monitor =
+-- "current"` is the way out: Hyprland resolves it to the monitor in front at
+-- the moment the desktop is created, which is exactly what an unbound id does,
+-- so the rule stops having an opinion. Harmless for anything else, because
+-- persistence goes off in the same breath and nothing else re-reads it.
+local function unbind_desktop(id)
+    persisted[id] = nil
+    hl.workspace_rule({
+        workspace = tostring(id),
+        persistent = false,
+        monitor = "current",
+    })
+end
+
+-- Unconditional, rather than only for desktops this file believes it made
+-- persistent: `persisted` is a belief about a rule and the rule is what
+-- matters. Closing a desktop used to clear the flag before getting here, so
+-- the check skipped exactly the desktop being closed.
 local function forget_desktop(id)
     position[id] = nil
     home[id] = nil
     seen[id] = nil
 
-    if persisted[id] then
-        persisted[id] = nil
-        -- The rule names a monitor, so leaving it would place the next desktop
-        -- with this id on a dead one's screen.
-        hl.workspace_rule({ workspace = tostring(id), persistent = false })
-    end
+    unbind_desktop(id)
 
     for _, fn in ipairs(forget_hooks) do
         fn(id)
@@ -555,7 +580,8 @@ end
 -- Switching persistence off removes the desktop at once, but only when it is
 -- out of view: Hyprland will not destroy the workspace it is showing.
 -- close_desktop_here therefore focuses elsewhere first and drops the rule
--- second, and that order matters.
+-- second (through forget_desktop, which is where a rule is dropped), and that
+-- order matters.
 --
 -- None of this survives `hyprctl reload`: the rule list is rebuilt from the
 -- config, which knows nothing of what has been created since, so an empty
@@ -574,7 +600,10 @@ end
 -- Naming the monitor pins each one where it belongs, so the re-placement pass
 -- puts everything back exactly where it already was. It follows that the name
 -- has to be kept current: a persistent desktop that moves screens gets its
--- rule re-issued, or the next pass would haul it back.
+-- rule re-issued, or the next pass would haul it back -- and that a desktop
+-- which goes has to take its rule with it, because the monitor it names also
+-- decides where the *next* desktop born with that id appears. That is
+-- unbind_desktop's job, up in the forgetting section.
 local function set_persistent(id, persistent, monitor)
     persisted[id] = persistent or nil
     hl.workspace_rule({
@@ -723,11 +752,12 @@ local function close_desktop_here()
     -- Out of view first: Hyprland will not remove the workspace it is showing,
     -- so un-persisting it while it is in view leaves it standing.
     focus_workspace(target)
-    set_persistent(ws.id, false)
 
     -- The same cleanup a lapsed desktop gets, just without waiting for the
-    -- pass to notice. Everything keyed to this id goes: its screen, its place
-    -- in the row, its terminal, its layout.
+    -- pass to notice. Everything keyed to this id goes: its workspace rule --
+    -- which is what un-persists it, so this is not merely tidying and has to
+    -- stay after the focus above -- its screen, its place in the row, its
+    -- terminal, its layout.
     forget_desktop(ws.id)
 
     schedule_renumber()
