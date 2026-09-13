@@ -1,0 +1,21 @@
+# Everything yazi's stock config does is fine here, so this file only changes
+# one thing: which plugin handles video previews.
+#
+# The stock `video` previewer and preloader run ffmpeg with `-hwaccel auto`,
+# which on this machine selects the Radeon VCN decoder. VCN faults and forces a
+# full GPU reset under yazi's rapid thumbnail pass, taking the whole Hyprland
+# session down with it (the crash is the compositor aborting, not yazi's doing).
+# `video-soft` is the same plugin with hardware decoding turned off; see
+# plugins/video-soft.yazi/main.lua for the full story.
+#
+# Both lists are needed: the previewer draws the thumbnail, the preloader builds
+# the same cache ahead of the cursor, and they are configured separately. Leave
+# one out and ffmpeg still reaches VCN by the other path.
+
+[plugin]
+prepend_previewers = [
+	{ mime = "video/*", run = "video-soft" },
+]
+prepend_preloaders = [
+	{ mime = "video/*", run = "video-soft" },
+]
