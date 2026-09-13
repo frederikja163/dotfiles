@@ -31,7 +31,10 @@ local quake     = require("quake")
 -- directory gives it, which is the whole reason that name exists.
 --
 -- kitty covers more than a terminal -- nvim, opencode and anything else bin/ide
--- starts are windows of the terminal they run in, and carry its class.
+-- starts are windows of the terminal they run in, and carry its class. yazi,
+-- the file manager, is a TUI too and runs in one, so it is covered here as
+-- well: dolphin was excluded in its own right, but it is gone from the default
+-- file manager.
 -- jetbrains-rider is the same argument for the same reason, with its siblings
 -- matched by the prefix so a second JetBrains IDE needs no line here.
 --
@@ -45,11 +48,10 @@ local DIRECTORY_APPS = {
     "^jetbrains%-",  -- rider, and whatever else Toolbox installs
     "^code$",
     "^codium$",
-    "^dolphin$",     -- a file manager is a directory with a window around it
 }
 
 -- Where a class is not the program's name. Empty until something needs it:
--- the classes on this machine (firefox, steam, dolphin) are already the word
+-- the classes on this machine (firefox, steam) are already the word
 -- you would use. This is the escape hatch for one that is not.
 local NAMES = {}
 

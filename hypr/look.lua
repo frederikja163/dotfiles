@@ -1,5 +1,19 @@
 -- Look and feel: gaps, borders, decoration, animations, layouts.
 -- Refer to https://wiki.hypr.land/Configuring/Basics/Variables/
+--
+-- The active border doubles as a mode indicator: while a submap is on, keys are
+-- read by the mode binds rather than the window, and the border turns red so
+-- that is visible without looking at Waybar. Hyprland's `keybinds.submap`
+-- event carries the mode's name, and the empty string once the mode ends, so
+-- this catches every submap -- including one entered by hand with a
+-- `hyprctl dispatch` -- rather than knowing the names in modes.lua.
+
+-- The two borders the submap handler switches between. The normal one is the
+-- teal/green gradient the rest of the theme uses; the mode one runs the
+-- theme's red through peach to yellow, so "the keys are captured" reads at a
+-- glance and still looks like the same theme.
+local ACTIVE_BORDER = { colors = {"rgba(33ccffee)", "rgba(00ff99ee)"}, angle = 45 }
+local MODE_BORDER   = { colors = {"rgba(f38ba8ee)", "rgba(fab387ee)", "rgba(f9e2afee)"}, angle = 45 }
 
 hl.config({
     general = {
@@ -9,7 +23,7 @@ hl.config({
         border_size = 2,
 
         col = {
-            active_border   = { colors = {"rgba(33ccffee)", "rgba(00ff99ee)"}, angle = 45 },
+            active_border   = ACTIVE_BORDER,
             inactive_border = "rgba(595959aa)",
         },
 
@@ -109,3 +123,14 @@ hl.config({
         disable_hyprland_logo   = false, -- If true disables the random hyprland logo / anime girl background. :(
     },
 })
+
+
+-- Mode indicator
+
+-- Fires on every submap change, with the mode's name or "" when it ends. Called
+-- at runtime, so hl.config applies it live (active_border is a dynamic value
+-- Hyprland refreshes window states for), rather than waiting for a reload.
+hl.on("keybinds.submap", function(name)
+    local in_mode = name ~= nil and name ~= ""
+    hl.config({ general = { col = { active_border = in_mode and MODE_BORDER or ACTIVE_BORDER } } })
+end)

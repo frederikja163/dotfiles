@@ -262,6 +262,32 @@ local function remove(st, id)
     end
 end
 
+-- A window on its way in from the screen beside this one. It lands at the
+-- edge it came in at, as a column of its own, instead of by the usual
+-- placement rules -- which would drop it wherever the focused window happens
+-- to be, nowhere near the side it crossed from.
+--
+-- The move is a dispatch, so the destination only learns the window is coming
+-- by being told here; `arriving` is read and cleared by the reconcile that
+-- sees the window for the first time.
+local function expect_arrival(st, id, side)
+    st.arriving = { id = id, side = side }
+end
+
+local function insert_edge(st, id, side)
+    if #st.columns == 0 then
+        st.columns[1] = { ids = { id }, heights = { 1.0 }, width = 1.0 }
+        return
+    end
+
+    local at = side == "first" and 1 or (#st.columns + 1)
+    local col = st.columns[side == "first" and 1 or #st.columns]
+    local fresh = { ids = { id }, heights = { 1.0 }, width = col.width / 2 }
+    col.width = col.width / 2
+    table.insert(st.columns, at, fresh)
+    normalize_widths(st)
+end
+
 -- Bring the state in line with the windows Hyprland actually has.
 local function reconcile(st, ids, active)
     local present = {}
@@ -292,7 +318,10 @@ local function reconcile(st, ids, active)
     -- New.
     for _, id in ipairs(ids) do
         if not known[id] then
-            if st.adopting and st.adopting[id] then
+            if st.arriving and st.arriving.id == id then
+                insert_edge(st, id, st.arriving.side)
+                st.arriving = nil
+            elseif st.adopting and st.adopting[id] then
                 adopt(st, id)
             else
                 insert(st, id)
@@ -441,6 +470,59 @@ local function move_to_column(st, id, dir)
     return true
 end
 
+-- Move the focused window onto the screen beside this one.
+--
+-- The window leaves this desktop's layout at once, and the screen it lands on
+-- is told to expect it so it becomes a column of its own at the near edge.
+-- Which edge is "near" follows the reading order of the screens: a window
+-- pushed left joins the right side of the screen on the left (and the other
+-- way round), so stepping off an end wraps to that same far side.
+--
+-- Returns false when there is no window to address, which is the only reason
+-- the caller's target can go unused.
+local function move_window_to_screen(st, id, dir, target_ws)
+    local address
+    for _, w in ipairs(hl.get_windows() or {}) do
+        if w.stable_id == id then
+            address = w.address
+            break
+        end
+    end
+    if not address then
+        return false
+    end
+
+    expect_arrival(for_workspace(target_ws), id, dir == "prev" and "last" or "first")
+    remove(st, id)
+
+    hl.dispatch(hl.dsp.window.move({
+        workspace = target_ws,
+        window = "address:" .. address,
+    }))
+    return true
+end
+
+-- Whether the focused window's column is the outermost one on `dir`'s side,
+-- which is where this desktop meets the screen beside it.
+local function at_edge(st, id, dir)
+    local ci = locate(st, id)
+    if not ci then
+        return false
+    end
+    if dir == "prev" then
+        return ci == 1
+    end
+    if dir == "next" then
+        return ci == #st.columns
+    end
+    return false
+end
+
+local function alone_in_column(st, id)
+    local ci = locate(st, id)
+    return ci ~= nil and #st.columns[ci].ids == 1
+end
+
 -- Move the focused window up or down inside its column.
 local function move_in_column(st, id, dir)
     local ci, wi = locate(st, id)
@@ -553,8 +635,15 @@ local function resize_row(st, id, delta)
     return true
 end
 
--- The window that focus should move to, wrapping inside the desktop. Nothing
--- here ever leaves the monitor: other monitors are reached with the number keys.
+-- The window that focus should move to within the desktop.
+--
+-- Up and down wrap inside the column: with two windows stacked there, stepping
+-- down from the bottom one lands on the top one, which is how a short list is
+-- navigated. Left and right do *not* wrap -- running out of columns left or
+-- right returns nothing, which is the signal for the caller to cross to the
+-- screen beside. Wrapping there was the old behaviour and it is exactly wrong
+-- once the desktops are ordered left to right: focus at the leftmost column
+-- would jump to the far right of the same screen instead of going left.
 local function neighbour(st, id, dir)
     local ci, wi = locate(st, id)
     if not ci then
@@ -573,13 +662,10 @@ local function neighbour(st, id, dir)
         return col.ids[to]
     end
 
-    local n = #st.columns
-    if n < 2 then
+    local to = dir == "prev" and ci - 1 or ci + 1
+    if to < 1 or to > #st.columns then
         return nil
     end
-    local to = dir == "prev" and ci - 1 or ci + 1
-    if to < 1 then to = n end
-    if to > n then to = 1 end
 
     -- Keep roughly the same height in the new column.
     local col = st.columns[to]
@@ -706,6 +792,29 @@ end
 -- Hyprland glue
 ----------------------------------------------------------------------------
 
+-- Which screen to cross to, set by deskbinds when it loads. The layout cannot
+-- look this up itself: it has no access to the pin file or the monitor slots,
+-- and it works in workspace ids while a screen is something else entirely.
+-- Until it is set -- the stubbed tests, or a config that failed part way --
+-- a focus or a move at the edge stays inside the desktop, as it always did.
+--
+-- Two hooks, because the two crossings want different screens. A *move* goes
+-- to the screen immediately beside, however empty it is: the window is what
+-- makes the desktop, so landing on a bare one is fine. A *focus* cannot do
+-- that -- there would be nothing to focus and no window to start a move back
+-- from -- so it skips screens with no window on them and takes the nearest
+-- that has one.
+local screen_step = nil
+local screen_focus = nil
+
+local function set_screen_step(fn)
+    screen_step = fn
+end
+
+local function set_screen_focus(fn)
+    screen_focus = fn
+end
+
 hl.layout.register("columns", {
     recalculate = function(ctx)
         if #ctx.targets == 0 then
@@ -771,12 +880,21 @@ hl.layout.register("columns", {
             end
         end
 
-        -- No targets at all, so this is an empty desktop. Every one of these
-        -- commands is about a window, and there are none: that is an ordinary
-        -- thing to press a key on, not a mistake worth a warning. Returning a
-        -- string here reports an error, so return handled-and-did-nothing --
-        -- the same as having no focused window, just below.
+        -- An empty desktop carries no targets, so there is no workspace to key
+        -- the state on -- but a horizontal focus is still meaningful there: it
+        -- steps onto the screen beside, which is what keeps an empty desktop
+        -- from being a dead end. There is no focused window to move, though, so
+        -- everything else stays handled-and-did-nothing.
         if not ws then
+            if command == "focus" and screen_focus then
+                local dir = ({ l = "prev", r = "next" })[arg]
+                if dir then
+                    local target_ws = screen_focus(dir)
+                    if target_ws then
+                        hl.dispatch(hl.dsp.focus({ workspace = target_ws }))
+                    end
+                end
+            end
             return true
         end
 
@@ -792,15 +910,39 @@ hl.layout.register("columns", {
                 return "columns: focus expects l, r, u or d"
             end
             local to = neighbour(st, id, dir)
-            local win = to and windows[to]
-            if win and win.address then
-                st.focused = to
-                hl.dispatch(hl.dsp.focus({ window = "address:" .. win.address }))
+            if to then
+                local win = windows[to]
+                if win and win.address then
+                    st.focused = to
+                    hl.dispatch(hl.dsp.focus({ window = "address:" .. win.address }))
+                end
+            elseif (dir == "prev" or dir == "next") and screen_focus then
+                -- Nothing on this desktop that way, so the focus steps onto
+                -- the screen beside it, landing on that screen's own desktop
+                -- even when it is empty. The point is to keep moving: the next
+                -- press carries on from there, and the opposite direction
+                -- comes straight back.
+                local target_ws = screen_focus(dir)
+                if target_ws then
+                    hl.dispatch(hl.dsp.focus({ workspace = target_ws }))
+                end
             end
         elseif command == "newcol" then
             new_column(st, id)
         elseif command == "movecol" then
-            move_to_column(st, id, arg == "prev" and "prev" or "next")
+            local dir = arg == "prev" and "prev" or "next"
+            -- A window alone in the outermost column has no neighbour to join,
+            -- so it crosses to the screen beside. A stack at the edge keeps
+            -- its existing behaviour: it splits off a new column inward.
+            if (dir == "prev" or dir == "next") and at_edge(st, id, dir)
+               and alone_in_column(st, id) and screen_step then
+                local target_ws = screen_step(dir)
+                if target_ws then
+                    move_window_to_screen(st, id, dir, target_ws)
+                end
+            else
+                move_to_column(st, id, dir)
+            end
         elseif command == "movewin" then
             move_in_column(st, id, arg == "up" and "up" or "down")
         elseif command == "swapcol" then
@@ -832,6 +974,10 @@ hl.layout.register("columns", {
 --   cyclemain          promote through the widest column
 --   newcol             give the focused window a column of its own
 --
+-- A focus or a move that runs out of room left or right crosses to the screen
+-- beside, through the screen_step hook deskbinds sets at load. Up and down
+-- still wrap inside the column, and the other messages are desktop-local.
+--
 -- There is no bind for "newcol": moving a window past the last column already
 -- gives it one. The message stays for dispatching by hand.
 
@@ -859,6 +1005,13 @@ return {
     resize_row = resize_row,
     cycle_main = cycle_main,
     move_column_to_workspace = move_column_to_workspace,
+    move_window_to_screen = move_window_to_screen,
+    expect_arrival = expect_arrival,
+    insert_edge = insert_edge,
+    at_edge = at_edge,
+    alone_in_column = alone_in_column,
+    set_screen_step = set_screen_step,
+    set_screen_focus = set_screen_focus,
     neighbour = neighbour,
     MIN = MIN,
 }

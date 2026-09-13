@@ -10,7 +10,13 @@ package.path = HYPR .. "/?.lua;" .. package.path
 _G.hl = {
     layout = { register = function(name, provider) _G.__provider = provider end },
     bind = function() end,
-    dsp = { layout = function(m) return { layout = m } end },
+    get_windows = function() return _G.__windows or {} end,
+    dispatch = function(d) table.insert(_G.__dispatched, d) end,
+    dsp = {
+        layout = function(m) return { layout = m } end,
+        focus = function(a) return { kind = "focus", arg = a } end,
+        window = { move = function(a) return { kind = "move", arg = a } end },
+    },
 }
 
 local C = require("columns")
@@ -352,6 +358,53 @@ check("one column now", #st.columns, 1)
 near("both rows equal", h[1], 0.5)
 near("heights total 1", h[1] + h[2], 1.0)
 
+print("crossing to another screen: arriving at the edge it came in from")
+st = build({ { 1 }, { 2 } }, { 0.5, 0.5 })
+C.insert_edge(st, 9, "last")
+check("a window pushed left joins the right edge", shape(st), "1 | 2 | 9")
+near("a share is taken from the edge column", st.columns[2].width, 0.25)
+near("total is 1", width_total(st), 1.0)
+
+st = build({ { 1 }, { 2 } }, { 0.5, 0.5 })
+C.insert_edge(st, 9, "first")
+check("one pushed right joins the left edge", shape(st), "9 | 1 | 2")
+near("total is 1", width_total(st), 1.0)
+
+st = build({ { 1, 2 } }, { 1.0 })
+C.insert_edge(st, 9, "first")
+check("arriving on an un-split desktop still makes a column", shape(st), "9 | 1+2")
+near("total is 1", width_total(st), 1.0)
+
+print("crossing: an expected window is placed at the edge, not by the focus")
+-- The window would otherwise land beside the focused one, which on a busy
+-- desktop is nowhere near the side it crossed from.
+st = build({ { 1 }, { 2 }, { 3 } })
+st.focused = 2
+C.expect_arrival(st, 9, "first")
+C.reconcile(st, { 1, 2, 3, 9 }, 9)
+check("it arrives at the edge", shape(st), "9 | 1 | 2 | 3")
+check("the expectation is cleared", st.arriving, nil)
+
+print("crossing: a second window follows the usual rules")
+st = build({ { 1 }, { 2 } })
+C.expect_arrival(st, 9, "last")
+C.reconcile(st, { 1, 2, 9 }, 9)
+check("the expected one goes to the edge", shape(st), "1 | 2 | 9")
+C.reconcile(st, { 1, 2, 9, 10 }, 9)
+check("the next by the usual rules", shape(st), "1 | 2 | 9+10")
+
+print("crossing: which column is at the edge")
+st = build({ { 1 }, { 2, 3 }, { 4 } })
+check("leftmost is at the left edge", C.at_edge(st, 1, "prev"), true)
+check("...and not at the right", C.at_edge(st, 1, "next"), false)
+check("rightmost is at the right edge", C.at_edge(st, 4, "next"), true)
+check("a middle window is at neither edge", C.at_edge(st, 2, "prev"), false)
+check("up and down are never at a horizontal edge", C.at_edge(st, 1, "up"), false)
+
+print("crossing: a window alone in its column")
+check("alone", C.alone_in_column(st, 1), true)
+check("...or stacked", C.alone_in_column(st, 2), false)
+
 print("handing a column to another workspace")
 -- Windows arrive one at a time, so the destination is told what is coming and
 -- groups them as they turn up.
@@ -405,6 +458,102 @@ print("scenario: a desktop's layout is forgotten with the desktop")
 -- never had one.
 check("forget is exported for deskbinds to call", type(C.forget), "function")
 check("forgetting an unknown desktop is harmless", pcall(C.forget, 12345), true)
+
+-- The crossing itself: a focus or a move that runs out of room left or right
+-- hands over to the screen beside, through the hook deskbinds sets. The layout
+-- owns one workspace's windows, so the "next screen" is a workspace id the
+-- hook returns; here it is a fixed desktop with its own two windows.
+print("scenario: focus at the edge crosses to the screen beside")
+local function ctx_for(ws_id, active_id, list)
+    _G.__windows = {}
+    local targets = {}
+    for i, entry in ipairs(list) do
+        local win = {
+            stable_id = entry.id, address = "0x" .. entry.id,
+            active = entry.id == active_id, workspace = { id = ws_id },
+        }
+        _G.__windows[#_G.__windows + 1] = win
+        targets[i] = { window = win, place = function() end }
+    end
+    return { targets = targets, area = { x = 0, y = 0, w = 100, h = 100 } }
+end
+
+-- A real desktop is placed by recalculate before any key is pressed, and the
+-- layout state is built there; layout_msg only acts on state it has.
+local function laid_out(ws_id, active_id, list)
+    local ctx = ctx_for(ws_id, active_id, list)
+    _G.__provider.recalculate(ctx)
+    return ctx
+end
+
+local crossed_to
+C.set_screen_step(function(ws, dir) crossed_to = { ws = ws, dir = dir } return 77 end)
+C.set_screen_focus(function(ws, dir) crossed_to = { ws = ws, dir = dir } return 77 end)
+
+_G.__dispatched = {}
+crossed_to = nil
+local ctx = laid_out(101, 1, { { id = 1 }, { id = 2 } })
+check("focus right inside the desktop is handled", _G.__provider.layout_msg(ctx, "focus r"), true)
+check("...and does not cross", crossed_to, nil)
+check("...by focusing the neighbour", _G.__dispatched[1] and _G.__dispatched[1].kind, "focus")
+
+-- The rightmost column has nothing to the right, so focus crosses instead of
+-- wrapping back to the left of the same screen.
+_G.__dispatched = {}
+crossed_to = nil
+ctx = laid_out(105, 2, { { id = 1 }, { id = 2 } })
+_G.__provider.layout_msg(ctx, "focus r")
+check("focus right at the edge crosses, not wraps", crossed_to and crossed_to.dir, "next")
+
+-- A single window leaves nowhere to go to the right, so focus steps onto the
+-- next screen.
+_G.__dispatched = {}
+crossed_to = nil
+ctx = laid_out(102, 1, { { id = 1 } })
+check("focus right at the edge is handled", _G.__provider.layout_msg(ctx, "focus r"), true)
+check("...and asks for the screen beside", crossed_to and crossed_to.dir, "next")
+check("...from this desktop", crossed_to and crossed_to.ws, 102)
+check("...and focuses that screen's desktop", _G.__dispatched[1] and _G.__dispatched[1].kind, "focus")
+check("...by workspace", _G.__dispatched[1] and _G.__dispatched[1].arg.workspace, 77)
+
+crossed_to = nil
+_G.__dispatched = {}
+_G.__provider.layout_msg(ctx, "focus l")
+check("focus left asks the other way", crossed_to and crossed_to.dir, "prev")
+
+-- Up and down still wrap inside the column and never cross screens.
+crossed_to = nil
+_G.__provider.layout_msg(ctx, "focus u")
+check("vertical focus does not cross", crossed_to, nil)
+
+print("scenario: a window alone at the edge moves to the screen beside")
+_G.__dispatched = {}
+crossed_to = nil
+ctx = laid_out(103, 1, { { id = 1 } })
+check("moving right is handled", _G.__provider.layout_msg(ctx, "movecol next"), true)
+check("...and asks for the screen to the right", crossed_to and crossed_to.dir, "next")
+check("...and moves the window there", _G.__dispatched[1] and _G.__dispatched[1].kind, "move")
+check("...addressed to that desktop", _G.__dispatched[1] and _G.__dispatched[1].arg.workspace, 77)
+check("...by address", _G.__dispatched[1] and _G.__dispatched[1].arg.window, "address:0x1")
+-- The window leaves this desktop's layout at once, so it is gone from it.
+local stc = C.new_state()
+stc.columns = { { ids = { 1 }, heights = { 1.0 }, width = 1.0 } }
+C.expect_arrival(stc, 1, "last")
+C.reconcile(stc, {}, nil)
+check("and it is removed from this desktop", #stc.columns, 0)
+
+print("scenario: a stack at the edge does not cross, it splits")
+-- Two windows in the leftmost column: moving left makes a new column to the
+-- left rather than sending one window to the other screen. The state is built
+-- by reconciling, so the leftmost column really holds a stack.
+_G.__dispatched = {}
+crossed_to = nil
+ctx = laid_out(104, 1, { { id = 1 } })
+ctx = laid_out(104, 2, { { id = 1 }, { id = 2 } })
+ctx = laid_out(104, 1, { { id = 1 }, { id = 2 }, { id = 3 } })
+check("moving left from a stack is handled", _G.__provider.layout_msg(ctx, "movecol prev"), true)
+check("...and does not cross screens", crossed_to, nil)
+check("...and dispatches nothing", #_G.__dispatched, 0)
 
 print("")
 print(("%d passed, %d failed"):format(pass, fail))

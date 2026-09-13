@@ -9,7 +9,7 @@ local mainMod = "SUPER"
 
 return {
     terminal    = "kitty",
-    fileManager = "dolphin",
+    fileManager = "yazi",
     browser     = "firefox",
     menu        = "fuzzel",
 

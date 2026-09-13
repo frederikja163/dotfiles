@@ -147,6 +147,69 @@ local function monitor_for(index)
     return monitor_slots()[index]
 end
 
+-- The screen beside another one, in the pinned order's reading direction.
+--
+-- This is what a focus or a window at the edge of a desktop crosses to, and it
+-- wraps: stepping off the leftmost screen lands on the rightmost, which is the
+-- far edge a window enters from when it is pushed that way. Only screens with
+-- desktops of their own take part -- a monitor that is duplicating another
+-- does not, and is in `monitor_slots` but carries no monitor object.
+--
+-- `step` is the direction on that screen: "prev" is left, "next" is right. An
+-- rtl row runs the other way, so monitor 1 is rightmost there and the
+-- arithmetic is simply reversed.
+local function screen_neighbour(mon, step)
+    local slots = monitor_slots()
+
+    local current
+    for i, slot in ipairs(slots) do
+        if slot.monitor and slot.monitor.id == mon.id then
+            current = i
+            break
+        end
+    end
+    if not current then
+        return nil
+    end
+
+    if monitorpin.layout() == "rtl" then
+        step = -step
+    end
+
+    local n = #slots
+    for _ = 1, n do
+        current = ((current - 1 + step + n) % n) + 1
+        if slots[current].monitor then
+            return slots[current].monitor
+        end
+    end
+end
+
+-- Where a focus or a move at the edge of a desktop crosses to: the desktop in
+-- view on the neighbouring screen, and its workspace id. `dir` is the
+-- direction stepped on the current screen ("prev" is left, "next" is right).
+--
+-- The current desktop is read from the focused monitor rather than passed in,
+-- because the crossing has to work from an *empty* desktop too -- that is the
+-- whole point of it: an empty desktop carries no window and so no workspace id
+-- for the layout to hand over, and this is the only thing that gets the focus
+-- back off one. Landing on an empty desktop beside is fine; being stuck there
+-- was the bug.
+--
+-- The neighbouring desktop itself may be empty. That is deliberate: the focus
+-- follows the screens, and an empty screen still has windows on the screens
+-- around it to step to next.
+local function edge_workspace(dir)
+    local mon = hl.get_active_monitor()
+    if not mon then
+        return nil
+    end
+
+    local next_mon = screen_neighbour(mon, dir == "prev" and -1 or 1)
+    local target = next_mon and next_mon.active_workspace
+    return target and target.id
+end
+
 -- Where a desktop sits in its screen's row: [workspace id] = sort key.
 --
 -- Desktops are ordered by workspace id, which is the order they were made in
@@ -1319,6 +1382,14 @@ local function set_labeller(fn)
     labeller = fn
 end
 
+-- columns.lua works in workspace ids and has no idea what a screen is, so the
+-- crossing itself is looked up here and handed over as the workspace to step
+-- onto. Set once the module is loaded: the layout only ever calls it at
+-- runtime, when a key is pressed. A move takes the screen immediately beside;
+-- a focus skips screens with nothing on them.
+columns.set_screen_step(edge_workspace)
+columns.set_screen_focus(edge_workspace)
+
 return {
     -- Actions, called by modes.lua, which owns the keys.
     focus_screen = focus_screen,
@@ -1353,6 +1424,8 @@ return {
     schedule_renumber = schedule_renumber,
     desktops_on = desktops_on,
     monitor_slots = monitor_slots,
+    screen_neighbour = screen_neighbour,
+    edge_workspace = edge_workspace,
     restore_homes = restore_homes,
     identity = identity,
     toggle_mirror = toggle_mirror,

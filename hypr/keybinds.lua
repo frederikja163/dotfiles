@@ -63,7 +63,14 @@ end, { description = "Window: force kill (abrupt)" })
 -- Promoting a window through the widest column used to be SUPER+M; it is `p`
 -- in the size mode now, and M is the move verb. Exiting Hyprland is handled by
 -- the power menu on M+Escape, which asks for confirmation.
-hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(fileManager), { description = "App: file manager" })
+-- yazi is a TUI, so it gets a terminal of its own -- the same trick as SUPER+O
+-- for opencode. Its desktop directory is the one thing a keybind-launched
+-- process does not get from the shell, hence the explicit --directory.
+hl.bind(mainMod .. " + E", function()
+    local directory = require("quake").directory() or os.getenv("HOME") or "."
+    hl.dispatch(hl.dsp.exec_cmd(
+        ("%s --directory '%s' %s"):format(terminal, directory:gsub("'", "'\\''"), fileManager)))
+end, { description = "App: file manager (where this desktop is)" })
 hl.bind(mainMod .. " + W", hl.dsp.exec_cmd(browser),      { description = "App: browser" })
 
 -- bin/ide: Rider if the directory holds a .NET solution, nvim otherwise. Given

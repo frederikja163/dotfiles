@@ -26,6 +26,7 @@ bob                 # neovim version manager
 ripgrep             # used by mini.pick
 fd                  # used by mini.pick
 fzf                 # solution picker in bin/ide
+yazi                # default file manager (SUPER+E)
 grim                # captures the image in bin/screenshot-region
 slurp               # selects the region in bin/screenshot-region
 wl-clipboard        # wl-copy, the clipboard end of bin/screenshot-region
@@ -61,6 +62,7 @@ ttf-jetbrains-mono-nerd       # icons for waybar / kitty / lspkind
 papirus-icon-theme            # notification icons, referenced by dunst/dunstrc
 
 # media codecs
+ffmpeg              # yazi previews videos with ffmpeg/ffprobe
 gst-libav
 gst-plugins-bad
 gst-plugins-ugly

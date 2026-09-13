@@ -80,10 +80,13 @@ desktop(3)
 check("and an empty desktop has nothing to be named after", name_of(3), nil)
 
 -- The point of the exclusions: these are the programs whose desktop is about
--- the directory they are open on, which is the name it already has.
+-- the directory they are open on, which is the name it already has. yazi, the
+-- file manager, is not on the list -- it is a TUI and runs in a kitty window,
+-- so the kitty entry covers it, and it no longer has a class of its own the
+-- way dolphin did.
 print("scenario: programs that keep the directory naming")
 reset()
-for id, class in ipairs({ "kitty", "jetbrains-rider", "code", "codium", "dolphin" }) do
+for id, class in ipairs({ "kitty", "jetbrains-rider", "code", "codium" }) do
     desktop(id, class)
     check(class .. " lends no name", name_of(id), nil)
 end

@@ -259,6 +259,29 @@ reset(gap2)
 mod.focus_screen(1)
 check("but reuses it where it does sort last", last_of("focus").arg.workspace, 2)
 
+print("scenario: crossing screens at the edge")
+-- A focus or a move that runs out of room left or right crosses to the screen
+-- beside, in the pinned order's reading direction, wrapping both ways.
+reset(two_monitors(0))
+local s1, s2 = mod.monitor_slots()[1].monitor, mod.monitor_slots()[2].monitor
+check("from screen 1, the next screen is 2", mod.screen_neighbour(s1, 1).name, s2.name)
+check("...and the previous wraps to 2", mod.screen_neighbour(s1, -1).name, s2.name)
+reset(two_monitors(1))
+s1, s2 = mod.monitor_slots()[1].monitor, mod.monitor_slots()[2].monitor
+check("from screen 2, the previous is 1", mod.screen_neighbour(s2, -1).name, s1.name)
+check("...and the next wraps to 1", mod.screen_neighbour(s2, 1).name, s1.name)
+
+-- The crossing target is the neighbouring screen's own desktop in view.
+reset(two_monitors(0))
+check("right from ws1 (screen 1) crosses to ws3 (screen 2)", mod.edge_workspace(1, "next"), 3)
+check("left from ws1 wraps to ws3 as well", mod.edge_workspace(1, "prev"), 3)
+reset(two_monitors(1))
+check("left from ws3 (screen 2) crosses to ws1 (screen 1)", mod.edge_workspace(3, "prev"), 1)
+
+-- A desktop that is not the one in view has no edge to step off.
+reset(two_monitors(0))
+check("a desktop that is not in view does not cross", mod.edge_workspace(2, "next"), nil)
+
 print("scenario: the desktop axis (Tab), which now owns cycling")
 reset(two_monitors(0))
 mod.focus_neighbour_desktop(1)

@@ -32,6 +32,7 @@ curl -fsSL https://raw.githubusercontent.com/frederikja163/dotfiles/main/setup.s
 | `kitty`    | `~/.config/kitty`             | `kitty.conf`                         |
 | `dunst`    | `~/.config/dunst`             | `dunstrc`                            |
 | `fuzzel`   | `~/.config/fuzzel`            | `fuzzel.ini`                         |
+| `yazi`     | `~/.config/yazi`              | `yazi.toml`, software video previewer |
 | `zsh`      | `~/.zshenv`, `~/.config/zsh/` | oh-my-zsh setup, `PATH`, prompt, `title` |
 | `git`      | `~/.config/git`               | identity and settings                |
 | `bin`      | `~/.local/bin`                | small scripts, on `PATH`             |
