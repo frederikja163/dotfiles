@@ -8,6 +8,16 @@ if os.getenv("HYPR_SANDBOX") == "1" then
     return
 end
 
+-- The bar is started once at hyprland.start and restarted when a monitor comes
+-- or goes. Both go through here, so the restart below can tell whether a start
+-- has already happened since the monitor event it is answering.
+local launches = 0
+
+local function start_waybar()
+    launches = launches + 1
+    hl.exec_cmd("waybar-main")
+end
+
 hl.on("hyprland.start", function ()
     -- Notification daemon, started explicitly and first.
     --
@@ -31,7 +41,7 @@ hl.on("hyprland.start", function ()
     hl.exec_cmd("/usr/lib/hyprpolkitagent/hyprpolkitagent")
 
     -- Status bar on the main monitor (see bin/waybar-main)
-    hl.exec_cmd("waybar-main")
+    start_waybar()
 
     -- Wallpaper
     hl.exec_cmd("hyprpaper")
@@ -63,9 +73,26 @@ end)
 
 -- Which monitor is the main one can change: docking, undocking, a cable moving
 -- to another port. Put the bar back on whichever it is now.
+--
+-- The trap is boot. Hyprland adds every monitor *before* it fires
+-- hyprland.start, so the monitor.added events arrive while the config is still
+-- coming up and schedule a restart a second later. That restart raced the start
+-- hyprland.start had just issued: its `pkill` ran before the first bar had
+-- spawned, killed nothing, and left a second bar on screen. So a restart is
+-- only worth making if nothing has started the bar since the event that asked
+-- for it; `restart_generation` records the count at that moment and the timer
+-- does nothing once it has moved on. A real hotplug, and every monitor event
+-- after an `hyprctl reload` (which re-runs this file, resetting the count, but
+-- fires no hyprland.start), leaves the count alone, so the bar still restarts.
 local restart_pending = false
+local restart_generation = 0
 
 local function restart_waybar()
+    -- Kept current even while a restart is already pending: a monitor added
+    -- after a start should still be answered, and only the latest request
+    -- counts once the timer fires.
+    restart_generation = launches
+
     if restart_pending then
         return
     end
@@ -75,7 +102,10 @@ local function restart_waybar()
     -- redock emits several events in a row.
     hl.timer(function()
         restart_pending = false
-        hl.exec_cmd("waybar-main")
+        if launches ~= restart_generation then
+            return
+        end
+        start_waybar()
     end, { timeout = 1000, type = "oneshot" })
 end
 
