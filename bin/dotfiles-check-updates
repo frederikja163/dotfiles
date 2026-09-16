@@ -1,9 +1,28 @@
 #!/usr/bin/env bash
-# Say, once per login, if this repo has commits waiting on the remote.
+# Watch this repo's remote and keep one notification current: how many commits
+# are waiting to be pulled, or why the fetch cannot say.
 #
-# Started from hypr/autostart.lua. It is a reminder, not a sync: nothing is
-# pulled, because pulling relinks configs under a running session and that is a
-# decision to take deliberately rather than at login.
+# Started from hypr/autostart.lua, so it begins at every Hyprland start -- which
+# is every graphical login from the display manager -- and then asks again once
+# a minute for as long as the session lasts. It is a reminder, not a sync:
+# nothing is pulled, because pulling relinks configs under a running session and
+# that is a decision to take deliberately rather than at login.
+#
+# Checking again, rather than looking once, is a reversal. A single check at
+# login only ever knows about commits that were already waiting when the
+# compositor came up; commits pushed during a session that then runs for days --
+# the ordinary case on a machine that is never logged out of -- were never
+# spoken of, because the one process that could have said something had already
+# exited. Now the answer is refreshed every minute and the notification is
+# replaced in place instead of posted again, so a repo that is three commits
+# behind goes on saying so, one notice, until the pull happens and it is taken
+# down.
+#
+# Run by hand it does a single check and exits, because a person is watching
+# output they can read at once; the loop is for a process nobody is watching.
+# That is decided from stdout being a terminal, not stdin: anything Hyprland
+# launches inherits the session's VT, so `[ -t 0 ]` lies, while stdout is
+# /dev/null. DOTFILES_CHECK_UPDATES_ONCE=1 forces the single check for a test.
 #
 # Silent when there is nothing to say: on a detached HEAD, on a branch with no
 # upstream, or when the fetch succeeds and the branch is already current.
@@ -12,8 +31,30 @@
 # stay quiet on the grounds that a notification firing whenever the wifi is slow
 # gets ignored -- but the cost of that was a login where the machine never got
 # online and the reminder simply never arrived, and nothing ever said so. Now it
-# says so, once, keeps trying, and says which of the two causes it is.
+# says so, keeps trying, and says which of the two causes it is.
+#
+# -f relaxes that last case. When the fetch itself cannot reach the remote, but
+# the commits are already in the local repo -- left by an earlier fetch, in
+# refs/remotes/<remote>/<branch> or FETCH_HEAD -- then the branch is reported as
+# behind the work already fetched rather than as "no network". Off by default
+# because those refs can be stale: "offline, and the last thing we fetched says
+# three behind" is a claim worth asking for rather than making unprompted.
 set -uo pipefail
+
+# The one argument, refused rather than ignored if it is anything else. A forced
+# run is still the same watch; this only widens where the answer may come from.
+force=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -f) force=1 ;;
+        *)
+            printf 'dotfiles-check-updates: unknown argument: %s\n' "$1" >&2
+            printf 'Usage: dotfiles-check-updates [-f]\n' >&2
+            exit 2
+            ;;
+    esac
+    shift
+done
 
 # The repo is wherever this script really lives: bin/ is a symlink from
 # ~/.local/bin, so the link has to be resolved before taking the parent.
@@ -33,9 +74,39 @@ REPO="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)" || exit 1
 # up" that is worth trusting, because a route and a DNS answer both exist on a
 # captive portal that will not pass a git fetch through.
 #
-# Short locals, because the override names are a mouthful inside an expression
-# and the environment is only how a test reaches in.
-retry_interval="${DOTFILES_CHECK_UPDATES_RETRY_INTERVAL:-30}"
+# A minute is the interval between checks once the first answer is in, and also
+# how long a failure waits before trying again. Short locals, because the
+# override name is a mouthful inside an expression and the environment is only
+# how a test reaches in.
+interval="${DOTFILES_CHECK_UPDATES_INTERVAL:-60}"
+
+# One pass when a terminal is watching, or when a test says so. See the header
+# for why stdout, not stdin, is what tells us.
+once="${DOTFILES_CHECK_UPDATES_ONCE:-0}"
+[ -t 1 ] && once=1
+
+# The compositor that started this is its direct parent: hl.exec_cmd runs no
+# shell (see .opencode/skills/hyprland-lua-config). When Hyprland goes away --
+# logout, or a crash it does not come back from -- this process is reparented
+# and the ppid changes. That is what stops the loop. Nothing else would: logind
+# does not kill a user's processes on logout (KillUserProcesses stays unset), so
+# a watcher left behind would go on fetching into the next login with a
+# notification bus that no longer exists, beside the new one started there.
+#
+# Read from /proc rather than the shell's $PPID, which is captured once at
+# startup and never updated when the parent dies. /proc/$$ is the main shell
+# even when this runs in a command substitution's subshell, where /proc/self
+# would name the subshell and answer with the script's own pid.
+parent_pid() {
+    local key value
+    while read -r key value; do
+        if [ "$key" = "PPid:" ]; then
+            printf '%s\n' "$value"
+            return 0
+        fi
+    done < /proc/$$/status
+}
+compositor="$(parent_pid)"
 
 cd "$REPO" || exit 1
 
@@ -68,6 +139,65 @@ unnotify() {
     busctl --user call org.freedesktop.Notifications \
         /org/freedesktop/Notifications org.freedesktop.Notifications \
         CloseNotification u "$1" >/dev/null 2>&1
+}
+
+# What is on screen right now, as a key plus the notification server's id for
+# it. The key, not the text, decides whether a change is worth posting: one
+# commit becoming three is news, while the same "three" every minute is not, and
+# an edit to the wording should not have to be duplicated in that comparison.
+shown_key=""
+shown_id=""
+
+# Put the given notice up, replacing whatever this script last put up, or do
+# nothing if that is already what is showing. The id comes back from
+# notify-send's --print-id so the next change can replace in place; if the user
+# dismissed the notice that id is stale, and notify-send creates a fresh one
+# rather than failing when asked to replace an id nothing owns.
+show() {
+    local key="$1" summary="$2" body="$3" id attempt
+
+    [ "$key" = "$shown_key" ] && return 0
+
+    # dunst is started first in autostart.lua, but Hyprland launches both
+    # without ordering them, and on a fast fetch this script can reach
+    # notify-send before the daemon has claimed the bus. Retry briefly rather
+    # than dropping the reminder on the one run where it is the whole point.
+    attempt=0
+    while :; do
+        if [ -n "$shown_id" ]; then
+            id="$(notify --replace-id="$shown_id" "$summary" "$body")"
+        else
+            id="$(notify "$summary" "$body")"
+        fi
+        [ -n "$id" ] && break
+        attempt=$((attempt + 1))
+        [ "$attempt" -ge 5 ] && return 1
+        sleep 1
+    done
+
+    shown_id="$id"
+    shown_key="$key"
+}
+
+# Take our notice down. Reaching a current branch means the reminder has been
+# answered; leaving it up would go on saying "3 commits behind" after the pull.
+clear_notice() {
+    [ -z "$shown_key" ] && return 0
+    [ -n "$shown_id" ] && unnotify "$shown_id"
+    shown_id=""
+    shown_key=""
+}
+
+# The one notice for a branch that is behind, whether the count came from the
+# fetch or, under -f, from a ref already in the repo.
+announce_behind() {
+    local count="$1" summary
+    if [ "$count" -eq 1 ]; then
+        summary="dotfiles: 1 commit behind"
+    else
+        summary="dotfiles: $count commits behind"
+    fi
+    show "behind:$count" "$summary" "$remote has changes. Pull in $REPO when convenient."
 }
 
 # Which kind of failure it was, asked only after a fetch has already failed.
@@ -111,82 +241,86 @@ failure_cause() {
     esac
 }
 
-# There is no deadline. Retrying stops when the fetch works or the session ends,
-# because a reminder that gives up while you are still logged in is a reminder
-# that silently stopped watching.
-offline_id=""
-told_cause=""
+# How far HEAD is behind, using only refs already in the repo. This is what -f
+# adds to a failed fetch. The remote-tracking ref is what a plain `git fetch`
+# leaves and FETCH_HEAD is what this script's own successful fetch leaves; each
+# can be the staler one, so both are asked and the larger answer wins -- it is
+# the one that knows about the most work waiting. No such ref at all is a
+# failure, so the caller can fall back to saying the fetch failed.
+behind_from_local() {
+    local ref count best=0 found=0
+    for ref in "refs/remotes/$remote/${merge#refs/heads/}" FETCH_HEAD; do
+        git rev-parse --verify --quiet "$ref" >/dev/null 2>&1 || continue
+        count="$(git rev-list --count "HEAD..$ref" 2>/dev/null)" || continue
+        found=1
+        [ "$count" -gt "$best" ] && best="$count"
+    done
+    [ "$found" -eq 1 ] || return 1
+    printf '%s\n' "$best"
+}
+
+# There is no deadline. The loop runs until the session ends, because a reminder
+# that stops watching while you are still logged in is not one.
 failures=0
 
 while :; do
+    # The compositor is gone, so this process has outlived its session. See the
+    # parent_pid note above.
+    [ "$(parent_pid)" = "$compositor" ] || exit 0
+
     if timeout 60 git fetch --quiet "$url" "$merge" 2>/dev/null; then
-        break
-    fi
+        failures=0
+        behind="$(git rev-list --count "HEAD..FETCH_HEAD" 2>/dev/null)" || behind=0
 
-    failures=$((failures + 1))
+        if [ "${behind:-0}" -le 0 ]; then
+            clear_notice
+        else
+            announce_behind "$behind"
+        fi
+    else
+        failures=$((failures + 1))
 
-    # Said from the second failure on, not the first: one failed fetch at login
-    # is the ordinary case, because the session really is up before the network.
-    # A second one 30 seconds later is what distinguishes "still connecting"
-    # from "not going to connect on its own".
-    #
-    # Re-checked on every attempt after that, but only spoken when the answer
-    # changes. The cause is not fixed for the run: the usual recovery is the
-    # network coming back and the fetch working, but it can equally come back
-    # and reveal that the url is wrong, and then the notice should stop telling
-    # you to get online. One notification, kept current, rather than one per
-    # attempt or one stale one.
-    if [ "$failures" -ge 2 ]; then
-        cause="$(failure_cause)"
-
-        if [ "$cause" != "$told_cause" ]; then
-            if [ "$cause" = "network" ]; then
-                offline_summary="dotfiles: no network"
-                offline_body="Remember to get on the internet."
-            else
-                offline_summary="dotfiles: cannot fetch from $remote"
-                offline_body="The network is fine, so this is the remote:"
-                offline_body="$offline_body check its url, or whether the repo"
-                offline_body="$offline_body is still there."
-            fi
-            still="Still checking every ${retry_interval}s."
-            offline_body="$offline_body $still"
-
-            if [ -n "$offline_id" ]; then
-                notify --replace-id="$offline_id" \
-                    "$offline_summary" "$offline_body" >/dev/null
-            else
-                offline_id="$(notify "$offline_summary" "$offline_body")"
+        # Said from the second failure on, not the first: one failed fetch at
+        # login is the ordinary case, because the session really is up before
+        # the network. A second one a minute later is what distinguishes "still
+        # connecting" from "not going to connect on its own". A one-off run has
+        # no later to wait for, so it says it the first time.
+        #
+        # Re-checked on every attempt after that, but only spoken when the
+        # answer changes. The cause is not fixed for the run: the usual recovery
+        # is the network coming back and the fetch working, but it can equally
+        # come back and reveal that the url is wrong, and then the notice should
+        # stop telling you to get online. One notification, kept current, rather
+        # than one per attempt or one stale one.
+        if [ "$failures" -ge 2 ] || [ "$once" -eq 1 ]; then
+            # -f: a failed fetch need not mean nothing to report, if the repo
+            # already holds the commits. Asked for, not guessed, because the ref
+            # it reads can itself be old -- see the header.
+            already=""
+            if [ "$force" -eq 1 ]; then
+                already="$(behind_from_local)" || already=""
             fi
 
-            told_cause="$cause"
+            if [ -n "$already" ] && [ "$already" -gt 0 ]; then
+                announce_behind "$already"
+            else
+                cause="$(failure_cause)"
+
+                if [ "$cause" = "network" ]; then
+                    summary="dotfiles: no network"
+                    body="Remember to get on the internet."
+                else
+                    summary="dotfiles: cannot fetch from $remote"
+                    body="The network is fine, so this is the remote:"
+                    body="$body check its url, or whether the repo is still there."
+                fi
+                body="$body Still checking every ${interval}s."
+
+                show "offline:$cause" "$summary" "$body"
+            fi
         fi
     fi
 
-    sleep "$retry_interval"
+    [ "$once" -eq 1 ] && exit 0
+    sleep "$interval"
 done
-
-behind="$(git rev-list --count "HEAD..FETCH_HEAD" 2>/dev/null)" || exit 0
-
-# The offline notice has no timeout, so it sits there until something takes it
-# away. Reaching here means it is answered either way: replaced by the real
-# reminder if there is one, closed if there is nothing to report. Leaving it up
-# would have it telling you to get online from then on, while you are online.
-if [ "${behind:-0}" -le 0 ]; then
-    [ -n "$offline_id" ] && unnotify "$offline_id"
-    exit 0
-fi
-
-if [ "$behind" -eq 1 ]; then
-    summary="dotfiles: 1 commit behind"
-else
-    summary="dotfiles: $behind commits behind"
-fi
-
-body="$remote has changes. Pull in $REPO when convenient."
-
-if [ -n "$offline_id" ]; then
-    notify --replace-id="$offline_id" "$summary" "$body" >/dev/null
-else
-    notify "$summary" "$body" >/dev/null
-fi

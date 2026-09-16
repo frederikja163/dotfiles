@@ -63,11 +63,10 @@ hl.on("hyprland.start", function ()
     hl.exec_cmd("dotfiles-session-restore")
 
     -- Say if this repo is behind its remote (see bin/dotfiles-check-updates).
-    -- It checks at once and then every 30 seconds until the fetch works, so
-    -- unlike the rest of this list it can outlive the login by a long way: on a
-    -- machine that never gets online it retries for the whole session. That is
-    -- deliberate, and it is one sleeping process, but it is the only entry here
-    -- that does not simply start something and finish.
+    -- It checks at once and then once a minute for the whole session, so unlike
+    -- the rest of this list it does not finish: it is one sleeping process
+    -- watching for commits pushed after login, which a single check at start
+    -- would never see. Deliberate, and the only entry here that stays.
     hl.exec_cmd("dotfiles-check-updates")
 end)
 
