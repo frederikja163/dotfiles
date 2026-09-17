@@ -1,5 +1,5 @@
-# Everything yazi's stock config does is fine here, so this file only changes
-# one thing: which plugin handles video previews.
+# Two departures from yazi's stock config: which plugin handles video previews,
+# and a modification time against every row.
 #
 # The stock `video` previewer and preloader run ffmpeg with `-hwaccel auto`,
 # which on this machine selects the Radeon VCN decoder. VCN faults and forces a
@@ -19,3 +19,21 @@ prepend_previewers = [
 prepend_preloaders = [
 	{ mime = "video/*", run = "video-soft" },
 ]
+
+# The linemode is the right-hand column of the file list, and stock yazi leaves
+# it "none" — nothing but names. "mtime" fills it in for every entry, which is
+# the point: a timestamp that is only there after you ask for it is no use when
+# the question is which of these files is the recent one.
+#
+# mtime rather than btime because "when did this change" is almost always the
+# question, and a file copied or unpacked yesterday has a birth time that says
+# yesterday no matter how old its contents are.
+#
+# No keymap.toml to go with this. Sorting by time is already bound in the stock
+# keymap and did not need configuring: `,m`/`,M` sort by modification time
+# ascending/descending, `,b`/`,B` by birth time, and each of them also switches
+# the linemode to the field it sorted on, so the column agrees with the order.
+# `m m`, `m b`, `m s`, `m o`, `m p`, `m n` switch the column on its own. Adding
+# our own bindings for any of that would only risk drifting from the defaults.
+[mgr]
+linemode = "mtime"
