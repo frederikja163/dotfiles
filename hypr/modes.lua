@@ -14,25 +14,39 @@
 -- bind_in_mode, which is not a nicety but the difference between the modes
 -- working and appearing to do nothing at all.
 --
---   SUPER + M            move the window        one-shot
---   SUPER + SHIFT + M    move the column        one-shot
---   SUPER + CTRL + M     move this desktop      one-shot (screens only)
+--   SUPER + M            move the window        mixed
+--   SUPER + SHIFT + M    move the column        mixed
+--   SUPER + CTRL + M     move this desktop      mixed (screens only)
 --
 -- Inside a move mode a number means a *screen*. `d` there switches to a second
 -- mode where it means a desktop on this screen, so SUPER+M d 3 sends the
 -- window to desktop 3.
---   SUPER + S            size                   sticky
+--   SUPER + S            size                   mixed
 --   SUPER + D            desktop                one-shot
 --   SUPER+SHIFT + D      display                one-shot
 --
 -- One-shot means the mode ends when the action fires, like `dw`. Sticky means
--- it stays until you leave, which is right for resizing -- a nudge you repeat
--- -- and wrong for a move, which is one decision. Size is the only sticky one,
--- and add_exits below explains why that is load-bearing rather than taste.
+-- it stays until you leave. The split is not per mode but per key, and it
+-- follows one question: is this a nudge you repeat, or a decision you make
+-- once?
+--
+--   sticky    h/j/k/l anywhere, and Tab in a move mode -- shuffling a window
+--             along or resizing it is something you do until it looks right
+--   one-shot  a screen number, a desktop number, p in size, and everything in
+--             the desktop and display modes -- naming a destination is
+--             finished the moment it happens
+--
+-- Mixing the two in one mode is fine, but it costs that mode its catchall, and
+-- add_exits explains why that is a consequence rather than a choice.
+--
+-- Whatever the keys do, a mode also ends on its own after IDLE_TIMEOUT with no
+-- input: a mode is invisible apart from the bar, so one entered and forgotten
+-- otherwise leaves the motion keys meaning the wrong thing indefinitely.
 --
 -- Modifiers therefore carry almost nothing. SHIFT reverses a motion (Tab),
--- widens a verb's scope (M), or marks the harsher variant of a letter
--- (keybinds.lua's SUPER+SHIFT+C). CTRL appears once, on M. ALT is unused.
+-- widens a verb's scope (M), or marks the other variant of a letter
+-- (keybinds.lua's SUPER+SHIFT+C for a force kill, SUPER+SHIFT+F for floating
+-- beside fullscreen). CTRL appears once, on M. ALT is unused.
 --
 --
 -- Things that cost an afternoon each, all verified against Hyprland 0.56.2:
@@ -76,6 +90,28 @@ local mainMod = programs.mainMod
 
 local RESIZE_STEP = 0.05
 
+-- How long a mode waits for you before giving up, and how often it checks.
+--
+-- A mode is modal: until it ends, h/j/k/l mean something other than what they
+-- mean everywhere else, and nothing says so except the submap name in the bar.
+-- Enter one, get interrupted, and the keyboard stays in that state -- which
+-- reads as the motion keys having broken, the same way a mode whose binds do
+-- not match reads (see bind_in_mode).
+--
+-- Polled from one chain per mode entry rather than a fresh timer per keypress,
+-- because an hl.timer cannot be cancelled: the handle has no cancel, stop,
+-- kill, destroy or restart method -- probed, not assumed, against 0.56.2 --
+-- and only a `__index` function, so there is nothing to enumerate either.
+-- Re-arming per key would therefore leave one pending timer per keystroke, and
+-- a held motion key repeats around 25 times a second. This way a keypress only
+-- zeroes a counter and never allocates.
+--
+-- The cost is granularity: the tick is what the timeout is rounded to, so a
+-- mode ends between IDLE_TIMEOUT - IDLE_TICK and IDLE_TIMEOUT after the last
+-- key, not exactly at it.
+local IDLE_TIMEOUT = 5000
+local IDLE_TICK = 500
+
 ----------------------------------------------------------------------------
 -- Mode plumbing
 ----------------------------------------------------------------------------
@@ -90,8 +126,65 @@ local SUBMAP_DISPLAY      = "display"
 -- Names are what Waybar's hyprland/submap module prints, so they are written
 -- for reading rather than for code. Spaces are legal in a submap name.
 
+-- Which mode entry the running countdown belongs to, and how many ticks have
+-- passed since a key.
+--
+-- The counter exists because a chain cannot be stopped, only made irrelevant.
+-- Leave a mode and enter another inside the timeout and the first mode's chain
+-- is still ticking; without a number to check, it would time the second one
+-- out early.
+local mode_entries = 0
+local idle_ticks = 0
+
 local function leave()
+    -- Bumping this is what strands the countdown belonging to the mode being
+    -- left. Escape does not come through here -- it is bound straight to the
+    -- submap dispatcher -- which is why watch() checks the live submap too.
+    mode_entries = mode_entries + 1
     hl.dispatch(hl.dsp.submap("reset"))
+end
+
+-- One tick of a mode's idle countdown, re-arming itself until the mode ends.
+-- `type = "repeating"` would be the obvious way and never fires at all, so the
+-- chain is hand-rolled; see the note in tests/run.sh.
+local function watch(name, entry)
+    hl.timer(function()
+        -- Three ways this chain is no longer wanted: a newer entry has
+        -- superseded it, the mode was left by hand (get_current_submap gives
+        -- "" in normal mode), or some other mode is in front now. Checking the
+        -- compositor rather than only our own counter means Escape and the
+        -- catchall, neither of which runs any Lua of ours, still stop it.
+        if mode_entries ~= entry or hl.get_current_submap() ~= name then
+            return
+        end
+
+        idle_ticks = idle_ticks + 1
+        if idle_ticks * IDLE_TICK >= IDLE_TIMEOUT then
+            leave()
+        else
+            watch(name, entry)
+        end
+    end, { timeout = IDLE_TICK, type = "oneshot" })
+end
+
+-- Enter a mode and start its countdown.
+--
+-- Every way in goes through this, the handover from a move mode to its
+-- by-desktop twin included: the countdown belongs to the mode you are now in,
+-- not the one you came from. Only ever called from a bind, so no timer is
+-- created while the config is loading -- which segfaults the compositor
+-- outright, and is not catchable with pcall.
+local function enter(name)
+    mode_entries = mode_entries + 1
+    idle_ticks = 0
+    hl.dispatch(hl.dsp.submap(name))
+    watch(name, mode_entries)
+end
+
+-- Report that the mode was just used, so its countdown starts over. Deliberately
+-- just an assignment: this runs on every motion, including auto-repeat.
+local function touch()
+    idle_ticks = 0
 end
 
 -- Bind a key inside a mode, for every way the keys might still be held down.
@@ -161,27 +254,56 @@ local function oneshot(action)
     end
 end
 
+-- The counterpart: an action that leaves the mode up, and restarts its
+-- countdown. A nudge you repeat rather than a decision you make once.
+--
+-- Both wrappers take a function, so a bind that would otherwise be a bare
+-- dispatcher value has to be wrapped in one -- `sticky(function()
+-- hl.dispatch(hl.dsp.layout(m)) end)` rather than `sticky(hl.dsp.layout(m))`.
+-- The latter is not callable and fails at the keypress, not at load.
+local function sticky(action)
+    return function()
+        action()
+        touch()
+    end
+end
+
 -- The ways out of a mode.
 --
 -- Escape is the deliberate one and is always bound. It works because a bind
 -- whose handler is "submap" is the one thing that stops handleKeybinds looking
 -- at the rest of the list.
 --
--- The catchall is only added to one-shot modes, and that is not a preference.
--- A catchall reads like "fire when nothing else matched", and it is not:
--- handleKeybinds collects every matching bind into a list first and only sets
--- its `found` flag afterwards, when the dispatchers run. So at the moment the
--- catchall is examined, `found` is still false even though the real bind
--- matched a moment earlier -- and both end up in the list, and both run.
+-- The catchall goes only in a mode where *every* bind is one-shot, and that is
+-- not a preference. A catchall reads like "fire when nothing else matched",
+-- and it is not: handleKeybinds collects every matching bind into a list first
+-- and only sets its `found` flag afterwards, when the dispatchers run. So at
+-- the moment the catchall is examined, `found` is still false even though the
+-- real bind matched a moment earlier -- and both end up in the list, and both
+-- run.
 --
--- In a one-shot mode that is harmless, and useful: an unbound key cancels, and
--- a bound one would have left anyway. In a sticky mode it is fatal -- every
--- nudge would kick you straight back out, which is exactly what happened when
--- size mode was first built this way and `h` resized once and then left.
+-- Where everything is one-shot that is harmless, and useful: an unbound key
+-- cancels, and a bound one would have left anyway. Next to a sticky bind it is
+-- fatal -- every nudge would kick you straight back out, which is exactly what
+-- happened when size mode was first built this way and `h` resized once and
+-- then left.
 --
--- So sticky modes are left by Escape, or by the submap_universal binds in
--- keybinds.lua. An unbound key inside one does nothing to the mode; it is
--- passed on to the focused window, since nothing consumed it.
+-- One sticky bind is therefore enough to disqualify a whole mode, which is why
+-- the move modes no longer take a catchall: their motions repeat now, even
+-- though their screen and by-desktop keys are still one-shot. The mixture is
+-- fine -- oneshot() leaves on its own and needs no catchall to do it -- but the
+-- escape hatch had to go with it. What that costs is real and was accepted
+-- deliberately: an unbound key inside a move mode no longer cancels, it is
+-- passed on to the focused window, so a stray keystroke types into whatever is
+-- in front. Escape, the idle countdown and keybinds.lua's submap_universal
+-- binds are the ways out that remain.
+--
+-- There is a way to have both, and it was rejected as too subtle to keep
+-- right: leave the catchall in place and have each sticky bind re-assert its
+-- own submap afterwards, declared after the catchall, exactly as HELD_KEYS
+-- does below. It works -- the ordering is the same trick -- but it makes every
+-- motion silently dependent on being declared in the right place, and the
+-- failure mode is a mode that drops on one key and not another.
 -- The modifier keys, which have to be held before a shifted motion can be
 -- typed at all. A press of one of these is a key event like any other, so the
 -- catchall below would treat reaching for SHIFT as "some other key, cancel" --
@@ -212,14 +334,18 @@ local HELD_KEYS = {
     "ISO_Level3_Shift", "Caps_Lock",
 }
 
-local function add_exits(name, one_shot)
+-- `every_bind_leaves`, not "is this a one-shot mode": a mode with even one
+-- sticky bind cannot have the catchall, whatever the rest of it looks like.
+-- Spelled out because passing `true` from a mode that has since grown a sticky
+-- key is the one way to reintroduce the bug described above.
+local function add_exits(name, every_bind_leaves)
     -- Escape with or without SUPER, for the reason in bind_in_mode. This is
     -- also why the power menu in keybinds.lua is *not* submap_universal: it
     -- sits on SUPER+Escape, and a universal bind matches inside a submap as
     -- well, so both would fire and leaving a mode would offer to log you out.
     bind_in_mode("Escape", hl.dsp.submap("reset"), { description = "Leave this mode" })
 
-    if one_shot then
+    if every_bind_leaves then
         hl.bind("catchall", hl.dsp.submap("reset"), { ignore_mods = true })
 
         -- After the catchall, deliberately. See above.
@@ -357,42 +483,55 @@ for _, scope in ipairs(MOVE_SCOPES) do
             local action = scope.direction(d)
             if action then
                 for _, key in ipairs(d.keys) do
-                    bind_in_mode(key, oneshot(action),
-                                 { description = ("Move the %s %s"):format(scope.noun, d.label) })
+                    -- Sticky: shuffling a window along is a nudge you repeat
+                    -- until it looks right, and having to retype SUPER+M
+                    -- between each one made a two-column move feel like work.
+                    bind_in_mode(key, sticky(action),
+                                 { repeating = true,
+                                   description = ("Move the %s %s"):format(scope.noun, d.label) })
                 end
             end
         end
 
         if scope.desktop then
-            bind_in_mode("Tab", oneshot(function() scope.desktop(1) end),
+            -- Sticky as well, and for the same reason: stepping a window
+            -- across three desktops is Tab Tab Tab, not three trips through
+            -- the verb.
+            bind_in_mode("Tab", sticky(function() scope.desktop(1) end),
                          { description = ("Move the %s to the next desktop"):format(scope.noun) })
-            bind_in_mode("SHIFT + Tab", oneshot(function() scope.desktop(-1) end),
+            bind_in_mode("SHIFT + Tab", sticky(function() scope.desktop(-1) end),
                          { description = ("Move the %s to the previous desktop"):format(scope.noun) })
         end
 
         for n = 1, SCREENS do
+            -- One-shot, unlike the motions above: naming a screen is a
+            -- destination, not a nudge, and there is nothing to repeat once you
+            -- are there.
             bind_in_mode(screen_key(n), oneshot(function() scope.screen(n) end),
                          { description = ("Move the %s to screen %d, or a new desktop if already there")
                                          :format(scope.noun, n) })
         end
 
-        add_exits(scope.submap, true)
+        -- No catchall: the motions above are sticky now, and it would cancel
+        -- the mode on every one of them. See add_exits.
+        add_exits(scope.submap, false)
 
         -- `d` hands over to a second mode where the numbers mean desktops
         -- rather than screens, so "move this to desktop 3" can be said at all.
         --
-        -- Declared after add_exits, and that is load-bearing: every matching
-        -- bind runs in declaration order, so the catchall would otherwise drop
-        -- the mode *after* this had switched to the next one, landing you back
-        -- in normal mode. Same reason the modifier keys come last. See the
-        -- long note in add_exits.
+        -- It used to have to be declared after add_exits, because the catchall
+        -- would otherwise drop the mode *after* this had switched to the next
+        -- one and land you in normal mode. These modes have no catchall any
+        -- more, so that constraint is gone and the position is now only
+        -- habit -- but the one below still holds it, so it stays put rather
+        -- than inviting the question again.
         if scope.desktop_index then
-            bind_in_mode("d", hl.dsp.submap(desktop_submap_of(scope)),
+            bind_in_mode("d", function() enter(desktop_submap_of(scope)) end,
                          { description = ("Move the %s to a desktop by number"):format(scope.noun) })
         end
     end)
 
-    hl.bind(scope.entry, hl.dsp.submap(scope.submap),
+    hl.bind(scope.entry, function() enter(scope.submap) end,
             { description = ("Mode: move the %s (h/j/k/l, Tab, 1-0 screens, d desktops)")
                             :format(scope.noun) })
 end
@@ -439,24 +578,35 @@ define_mode(SUBMAP_SIZE, mainMod .. " + S", function()
             or (d.resize > 0 and "taller" or "shorter")
 
         for _, key in ipairs(d.keys) do
-            bind_in_mode(key, hl.dsp.layout(message),
+            bind_in_mode(key, sticky(function() hl.dispatch(hl.dsp.layout(message)) end),
                          { repeating = true, description = "Size: " .. what })
         end
     end
 
-    -- Floating and promoting are both shape, so they live here rather than
-    -- spending a chord each in normal mode.
-    bind_in_mode("f", hl.dsp.window.float({ action = "toggle" }),
-                 { description = "Size: toggle floating" })
-    bind_in_mode("p", hl.dsp.layout("cyclemain"),
-                 { description = "Size: promote through the widest column" })
+    -- Floating is deliberately not here. It was, on `f`, on the grounds that it
+    -- is a shape change like the rest -- but nothing in this mode changes a
+    -- window's size by degrees except the four motions, and floating takes the
+    -- window out of the layout rather than resizing it. It sits next to
+    -- fullscreen on SUPER+SHIFT+F now; see keybinds.lua.
 
-    -- Sticky: no catchall, for the reason in add_exits.
+    -- Promote is the one one-shot key in here, which is not an inconsistency:
+    -- h/j/k/l and f are nudges you repeat until the shape is right, and moving
+    -- a window to the front of the widest column is a single decision that is
+    -- finished the moment it happens. Repeating it just cycles the stack past
+    -- where you wanted it.
+    --
+    -- Safe next to the sticky keys above only because oneshot() leaves by
+    -- itself. Doing this with a catchall instead would have broken every
+    -- resize in the mode -- see add_exits.
+    bind_in_mode("p", oneshot(function() hl.dispatch(hl.dsp.layout("cyclemain")) end),
+                 { description = "Size: promote through the widest column, and leave" })
+
+    -- Mostly sticky, so no catchall, for the reason in add_exits.
     add_exits(SUBMAP_SIZE, false)
 end)
 
-hl.bind(mainMod .. " + S", hl.dsp.submap(SUBMAP_SIZE),
-        { description = "Mode: size (h/j/k/l, f float, p promote)" })
+hl.bind(mainMod .. " + S", function() enter(SUBMAP_SIZE) end,
+        { description = "Mode: size (h/j/k/l, p promote and leave)" })
 
 ----------------------------------------------------------------------------
 -- Desktop: go to one of this screen's desktops by number

@@ -90,9 +90,19 @@ hl.bind(mainMod .. " + O", function()
     hl.dispatch(hl.dsp.exec_cmd(
         ("%s --directory '%s' opencode"):format(terminal, directory:gsub("'", "'\\''"))))
 end, { description = "App: opencode (where this desktop is)" })
--- Fullscreen stays a chord because it is pressed constantly. Floating is the
--- rarer shape change and lives in the size mode, in modes.lua.
+-- The two whole-window shapes, on the same letter.
+--
+-- Floating used to live in the size mode, on `f`, as the rarer of the two. It
+-- reads better here: size mode is for the keys that make a window bigger or
+-- smaller by degrees, and floating does not resize anything -- it takes the
+-- window out of the layout altogether, which is the same kind of change as
+-- fullscreen and belongs next to it.
+--
+-- SHIFT for the floating one, following the rest of the config: on a letter
+-- SHIFT marks the wider or harsher variant of the verb (SUPER+SHIFT+M for the
+-- column rather than the window, SUPER+SHIFT+C for a force kill).
 hl.bind(mainMod .. " + F", hl.dsp.window.fullscreen({ action = "toggle" }), { description = "Window: toggle fullscreen" })
+hl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.float({ action = "toggle" }), { description = "Window: toggle floating" })
 hl.bind(mainMod .. " + R", hl.dsp.exec_cmd(menu), { description = "App: launcher" })
 
 -- Screenshot of a mouse-selected region, onto the clipboard. In bin/ rather
