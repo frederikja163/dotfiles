@@ -55,7 +55,19 @@ end
 _G.hl = {
     layout = { register = function() end },
     on = function() end,
+    -- Fires immediately and synchronously, which is what lets the idle
+    -- countdown be tested at all: modes.lua polls with a chain of oneshot
+    -- timers, so running each one inline collapses the whole countdown into
+    -- the call that started it. The guard against that becoming an infinite
+    -- recursion is get_current_submap below.
     timer = function(cb) cb() end,
+
+    -- modes.lua asks the compositor which mode is in front, so that a
+    -- countdown belonging to a mode already left cannot end the next one. Here
+    -- that is whatever the harness says it is: "" outside define_submap, which
+    -- is also what Hyprland reports in normal mode, so a countdown started by
+    -- driving a bind stops on its first tick unless a test says otherwise.
+    get_current_submap = function() return current_submap end,
     exec_cmd = function() end,
     workspace_rule = function() end,
     monitor = function() end,
@@ -108,6 +120,37 @@ local function check(label, got, want)
         fail = fail + 1
         print(("  FAIL %-58s got %s want %s"):format(label, tostring(got), tostring(want)))
     end
+end
+
+-- Run a bind and collect what it dispatched. Actions reach into deskbinds and
+-- columns, which have no world to work on here, so a failure part-way through
+-- is expected and ignored -- what is being checked is the dispatches, and the
+-- mode-keeping ones come from modes.lua itself.
+local function drive(bind)
+    dispatched = {}
+    if bind.fn then pcall(bind.fn) end
+    return dispatched
+end
+
+-- The submap a bind ends up asking for: "reset" for a one-shot, a mode name
+-- for an entry or a handover, and nil for a sticky bind, which asks for none.
+local function ends_in_submap(bind)
+    local seen = drive(bind)
+    local last = bind.dispatcher or seen[#seen]
+    if last and last.kind == "submap" then
+        return last.arg
+    end
+    return nil
+end
+
+-- What the bind's *action* did, as opposed to what it did to the mode. Sticky
+-- and one-shot wrappers both leave the action's own dispatch first.
+local function action_arg(bind)
+    if bind.dispatcher then
+        return bind.dispatcher.arg
+    end
+    local seen = drive(bind)
+    return seen[1] and seen[1].arg
 end
 
 -- Inside a mode, "SUPER + x" is the twin of the bare "x" (see bind_in_mode in
@@ -187,13 +230,17 @@ for _, keys in ipairs({
 end
 
 print("scenario: every mode can be entered, and every entry is a submap switch")
+-- The move and size entries go through modes.lua's enter(), which switches the
+-- submap *and* starts the idle countdown, so they are Lua functions rather than
+-- bare dispatchers now and have to be driven to see where they lead.
 for _, scope in ipairs(mod.MOVE_SCOPES) do
     local entry = binds[""][scope.entry]
     check("entry bound: " .. scope.entry, entry ~= nil, true)
-    check("...switches submap", entry and entry.dispatcher and entry.dispatcher.kind, "submap")
-    check("...to " .. scope.submap, entry and entry.dispatcher and entry.dispatcher.arg, scope.submap)
+    check("...switches submap", entry and ends_in_submap(entry) ~= nil, true)
+    check("...to " .. scope.submap, entry and ends_in_submap(entry), scope.submap)
     check("...and says so in the cheatsheet", entry and entry.opts.description ~= nil, true)
 end
+check("size is entered the same way", ends_in_submap(binds[""]["SUPER + S"]), "size")
 
 print("scenario: the desktop verb, and display moved out of its way")
 check("SUPER+D enters the desktop mode",
@@ -213,22 +260,34 @@ check("...and they are different binds",
       desk["Tab"] and desk["SHIFT + Tab"] and binds["desktop"]["Tab"] ~= binds["desktop"]["SHIFT + Tab"], true)
 
 print("scenario: every mode can be left")
--- Escape everywhere. A catchall only in the one-shot modes: it fires alongside
--- the bind that matched rather than instead of it, so in a sticky mode it
--- would throw you out on every keypress. See add_exits in modes.lua.
+-- Escape everywhere. A catchall only where *every* bind in the mode leaves on
+-- its own: it fires alongside the bind that matched rather than instead of it,
+-- so one sticky key is enough to make it cancel the mode mid-nudge. See
+-- add_exits in modes.lua.
+--
+-- Which is why the move modes have none: their h/j/k/l and Tab repeat, even
+-- though their screen keys are still one-shot. Only the pure one-shot modes
+-- keep it -- the by-desktop twins reached with `d`, and desktop and display.
+local HAS_CATCHALL = {
+    ["move to desktop"] = true,
+    ["move column to desktop"] = true,
+    ["desktop"] = true,
+    ["display"] = true,
+}
+
 for _, name in ipairs(mod.submaps) do
     local k = keys_in(name)
     check(name .. ": Escape", k["Escape"], true)
     check(name .. ": Escape with SUPER held", k["SUPER + Escape"], true)
 
-    if name == "size" then
-        check(name .. " is sticky, so no catchall", k["catchall"], nil)
-    else
+    if HAS_CATCHALL[name] then
         check(name .. ": catchall", k["catchall"], true)
         -- Without ignore_mods the catchall only fires when no modifier is
         -- held, which is a hole exactly where being stuck is most likely.
         check(name .. ": catchall ignores mods",
               binds[name]["catchall"].opts.ignore_mods, true)
+    else
+        check(name .. " has a sticky key, so no catchall", k["catchall"], nil)
     end
 end
 
@@ -238,7 +297,7 @@ print("scenario: reaching for a modifier does not cancel a one-shot mode")
 -- are bound to re-enter the mode, and they must come *after* the catchall:
 -- every matching bind runs, in declaration order, so the last one decides.
 for _, name in ipairs(mod.submaps) do
-    if name ~= "size" then -- sticky, so it has no catchall to work around
+    if HAS_CATCHALL[name] then -- the others have none to work around
         local catchall = index_of(name, "catchall")
         for _, key in ipairs({ "Shift_L", "Shift_R", "Control_L", "Alt_L", "Super_L" }) do
             local held = binds[name][key]
@@ -291,7 +350,7 @@ for _, name in ipairs(missing_twins) do print("       no SUPER twin: " .. name) 
 local size_bare = binds["size"]["h"]
 local size_held = binds["size"]["SUPER + h"]
 check("the twin runs the same dispatcher",
-      size_held.dispatcher.arg, size_bare.dispatcher.arg)
+      action_arg(size_held), action_arg(size_bare))
 check("...and is left out of the cheatsheet", size_held.opts.description, nil)
 check("...while the bare one carries it", size_bare.opts.description ~= nil, true)
 
@@ -315,42 +374,81 @@ for _, scope in ipairs(mod.MOVE_SCOPES) do
     end
 end
 
-print("scenario: every move is one-shot -- it fires, then leaves the mode")
--- The one that matters. A bind that forgets the wrapper stays in its mode, and
--- nothing else in the config would ever tell you.
+print("scenario: in a move mode, a destination leaves and a nudge does not")
+-- The one that matters, and it is now a split rather than a rule: naming a
+-- screen or a desktop ends the mode, while h/j/k/l and Tab keep it so the move
+-- can be repeated. Both halves are silent when wrong -- a destination that
+-- forgets oneshot() strands you in the mode, and a nudge that keeps it drops
+-- you out after one press -- and nothing else in the config would say so.
+--
+-- Driven per key against what the key means, rather than counted, so that a
+-- wrapper put on the wrong one of the two cannot cancel out in a total.
 local declared = {}
 for _, name in ipairs(mod.submaps) do declared[name] = true end
 
-local oneshots, left_the_mode, stuck, transitions = 0, 0, {}, 0
+-- The motions, which must all keep the mode.
+local NUDGES = { "h", "j", "k", "l", "left", "right", "up", "down", "Tab", "SHIFT + Tab" }
+
+for _, scope in ipairs(mod.MOVE_SCOPES) do
+    for _, keys in ipairs(NUDGES) do
+        local bind = binds[scope.submap][keys]
+        if bind then
+            check(("%s: %s is a nudge, so the mode stays"):format(scope.submap, keys),
+                  ends_in_submap(bind), nil)
+        end
+    end
+
+    -- ...and the destinations, which must all end it.
+    for n = 1, mod.SCREENS do
+        local keys = mod.screen_key(n)
+        check(("%s: screen %s is a destination, so the mode ends"):format(scope.submap, keys),
+              ends_in_submap(binds[scope.submap][keys]), "reset")
+    end
+end
+
+-- Nothing unaccounted for: every non-exit key in a move mode is either a nudge
+-- that keeps the mode, a destination that resets it, or the `d` handover. A key
+-- added later without a wrapper at all would land here.
+local unclassified, handovers = {}, 0
+local is_nudge = {}
+for _, keys in ipairs(NUDGES) do is_nudge[keys] = true end
+
 for _, scope in ipairs(mod.MOVE_SCOPES) do
     for keys, bind in pairs(binds[scope.submap]) do
         if not is_exit(keys) and not is_twin(scope.submap, keys) then
-            dispatched = {}
-            -- Actions reach into deskbinds and columns, which have no world to
-            -- work on here; what matters is only what happens afterwards.
-            if bind.fn then pcall(bind.fn) end
-
-            local last = bind.dispatcher or dispatched[#dispatched]
-            local switches_to = last and last.kind == "submap" and last.arg
-
-            if switches_to == "reset" then
-                oneshots = oneshots + 1
-                left_the_mode = left_the_mode + 1
-            elseif switches_to and declared[switches_to] then
-                -- A handover to another mode rather than an action: `d`, where
-                -- the numbers stop meaning screens and start meaning desktops.
-                transitions = transitions + 1
+            local switches_to = ends_in_submap(bind)
+            if switches_to and declared[switches_to] then
+                handovers = handovers + 1
+            elseif switches_to == "reset" then
+                if is_nudge[keys] then
+                    table.insert(unclassified, scope.submap .. " / " .. keys .. " (nudge that leaves)")
+                end
+            elseif switches_to == nil then
+                if not is_nudge[keys] then
+                    table.insert(unclassified, scope.submap .. " / " .. keys .. " (destination that stays)")
+                end
             else
-                oneshots = oneshots + 1
-                table.insert(stuck, scope.submap .. " / " .. keys)
+                table.insert(unclassified, scope.submap .. " / " .. keys .. " -> " .. tostring(switches_to))
             end
         end
     end
 end
-check("every one-shot bind leaves its mode", left_the_mode, oneshots)
-check("...and there were some to check", oneshots > 0, true)
-check("...plus the handovers to the by-desktop modes", transitions, 2)
-for _, name in ipairs(stuck) do print("       stays in its mode: " .. name) end
+check("no move key is on the wrong side of the split", #unclassified, 0)
+check("...plus the handovers to the by-desktop modes", handovers, 2)
+for _, name in ipairs(unclassified) do print("       miswrapped: " .. name) end
+
+print("scenario: the by-desktop modes stay one-shot all the way through")
+-- What was asked for and is easy to lose: `d` then a number is a destination,
+-- so it ends the mode even though the motions in the mode it came from do not.
+for _, scope in ipairs(mod.MOVE_SCOPES) do
+    if scope.desktop_index then
+        local nested = scope.submap .. " to desktop"
+        for n = 1, mod.SCREENS do
+            check(("%s: desktop %s ends the mode"):format(nested, mod.screen_key(n)),
+                  ends_in_submap(binds[nested][mod.screen_key(n)]), "reset")
+        end
+    end
+end
 
 print("scenario: the desktop verb can shuffle a desktop along its row")
 local md = keys_in("move desktop")
@@ -365,10 +463,14 @@ for _, scope in ipairs(mod.MOVE_SCOPES) do
     local nested = scope.submap .. " to desktop"
     if scope.desktop_index then
         check(scope.submap .. ": d hands over", binds[scope.submap]["d"] ~= nil, true)
-        check("...to " .. nested, binds[scope.submap]["d"].dispatcher.arg, nested)
+        check("...to " .. nested, ends_in_submap(binds[scope.submap]["d"]), nested)
         check("...which exists", binds[nested] ~= nil, true)
-        check("...and is declared after the catchall, or it would be undone",
-              index_of(scope.submap, "d") > index_of(scope.submap, "catchall"), true)
+        -- It used to have to come after the catchall or the catchall would undo
+        -- the handover. These modes have no catchall now, so there is nothing
+        -- left to order it against -- asserting the absence instead, since that
+        -- is the thing that made the ordering unnecessary.
+        check("...and the catchall that constrained its position is gone",
+              binds[scope.submap]["catchall"], nil)
 
         local k = keys_in(nested)
         for n = 1, mod.SCREENS do
@@ -411,35 +513,78 @@ dispatched = {}
 pcall(move_column["l"].fn)
 check("l swaps it right", dispatched[1].arg, "swapcol next")
 
-check("size h narrows the column", binds["size"]["h"].dispatcher.arg, "colresize -0.05")
-check("size l widens it", binds["size"]["l"].dispatcher.arg, "colresize 0.05")
-check("size j grows the row", binds["size"]["j"].dispatcher.arg, "rowresize 0.05")
-check("size k shrinks it", binds["size"]["k"].dispatcher.arg, "rowresize -0.05")
-check("size p promotes", binds["size"]["p"].dispatcher.arg, "cyclemain")
+check("size h narrows the column", action_arg(binds["size"]["h"]), "colresize -0.05")
+check("size l widens it", action_arg(binds["size"]["l"]), "colresize 0.05")
+check("size j grows the row", action_arg(binds["size"]["j"]), "rowresize 0.05")
+check("size k shrinks it", action_arg(binds["size"]["k"]), "rowresize -0.05")
+check("size p promotes", action_arg(binds["size"]["p"]), "cyclemain")
 check("focus left is the layout's own direction letter",
       binds[""]["SUPER + h"].dispatcher.arg, "focus l")
 check("focus right", binds[""]["SUPER + l"].dispatcher.arg, "focus r")
 check("focus down", binds[""]["SUPER + j"].dispatcher.arg, "focus d")
 check("focus up", binds[""]["SUPER + k"].dispatcher.arg, "focus u")
 
-print("scenario: size is sticky, and its keys repeat")
+print("scenario: size resizes as long as you keep asking, and p ends it")
 local size = binds["size"]
 check("h resizes", size["h"] ~= nil, true)
-check("...by dispatching to the layout", size["h"].dispatcher.kind, "layout")
+check("...by dispatching to the layout", drive(size["h"])[1].kind, "layout")
 check("...and repeats when held", size["h"].opts.repeating, true)
--- Sticky: nothing in here resets the submap, which is the whole difference
--- from a move.
-local sticky = true
+
+-- The split inside size, which is what was asked for: the shaping keys stay,
+-- promote leaves. Checked key by key rather than as a blanket "nothing resets
+-- the submap", because that blanket is exactly what p now breaks.
+check("h keeps the mode", ends_in_submap(size["h"]), nil)
+check("j keeps it", ends_in_submap(size["j"]), nil)
+check("k keeps it", ends_in_submap(size["k"]), nil)
+check("l keeps it", ends_in_submap(size["l"]), nil)
+-- Floating moved out to SUPER+SHIFT+F in keybinds.lua, which this harness does
+-- not load. Asserted as an absence so it cannot quietly come back: the mode is
+-- for changing a window's size by degrees, and floating is not that.
+check("float does not live here", size["f"], nil)
+check("...nor under the held twin", size["SUPER + f"], nil)
+check("promote does", size["p"] ~= nil, true)
+check("...but promote leaves, being one decision", ends_in_submap(size["p"]), "reset")
+check("...and its description says so", size["p"].opts.description:match("leave") ~= nil, true)
+
+-- Only p. Anything else in here growing a reset would be the old bug coming
+-- back, where a resize fired once and dropped the mode.
+local leavers = {}
 for keys, bind in pairs(size) do
     if not is_exit(keys) and not is_twin("size", keys) then
-        if bind.dispatcher and bind.dispatcher.kind == "submap" then
-            sticky = false
+        if ends_in_submap(bind) == "reset" then
+            table.insert(leavers, keys)
         end
     end
 end
-check("no key in size leaves it by itself", sticky, true)
-check("float lives here now, not on a chord", size["f"] ~= nil, true)
-check("so does promote", size["p"] ~= nil, true)
+table.sort(leavers)
+check("p is the only key in size that leaves", table.concat(leavers, ","), "p")
+
+print("scenario: a mode gives up after a spell with no input")
+-- The countdown is a chain of oneshot timers, and the harness runs each one
+-- inline, so the whole thing resolves during the call that starts it -- but
+-- only while the compositor still reports that mode as the one in front. That
+-- is the guard being checked here as much as the timeout itself.
+local real_submap = current_submap
+
+current_submap = "size"
+dispatched = {}
+pcall(binds[""]["SUPER + S"].fn)
+local last = dispatched[#dispatched]
+check("a mode left to itself resets", last and last.kind == "submap" and last.arg, "reset")
+check("...after entering it in the first place", dispatched[1].arg, "size")
+
+-- The stale-countdown guard: a chain whose mode is no longer in front must do
+-- nothing, or leaving one mode for another would end the second one early.
+current_submap = "move"
+dispatched = {}
+pcall(binds[""]["SUPER + S"].fn)
+local resets = 0
+for _, d in ipairs(dispatched) do
+    if d.kind == "submap" and d.arg == "reset" then resets = resets + 1 end
+end
+check("a countdown for a mode already left does nothing", resets, 0)
+
+current_submap = real_submap
 
 print("scenario: display is one-shot, and every key leaves the mode")
 local display_oneshots, display_left = 0, 0

@@ -39,6 +39,25 @@ end
 
 hl.env("PATH", currentPath)
 
+-- EDITOR belongs here for the same reason PATH does, and specifically so yazi
+-- opens files in nvim. Nothing in yazi needed configuring for that: its stock
+-- `edit` opener is already `${EDITOR:-vi} %s`, and its stock rules send text,
+-- code, empty files and folders to it. EDITOR was simply never set anywhere on
+-- this machine, so every one of those landed in `vi`.
+--
+-- Setting it in zsh would not have fixed it. SUPER+E runs `kitty --directory
+-- <dir> yazi`, and a kitty given a command to run never starts a login or
+-- interactive shell, so no profile is sourced and no export from .zshrc is in
+-- scope -- the same trap the PATH entries above fall into. Coming from the
+-- compositor it reaches yazi directly, and interactive shells inherit it too,
+-- being children of a kitty that Hyprland started.
+--
+-- Bare `nvim` rather than a full path because bob/nvim-bin is on the PATH built
+-- just above; git/config spells the same choice out for its own editor setting.
+-- A shell on a TTY outside the graphical session is the one gap and still gets
+-- `vi`, which is not worth a second copy of this in .zshrc to close.
+hl.env("EDITOR", "nvim")
+
 
 -- Permissions
 -- See https://wiki.hypr.land/Configuring/Advanced-and-Cool/Permissions/
