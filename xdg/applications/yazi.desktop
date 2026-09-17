@@ -1,0 +1,24 @@
+# What the desktop opens a directory with (see ../mimeapps.list, and SUPER+E in
+# hypr/keybinds.lua).
+#
+# This shadows the yazi package's own entry at /usr/share/applications, which
+# has Terminal=true and would have the launcher wrap it in a terminal. That
+# path needs a desktop terminal setting (org.gnome.desktop.default-applications
+# .terminal) that nothing sets here, so it fails to find a terminal at all --
+# while Exec can just name kitty, which is the terminal this machine uses.
+#
+# Terminal=false because kitty is already in Exec; a true here would ask for a
+# second terminal around it.
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Yazi
+GenericName=File Manager
+Comment=Terminal file manager, in a window of its own
+TryExec=yazi
+Exec=kitty yazi %f
+Icon=yazi
+Terminal=false
+Categories=System;FileManager;FileTools;
+MimeType=inode/directory;
+Keywords=File;Manager;Explorer;Browser;Launcher;

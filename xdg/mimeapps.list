@@ -1,0 +1,18 @@
+# The desktop's own answer to "what opens this?", which is what xdg-open, GIO
+# and the xdg-desktop-portal consult. It is therefore what Firefox's "open
+# containing folder", a file chooser's "show in folder", and anything else that
+# hands a directory to the desktop will reach.
+#
+# yazi rather than Dolphin, matching SUPER+E in hypr/keybinds.lua. yazi is a
+# TUI, so applications/yazi.desktop is where the argument actually lands: a
+# kitty window running yazi.
+#
+# install.sh symlinks this file into ~/.config. xdg-mime dereferences a symlink
+# when it edits one, so `xdg-mime default ...` rewrites this file rather than
+# replacing the link -- expect such an edit to show up here to commit.
+#
+# The jetbrains:// handler is the JetBrains Toolbox's, kept because taking the
+# whole file over would otherwise drop it.
+[Default Applications]
+inode/directory=yazi.desktop
+x-scheme-handler/jetbrains=jetbrainsd.desktop

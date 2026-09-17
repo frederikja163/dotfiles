@@ -340,6 +340,27 @@ install_links() {
     link git      "$HOME/.config/git"                # ~/.gitconfig would override it
     link bin      "$HOME/.local/bin"
     link .omnisharp "$HOME/.omnisharp"     # global omnisharp.json for .csx scripts
+
+    # What opens a directory: yazi, via the kitty-wrapping entry in the same
+    # folder (see the comments in xdg/mimeapps.list). Separate links rather
+    # than a linked xdg/ because the two files live on opposite sides of the
+    # config/data split.
+    link xdg/mimeapps.list "$HOME/.config/mimeapps.list"
+    link xdg/applications/yazi.desktop "$HOME/.local/share/applications/yazi.desktop"
+
+    # Browsers reveal a file through org.freedesktop.FileManager1 instead of the
+    # default above; this shadows Dolphin's provider so that call fails and they
+    # fall back to yazi. See the comment in the file.
+    link xdg/dbus-1/services/org.freedesktop.FileManager1.service \
+         "$HOME/.local/share/dbus-1/services/org.freedesktop.FileManager1.service"
+
+    # The desktop database is a cache of which .desktop file claims which MIME
+    # types, and the directory default is looked up through it. Linking the
+    # entry above is not enough on its own: until this runs, the file is there
+    # but no directory resolves to it.
+    if command -v update-desktop-database >/dev/null; then
+        update-desktop-database "$HOME/.local/share/applications" >/dev/null 2>&1 || true
+    fi
 }
 
 # install_rider comes last in both modes that install anything, rather than at

@@ -7,6 +7,8 @@ base-devel          # compiler toolchain, needed by treesitter auto_install
 curl
 unzip
 man-pages
+desktop-file-utils  # update-desktop-database, run by install.sh after linking
+                    # xdg/applications/yazi.desktop
 linux-headers       # required to build out-of-tree / DKMS modules
 lua                 # runs tests/run.sh
 python              # parses hyprctl -j in bin/waybar-main and bin/dotfiles-monitor-order
@@ -26,7 +28,8 @@ bob                 # neovim version manager
 ripgrep             # used by mini.pick
 fd                  # used by mini.pick
 fzf                 # solution picker in bin/ide
-yazi                # default file manager (SUPER+E)
+yazi                # file manager: SUPER+E, and what the desktop opens a
+                    # directory with (xdg/mimeapps.list)
 grim                # captures the image in bin/screenshot-region
 slurp               # selects the region in bin/screenshot-region
 wl-clipboard        # wl-copy, the clipboard end of bin/screenshot-region

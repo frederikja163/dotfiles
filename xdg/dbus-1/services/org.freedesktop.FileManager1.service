@@ -1,0 +1,20 @@
+# Browsers do not ask the XDG default for "show in folder": Firefox (and
+# Chromium) call org.freedesktop.FileManager1.ShowItems on D-Bus, and only if
+# that fails do they fall back to GIO's default application. Dolphin ships a
+# provider at /usr/share/dbus-1/services/org.kde.dolphin.FileManager1.service,
+# so on a machine with it installed the default for inode/directory is ignored
+# and Dolphin is what opens, however xdg/mimeapps.list is set.
+#
+# yazi cannot provide this interface -- it is a TUI, with no D-Bus of its own
+# -- so this file shadows Dolphin's with a provider that fails on purpose.
+# Firefox reads that failure as "there is no FileManager1 here" and falls back
+# to launching the parent directory through GIO, which xdg/mimeapps.list sends
+# to yazi. What it costs: a client that does not fall back gets a failed call
+# rather than Dolphin, which is the intent.
+#
+# A user service directory outranks /usr/share, so this wins by being linked
+# under ~/.local/share. D-Bus reads service files at session start; a re-login
+# (not just a reload) is what picks this up.
+[D-BUS Service]
+Name=org.freedesktop.FileManager1
+Exec=/usr/bin/false
