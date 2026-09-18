@@ -149,6 +149,55 @@ local function fit(desktop_id)
     hl.dispatch(hl.dsp.window.move({ window = target, x = mon.x, y = mon.y }))
 end
 
+-- Is the pointer over a terminal that is on screen?
+--
+-- The mouse binds in keybinds.lua ask this before they start a drag or a
+-- resize, and do nothing when the answer is yes. A quake terminal is a panel
+-- fixed to the top of its monitor rather than a window to arrange: fit() works
+-- its shape out from the monitor every time it comes down, so a dragged
+-- terminal stays where it was dropped until the next keypress puts it back --
+-- which reads as the terminal having lost its place rather than as a gesture
+-- that was never meant to apply to it.
+--
+-- Refusing the gesture is the only way to do this. Hyprland 0.56 has no window
+-- rule that makes a window immovable -- the whole list of rule names is in the
+-- binary, and nothing there covers it -- and no event fires when a window is
+-- moved, so there is nothing to snap it back from afterwards either.
+--
+-- The *pointer* rather than the focused window, because the pointer is what
+-- Hyprland itself would have dragged: it hit-tests the cursor when the bind
+-- fires and pays no attention to which window has focus. Asking about the
+-- focused window refuses the wrong gestures -- toggling the terminal focuses it
+-- explicitly (see focus_terminal) while the pointer stays wherever it was, so
+-- the next SUPER+drag of an ordinary window would silently do nothing.
+--
+-- Only a terminal on a *visible* workspace counts. A hidden one still has a box
+-- across the top of its monitor, and matching that would refuse to drag an
+-- ordinary window that happened to be under the same place.
+local function under_cursor()
+    local pos = hl.get_cursor_pos()
+    if not pos then
+        return false
+    end
+
+    for _, win in ipairs(hl.get_windows() or {}) do
+        local ws = win.workspace
+        if tostring(win.class) == CLASS and ws and ws.visible then
+            -- Layout coordinates on both sides, so they compare directly: `at`
+            -- and `size` are what the compositor placed the window at, and the
+            -- cursor is reported in the same space.
+            local at, size = win.at, win.size
+            if at and size
+                and pos.x >= at.x and pos.x < at.x + size.x
+                and pos.y >= at.y and pos.y < at.y + size.y then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
 -- What each desktop is called on the bar: [desktop id] = directory name, or nil
 -- while it is still just a number.
 --
@@ -548,6 +597,7 @@ return {
     label_for = label_for,
     directory = directory,
     sync = sync,
+    under_cursor = under_cursor,
     workspace_for = workspace_for,
     CLASS = CLASS,
     -- What a desktop with nothing to say is called here, so desknames.lua can

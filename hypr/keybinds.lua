@@ -141,8 +141,32 @@ hl.bind(mainMod .. " + Escape", hl.dsp.exec_cmd("power-menu"),
 -- Mouse
 
 -- Move/resize windows with mainMod + LMB/RMB and dragging
-hl.bind(mainMod .. " + mouse:272", hl.dsp.window.drag(),   { mouse = true, description = "Window: drag" })
-hl.bind(mainMod .. " + mouse:273", hl.dsp.window.resize(), { mouse = true, description = "Window: resize with the mouse" })
+--
+-- Both refuse over the quake terminal (SUPER + `, quake.lua), which is a panel
+-- fixed to the top of the monitor and not a window to arrange: its shape is
+-- worked out from the monitor every time it comes down, so dragging or resizing
+-- it only leaves it out of place until the next keypress. quake.under_cursor
+-- asks about the pointer, which is the window Hyprland would have taken hold
+-- of; the reasoning, and why there is no window rule for this, is in quake.lua.
+--
+-- The dispatch result is returned rather than dropped, because it carries
+-- pass_event: that is how SUPER + click over no window at all still reaches
+-- whatever is underneath -- a layer surface like waybar, for instance.
+--
+-- quake is required inside the callback for the load-order reason above.
+local function drag_unless_quake(gesture)
+    return function()
+        if require("quake").under_cursor() then
+            return
+        end
+        return hl.dispatch(gesture())
+    end
+end
+
+hl.bind(mainMod .. " + mouse:272", drag_unless_quake(hl.dsp.window.drag),
+        { mouse = true, description = "Window: drag" })
+hl.bind(mainMod .. " + mouse:273", drag_unless_quake(hl.dsp.window.resize),
+        { mouse = true, description = "Window: resize with the mouse" })
 
 
 -- Laptop multimedia keys for volume and LCD brightness

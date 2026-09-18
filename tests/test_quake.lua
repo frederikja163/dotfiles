@@ -27,6 +27,10 @@ local function reset()
         desktop = { id = 1, name = "1.1", special = false },
         special = nil,   -- bare name, e.g. "quake-1"
         windows = {},
+        -- Where the pointer is, in the same layout coordinates as a window's
+        -- box. Off the terminal by default: y is below the top 40% of the
+        -- laptop panel, so a test has to put it over the terminal on purpose.
+        cursor = { x = 3440 + 640, y = 700 },
     }
 
     local next_address = 0
@@ -36,11 +40,17 @@ local function reset()
 
     function world.appear(ws_name)
         next_address = next_address + 1
+        local mon = world.monitor
         local win = {
             class = "quake",
             address = ("0x%x"):format(next_address),
             pid = next_address,
             workspace = { name = ws_name },
+            -- The box the window rules give it: full width of the monitor,
+            -- top 40%, flush to its top-left corner. fit() re-applies the same
+            -- shape through the resize and move dispatchers below.
+            at   = { x = mon.x, y = mon.y },
+            size = { x = mon.width / mon.scale, y = mon.height / mon.scale * 0.4 },
         }
         table.insert(world.windows, win)
         if events["window.open"] then
@@ -55,6 +65,17 @@ local function reset()
                 table.remove(world.windows, i)
             end
         end
+    end
+
+    -- The window a dispatcher is aimed at. Everything in here is addressed the
+    -- way the module addresses it, "address:0x1".
+    function world.at_address(target)
+        for _, win in ipairs(world.windows) do
+            if ("address:" .. win.address) == target then
+                return win
+            end
+        end
+        return nil
     end
 
     _G.hl = {
@@ -78,7 +99,19 @@ local function reset()
             end
         end,
         window_rule = function(spec) table.insert(rules, spec) end,
-        get_windows = function() return world.windows end,
+        -- A monitor shows at most one special workspace, and every window the
+        -- stub makes lives in one, so whether a terminal is on screen is
+        -- whether its own workspace is the one showing. Hyprland reports that
+        -- on the workspace the window belongs to, which is where the module
+        -- reads it.
+        get_windows = function()
+            for _, win in ipairs(world.windows) do
+                win.workspace.visible = world.special ~= nil
+                    and win.workspace.name == "special:" .. world.special
+            end
+            return world.windows
+        end,
+        get_cursor_pos = function() return world.cursor end,
         get_active_monitor = function()
             local m = {}
             for k, v in pairs(world.monitor) do m[k] = v end
@@ -131,6 +164,10 @@ local function reset()
                 resize = function(a)
                     return { kind = "resize", arg = a, apply = function()
                         table.insert(resizes, a)
+                        local win = world.at_address(a.window)
+                        if win then
+                            win.size = { x = a.x, y = a.y }
+                        end
                     end }
                 end,
                 move = function(a)
@@ -138,6 +175,11 @@ local function reset()
                         -- move does two jobs: to a workspace, and to a
                         -- position. Keep them apart so each can be asserted.
                         table.insert(a.workspace and moved or geometry, a)
+
+                        local win = not a.workspace and world.at_address(a.window)
+                        if win then
+                            win.at = { x = a.x, y = a.y }
+                        end
                     end }
                 end,
             },
@@ -321,6 +363,40 @@ local last_size, last_pos = resizes[#resizes], geometry[#geometry]
 check("refitted to the wider monitor", last_size and last_size.x, 3440)
 check("...and its height", last_size and last_size.y, 576)
 check("and put at its origin", last_pos and last_pos.x, 0)
+
+-- keybinds.lua refuses SUPER+drag and SUPER+resize over the terminal, so that
+-- a panel whose shape is worked out from the monitor cannot be dragged out of
+-- place. It asks about the pointer, because that is the window Hyprland would
+-- have taken hold of.
+print("scenario: the pointer over a terminal that is on screen")
+reset()
+mod.toggle()
+world.cursor = { x = 3440 + 640, y = 160 }
+check("recognised, so the drag is refused", mod.under_cursor(), true)
+world.cursor = { x = 3440 + 640, y = 320 }
+check("the bottom edge is not the terminal", mod.under_cursor(), false)
+world.cursor = { x = 3439, y = 160 }
+check("nor is the monitor next door", mod.under_cursor(), false)
+
+print("scenario: the pointer where a hidden terminal would be")
+mod.toggle()                         -- away, its box unchanged
+world.cursor = { x = 3440 + 640, y = 160 }
+check("an ordinary window there still drags", mod.under_cursor(), false)
+
+print("scenario: another desktop's terminal, at the same place")
+reset()
+mod.toggle()                         -- desktop 1's, on screen
+switch_to(2)
+mod.toggle()                         -- desktop 2's, on screen in its place
+world.cursor = { x = 3440 + 640, y = 160 }
+check("the one showing is the one that counts", mod.under_cursor(), true)
+switch_to(1)
+check("...and it is again after a switch back", mod.under_cursor(), true)
+
+print("scenario: no terminal at all")
+reset()
+world.cursor = { x = 3440 + 640, y = 160 }
+check("nothing to refuse", mod.under_cursor(), false)
 
 print("scenario: the terminal is closed by hand")
 reset()

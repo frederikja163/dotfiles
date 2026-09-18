@@ -109,7 +109,7 @@ local RESIZE_STEP = 0.05
 -- The cost is granularity: the tick is what the timeout is rounded to, so a
 -- mode ends between IDLE_TIMEOUT - IDLE_TICK and IDLE_TIMEOUT after the last
 -- key, not exactly at it.
-local IDLE_TIMEOUT = 5000
+local IDLE_TIMEOUT = 3000
 local IDLE_TICK = 500
 
 ----------------------------------------------------------------------------

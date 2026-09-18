@@ -96,6 +96,17 @@ echo "all good"
 # Dispatcher tables are not field-validated, so --verify-config accepts any
 # spelling here: only a running instance shows which one works.
 #
+# On the mouse binds, none of which a stub can model: window.drag reads press
+# or release from the keybind that is running, so dispatching it from hyprctl
+# *ends* a drag rather than starting one -- it can only be tested from a bind
+# that a key or button actually fired. A bind fires on the press alone while
+# its modifier is still held, and Hyprland ends any drag in progress at the
+# start of the next input event, not from the bind: a Lua callback that
+# declines to dispatch (keybinds.lua, over the quake terminal) therefore
+# cannot leave a window stuck to the pointer. Every bind made in Lua is the
+# `__lua` dispatcher, and hl.bind never reads opts.mouse at all, so wrapping
+# one in a function changes nothing about how it is dispatched.
+#
 # For the session restore: `[workspace <id> silent] cmd` through exec_cmd works
 # for an ordinary desktop and creates it if it is not there, while exec_raw
 # ignores the prefix entirely and hands the whole string to a shell (its

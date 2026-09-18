@@ -9,6 +9,7 @@ Size mode -> P should exit the mode after clicking P?
 Move desktop mode -> D -> 2 should move desktop after number two. Maybe with shift to mean before/after
 Move mode should not be one shot?
 Git prune worktrees command
+Shell drag and drop to remove dolphin
 Define how dotfiles-check-updates should work
 Title script - sets the title of the workspace overriding the working directory untill it changes
 Single application (non ide + non terminal, should name the workspace)
