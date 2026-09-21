@@ -7,7 +7,12 @@
     follow = keyboard
     monitor = 0
 
-    # Top right, offset far enough down to clear waybar (34px + 6px margin).
+    # Top right, offset far enough down to clear waybar: 12px of margin plus
+    # its 34px height and 6px top margin, from waybar/config.jsonc. Nothing
+    # derives this -- the two files agree only because someone keeps them in
+    # step -- so a bar that moves, or changes height, wants this changed with
+    # it. Dunst is on the `overlay` layer by default, above both the bar and
+    # the quake terminal, so it is only the offset that has to be right.
     origin = top-right
     offset = (12, 52)
     width = (250, 450)

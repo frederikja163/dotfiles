@@ -94,6 +94,24 @@ echo "all good"
 # window.close does take window = "address:0x..." and closes that window rather
 # than the focused one, which is how a desktop closes its own quake terminal.
 #
+# Seeing what a change actually looks like. The sandbox's own window never
+# draws, so grim against it returns a flat clear colour -- but a *headless
+# output created inside it* has its own frame clock and does render:
+#
+#   ./tests/sandbox.sh start
+#   ./tests/sandbox.sh hyprctl output create headless
+#   ./tests/sandbox.sh hyprctl dispatch 'hl.dsp.focus({ workspace = 2 })'
+#   WAYLAND_DISPLAY=<the sandbox's> grim -o HEADLESS-1 shot.png
+#
+# The sandbox's WAYLAND_DISPLAY comes out of exec_raw'ing `printenv` to a
+# file, the way the `keys` subcommand does it. That is how a bottom-only
+# border on the quake terminal was checked pixel by pixel rather than by eye
+# -- the only way to tell a gradient that rendered from one that silently
+# collapsed to a single colour, which several spellings of it do. The border
+# is gone, the technique is not. Note that the backdrop is Hyprland's default
+# wallpaper, so set misc.force_default_wallpaper = 0 and disable_hyprland_logo
+# when sampling anything translucent.
+#
 # And: focusing a workspace takes the focus to *its monitor*, which is the only
 # way to make a desktop on a screen you are not on -- there is no dispatcher
 # that creates one elsewhere, so deskbinds focuses the target screen and lets

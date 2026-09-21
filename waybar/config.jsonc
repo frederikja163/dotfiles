@@ -6,10 +6,38 @@
 // on every screen. Describing the modules once here is the point; the
 // per-monitor copies are derived, never written out again.
 //
+// On the "bottom" layer, not "top", and that is the whole reason the quake
+// terminal can share this edge.
+//
+// Hyprland renders background -> bottom -> windows -> top -> overlay, so a
+// bar on "top" is drawn above every window, floating ones included. It
+// therefore won the top edge outright: the quake terminal is flush to y=0 by
+// design (hypr/quake.lua) and had its first 40px painted over, and the bar
+// swallowed the pointer events there too. On "bottom" the terminal draws over
+// the bar instead, which is exactly the drop-down console behaviour that file
+// is written around.
+//
+// The bar does not disappear the rest of the time, because "layer" and the
+// exclusive zone are independent: this bar still reserves its 40px, so no
+// *tiled* window is ever placed over it and there is nothing to hide it. What
+// can cover it is a floating window in the top 40px -- in this config that is
+// the quake terminal, deliberately -- and a fullscreen window, which would
+// cover a "top" bar as well.
+//
+// Two edges were tried first and rejected. Moving the bar to the bottom
+// worked and was disliked on sight. Pushing the terminal down to the bottom
+// worked too -- hl.get_active_monitor().reserved gives the exclusive zone as
+// {top,bottom,left,right} in layout pixels, so quake.lua's fit() could dodge
+// whatever the bar reserves with no height copied between the two files --
+// and was disliked for the same reason: the console belongs at the top.
+//
+// One thing outside waybar is not derived: dunst/dunstrc offsets its
+// notifications down past this bar, and that number is written by hand.
+//
 // Reload with:  killall -SIGUSR2 waybar
 {
   "name": "main",
-  "layer": "top",
+  "layer": "bottom",
   "position": "top",
   "height": 34,
   "spacing": 6,

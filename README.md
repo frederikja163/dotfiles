@@ -131,7 +131,10 @@ without a `description` will not appear in the list.
 
 Apps open where the desktop is, meaning the directory of its quake terminal:
 ``SUPER + ` `` drops that terminal down, `SUPER + Q` opens another one beside it
-and `SUPER + I` runs `bin/ide` there.
+and `SUPER + I` runs `bin/ide` there. It is flush to the top edge and draws
+*over* waybar, which is why the bar is on the `bottom` layer rather than `top`
+— see `waybar/config.jsonc`. The bar still reserves its strip, so no tiled
+window is ever placed under it.
 
 ## Desktop model
 

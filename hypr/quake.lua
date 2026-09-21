@@ -28,6 +28,15 @@ local CLASS = "quake"
 -- Full width, top 40%, flush to the top edge -- so it covers the bar, like the
 -- console in the game. Put it below the bar by raising the y in `move`.
 --
+-- It only covers the bar because waybar is on the "bottom" layer. Hyprland
+-- renders background -> bottom -> windows -> top -> overlay, so a bar on
+-- "top" -- which is waybar's default, and what this config used to have --
+-- is drawn above every window including floating ones, and painted over this
+-- terminal's first 40px while taking the pointer events there too. The one
+-- word in waybar/config.jsonc is load-bearing for everything below; the
+-- reasoning, and the two rearrangements tried before it, are written down
+-- there.
+--
 -- Percentages are silently ignored in these rules: "100% 40%" leaves the
 -- terminal at its default size, with no error anywhere. monitor_w/monitor_h and
 -- arithmetic do work, and are the same expression syntax as the move rule in
@@ -49,6 +58,17 @@ hl.window_rule({
     -- stripe down the side of the monitor next door: 2px of border and 4px of
     -- shadow, per look.lua. Switching them off keeps the full width, which
     -- shrinking the terminal to make room for them would not.
+    --
+    -- A bottom-only accent line was built here and taken out again -- not
+    -- because it could not be done, but because it was not wanted. Recorded
+    -- so it is not rediscovered from scratch: Hyprland has no per-side
+    -- border, so it took the window's own y = 0 to hide the top one, a 3px
+    -- inset in fit() to keep the side ones off the next monitor, and a
+    -- ten-stop `border_color` gradient at angle 90 (top to bottom) that is
+    -- transparent until its last stop. It also needed a per-window
+    -- set_prop("inactive_border_color"), because a rule's border_color sets
+    -- the focused colour only and the unfocused one fell back to look.lua's
+    -- grey ring. The API details are in the hyprland-lua-config skill.
     border_size = 0,
     no_shadow   = true,
 })

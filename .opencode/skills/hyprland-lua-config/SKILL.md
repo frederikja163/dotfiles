@@ -51,9 +51,59 @@ These cost hours each. All verified against Hyprland 0.56.2.
   `error applying field 'position'`. Positions are logical pixels (a screen's
   pixels divided by its scale); a rotated (transform 1/3) screen's dimensions
   swap. The `hl.get_monitors()` monitor object exposes `width`, `height`,
-  `scale`, `x`, `y` and `id` but no `wl`/`px_w` logical-size fields, and is
+  `scale`, `x`, `y`, `id`, `name`, `transform`, `active_workspace` and
+  `reserved` but no `wl`/`px_w` logical-size fields, and is
   empty at module load (see monitors.lua's tests for what the layout is built
-  from).
+  from). It is a `HL.Monitor`, not a table, so `pairs()` on it throws
+  (`bad argument #1 to 'for iterator'`) — probe it by indexing names you
+  guess, not by enumerating.
+- **`monitor.reserved` is the layer-shell exclusive zone**, a real Lua table of
+  `{ top, bottom, left, right }` in *logical* pixels — a 34px waybar with a 6px
+  margin reads 40 on a scale-1.5 panel and on a scale-1.0 one alike, which is
+  the same space `x`/`y` and `width / scale` are in. So anything that has to
+  dodge a bar can read where the bar is instead of being told, and stays right
+  when the bar moves or resizes. Not obvious from anywhere: `hyprctl monitors`
+  shows `reserved` but calling `hyprctl` from inside the config deadlocks.
+  Nothing in this repo needs it today — quake.lua deliberately overlaps the
+  bar instead — but it is the way to dodge a panel without copying its height
+  into the Lua. Note that **window rules cannot see it**: `monitor_h` in a
+  `move`/`size` expression is the whole screen and there is no token for the
+  reserved zone, so a floating panel that must dodge one has to be placed from
+  Lua, with the rule only ever deciding the first frame.
+- **There is no per-side border.** `border_size` is one number and the border
+  is a ring drawn *outside* the window on all four sides. A one-sided border
+  means putting the other three where they cannot be seen — off the monitor,
+  or transparent via a `border_color` gradient. It works (built and measured
+  on quake.lua, then removed as unwanted; the recipe is in the comment there),
+  but every one of the points below is a way for it to fail silently.
+- **A window rule's `border_color` sets only the *focused* colour.** An
+  unfocused window falls back to `general:col.inactive_border` — verified in a
+  nested instance, where a window carrying a red rule rendered (135,135,135)
+  — and `inactive_border_color` is not a rule field. The per-window inactive
+  colour is `hl.dsp.window.set_prop{ prop = "inactive_border_color", ... }`.
+  `set_prop`'s prop names are the Lua spellings: `active_border_color`,
+  `inactive_border_color`, `border_size`, `rounding` work, while hyprctl's
+  `bordercolor`, `activebordercolor` and `bordersize` are "Invalid prop name".
+- **`set_prop` takes a single colour, never a gradient.** Handed a
+  `{ colors, angle }` table it silently uses the first stop; handed the
+  `"rgba(..) rgba(..) 90deg"` string it draws a uniform ring. Both render
+  without error, so only a screenshot shows the difference. A gradient border
+  is therefore reachable *only* through a window rule, and so only for the
+  focused state.
+- **A gradient's `angle = 90` runs top to bottom** — first colour at the top,
+  last at the bottom. Measured with an opaque red-to-blue ring: the left
+  border read (251,25,29) at its top and (26,34,248) at its bottom.
+- **Window rules apply at creation and are not re-applied on reload.** After
+  `hyprctl reload` an existing window keeps the border, size and rounding it
+  was born with; only new windows get the edited rule.
+  `hl.exec_scheduled_prop_refresh_immediately()` does not change that.
+- **A layer's level and its exclusive zone are independent.** Moving a bar from
+  `layer: top` to `layer: bottom` puts it *under* windows — which is how a
+  floating window can be made to cover it — while `reserved` stays exactly as
+  it was, so tiled windows still keep out of the strip and nothing ordinary
+  hides the bar. Verified against waybar: level went 2 -> 1 in
+  `hyprctl layers`, `reserved [0, 40, 0, 0]` unchanged, tiled windows still
+  placed at y=47.
 - **`hl.dsp.workspace.toggle_special` takes a bare positional name**:
   `toggle_special("quake-1")`, no `special:` prefix. Passing a table —
   `{ workspace = ... }` or `{ name = ... }` — is accepted and ignored, and
