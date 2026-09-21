@@ -52,6 +52,7 @@ while i < len(raw):
 config = json.loads("".join(out))
 
 monitors = json.loads(monitors_raw)
+
 # Skip outputs with no usable mode. A connector can sit in hyprctl as connected
 # and not disabled while still reporting 0x0 -- a dock or a cable the kernel
 # could not modeset, which shows up as "atomic commit failed" in the Hyprland
@@ -83,6 +84,27 @@ json.dump(bars, open(dst, "w"), indent=2)
 PY
 }
 
+# Waybar draws its icons through glycin, which renders every SVG in a bwrap
+# sandbox. bwrap refuses to start at all when its caller holds capabilities
+# without being setuid -- "Unexpected capabilities but not setuid, old file
+# caps config?" -- and this session carries cap_wake_alarm in its ambient set,
+# so everything Hyprland starts inherits it. The sandbox therefore never runs,
+# no SVG loads, and GTK cannot even load its own image-missing fallback, which
+# it treats as a failed assertion and aborts on. The bar dies before it draws,
+# which reads as waybar crashing the instant it is opened.
+#
+# Dropping the capability is the cause, not a workaround: waybar has no use for
+# cap_wake_alarm, and without it the sandbox starts and the icons load. Note
+# librsvg no longer ships a gdk-pixbuf SVG loader, so there is no non-sandboxed
+# path left to fall back to.
+#
+# Removing the privacy module also stops the crash and was rejected: its icon
+# is merely the first SVG the bar happens to load, so that only moves the abort
+# to the first tray icon that appears.
+waybar_nocaps() {
+    exec setpriv --inh-caps=-all --ambient-caps=-all waybar "$@"
+}
+
 pkill -x waybar 2>/dev/null
 # Give it a moment to release its layer surfaces, or a new bar can land on a
 # monitor that is still occupied.
@@ -91,8 +113,8 @@ sleep 0.3
 monitors="$(hyprctl monitors -j 2>/dev/null)"
 
 if [ -n "$monitors" ] && write_config "$monitors"; then
-    exec waybar -c "$GENERATED"
+    waybar_nocaps -c "$GENERATED"
 fi
 
 echo "waybar-main: could not read the monitors, showing the full bar on all of them" >&2
-exec waybar
+waybar_nocaps

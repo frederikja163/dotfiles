@@ -79,8 +79,12 @@ restart_if_running() {
 
 # waybar cannot go through step() the way the others do.
 #
-# bin/waybar-main ends in `exec waybar`, so it does not return while the bar is
-# up -- it *is* the bar. Handing it to step(), which waits for its command and
+# bin/waybar-main ends by exec'ing waybar (via setpriv, for the reason given
+# there), so it does not return while the bar is up -- it *is* the bar. setpriv
+# execs rather than forks, so the process is still named waybar and the
+# `pgrep -x waybar` below still finds it.
+#
+# Handing it to step(), which waits for its command and
 # reads the exit status, parked this script on it for the rest of the session:
 # every reload left a dotfiles-reload process holding a waybar and never ran the
 # hyprpaper, hypridle or dunst steps below at all. Then the next reload's
