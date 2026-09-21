@@ -52,6 +52,19 @@ while i < len(raw):
 config = json.loads("".join(out))
 
 monitors = json.loads(monitors_raw)
+# Skip outputs with no usable mode. A connector can sit in hyprctl as connected
+# and not disabled while still reporting 0x0 -- a dock or a cable the kernel
+# could not modeset, which shows up as "atomic commit failed" in the Hyprland
+# log. Asking for a bar there does not merely fail on that output: waybar's
+# layer surface never gets configured, gtk-layer-shell gives up with "Timed out
+# waiting for initial .configure", and *every* bar in the process stays
+# unmapped. The bar is then running, logging "Bar configured", and invisible on
+# all screens -- the worst way to fail, because nothing looks wrong.
+monitors = [
+    m for m in monitors
+    if not m.get("disabled") and m.get("width") and m.get("height")
+]
+
 if not monitors:
     sys.exit(1)
 

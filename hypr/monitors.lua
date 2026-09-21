@@ -82,6 +82,26 @@ local function apply_pinned()
         row[#row + 1] = mon
     end
 
+    -- A screen whose mode could not be set sits in get_monitors() as 0x0: a
+    -- cable or dock the kernel refused to modeset, which shows up as "atomic
+    -- commit failed" in the Hyprland log. It is still configured below, so a
+    -- later attempt can bring it up, but it goes to the end of the row first.
+    -- It contributes no width, so leaving it in its pinned slot hands the
+    -- screen after it the very same position and stacks two monitors on one
+    -- spot -- a dead output must not be able to move a working one.
+    local sized, unsized = {}, {}
+    for _, mon in ipairs(row) do
+        if (mon.width or 0) > 0 and (mon.height or 0) > 0 then
+            sized[#sized + 1] = mon
+        else
+            unsized[#unsized + 1] = mon
+        end
+    end
+    for _, mon in ipairs(unsized) do
+        sized[#sized + 1] = mon
+    end
+    row = sized
+
     local x, y = 0, 0
     for _, mon in ipairs(row) do
         local entry = by_identity[monitorpin.identity(mon)]

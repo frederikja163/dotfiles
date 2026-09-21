@@ -207,6 +207,22 @@ apply()
 check("only the live screen is placed", #placed(), 1)
 check("BOE at 0 again", mon("eDP-1").position, "0x0")
 
+print("scenario: a screen with no usable mode cannot displace a working one")
+-- A modeset that the kernel refused leaves the screen connected and 0x0. It is
+-- pinned first here, the worst case: it takes no width, so left in that slot it
+-- would hand the working screen the same 0x0 position and stack the two.
+set_pin("Dell DELL P3424WE DVYH6T3\nBOE 0x0DBB\n")
+reset { monitors = {
+    screen("DP-5", "Dell DELL P3424WE DVYH6T3", 1, 0, 0, 1),
+    screen("eDP-1", "BOE 0x0DBB", 0, 1920, 1200, 1.5),
+} }
+apply()
+check("the working screen leads the row", placed()[1].output, "eDP-1")
+check("...and keeps the origin", mon("eDP-1").position, "0x0")
+check("the dead screen is pushed to the end", placed()[2].output, "DP-5")
+check("...past the working screen, not on top of it", mon("DP-5").position, "1280x0")
+check("both are still configured, so it can come back", #placed(), 2)
+
 print("scenario: the row is re-issued on the events that matter")
 check("hyprland.start hooked", type(events["hyprland.start"]), "function")
 check("config.reloaded hooked", type(events["config.reloaded"]), "function")
