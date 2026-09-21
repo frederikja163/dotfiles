@@ -27,3 +27,5 @@
 	# Slower than the default, and lines the diff up with what actually
 	# changed rather than the first match it finds.
 	algorithm = histogram
+[pull]
+	rebase = false
