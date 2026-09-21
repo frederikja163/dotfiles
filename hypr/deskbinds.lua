@@ -206,20 +206,48 @@ end
 
 -- Where a focus or a move at the edge of a desktop crosses to: the desktop in
 -- view on the neighbouring screen, and its workspace id. `dir` is the
--- direction stepped on the current screen ("prev" is left, "next" is right).
+-- direction stepped ("prev" is left, "next" is right).
 --
--- The current desktop is read from the focused monitor rather than passed in,
--- because the crossing has to work from an *empty* desktop too -- that is the
--- whole point of it: an empty desktop carries no window and so no workspace id
--- for the layout to hand over, and this is the only thing that gets the focus
--- back off one. Landing on an empty desktop beside is fine; being stuck there
--- was the bug.
+-- `from_ws` is the desktop being stepped off, and the screen is worked out
+-- from it rather than from whichever monitor has focus. That distinction is
+-- the whole reason it is passed: follow_mouse is on, so the focused monitor
+-- is wherever the *pointer* rests, which is not necessarily the screen the
+-- layout is laying out. Reading the monitor instead of the desktop crossed
+-- from the wrong screen whenever the mouse was resting on the other one.
+--
+-- A desktop that is not the one in view on its screen has no edge to step
+-- off, and answers nil. The layout can be asked about one -- it is keyed by
+-- workspace id and a hidden desktop still has a state -- and crossing from it
+-- would move the focus somewhere the user is not looking.
+--
+-- `from_ws` is nil when the caller genuinely does not know, which happens for
+-- exactly one case: an empty desktop carries no window, so the layout has no
+-- workspace id to hand over. Crossing still has to work there -- it is the
+-- only thing that gets the focus back off an empty desktop, and being stuck
+-- was the bug -- so the monitor in front is the fallback, that being all
+-- there is to go on.
 --
 -- The neighbouring desktop itself may be empty. That is deliberate: the focus
 -- follows the screens, and an empty screen still has windows on the screens
 -- around it to step to next.
-local function edge_workspace(dir)
-    local mon = hl.get_active_monitor()
+local function edge_workspace(from_ws, dir)
+    local mon
+
+    if from_ws then
+        for _, m in ipairs(hl.get_monitors() or {}) do
+            local showing = m.active_workspace
+            if showing and showing.id == from_ws then
+                mon = m
+                break
+            end
+        end
+        if not mon then
+            return nil -- not in view, so there is no edge to step off
+        end
+    else
+        mon = hl.get_active_monitor()
+    end
+
     if not mon then
         return nil
     end
@@ -1452,8 +1480,14 @@ end
 -- columns.lua works in workspace ids and has no idea what a screen is, so the
 -- crossing itself is looked up here and handed over as the workspace to step
 -- onto. Set once the module is loaded: the layout only ever calls it at
--- runtime, when a key is pressed. A move takes the screen immediately beside;
--- a focus skips screens with nothing on them.
+-- runtime, when a key is pressed.
+--
+-- The same function for both, so a move and a focus cross alike: each takes
+-- the screen immediately beside, whether or not anything is on it. Landing on
+-- an empty screen is the point rather than a defect -- the next press carries
+-- on from there and the opposite direction comes straight back -- so there is
+-- nothing here that wants to skip one. columns.lua keeps the two hooks apart
+-- anyway, which is where they would diverge if that ever changed.
 columns.set_screen_step(edge_workspace)
 columns.set_screen_focus(edge_workspace)
 

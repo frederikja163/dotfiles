@@ -798,12 +798,21 @@ end
 -- Until it is set -- the stubbed tests, or a config that failed part way --
 -- a focus or a move at the edge stays inside the desktop, as it always did.
 --
--- Two hooks, because the two crossings want different screens. A *move* goes
--- to the screen immediately beside, however empty it is: the window is what
--- makes the desktop, so landing on a bare one is fine. A *focus* cannot do
--- that -- there would be nothing to focus and no window to start a move back
--- from -- so it skips screens with no window on them and takes the nearest
--- that has one.
+-- Both are called as fn(from_ws, dir) and answer a workspace id, or nil for
+-- "do not cross". `from_ws` is the desktop being stepped off, so the hook can
+-- work out which *screen* that is; it must be passed rather than left to the
+-- hook to look up, because follow_mouse means the focused monitor is wherever
+-- the pointer rests and not necessarily the screen being laid out. It is nil
+-- only where there is genuinely no id to give -- an empty desktop, which
+-- carries no window and so no workspace -- and the hook falls back to the
+-- screen in front for that one case.
+--
+-- Two hooks rather than one because a move and a focus could reasonably want
+-- different screens: a move goes to the screen beside however empty it is,
+-- since the window is what makes the desktop, whereas a focus landing on a
+-- bare screen has nothing to focus. deskbinds currently gives both the same
+-- function, so they behave identically; the split is kept because it costs
+-- nothing and is the seam where that would change.
 local screen_step = nil
 local screen_focus = nil
 
@@ -889,7 +898,10 @@ hl.layout.register("columns", {
             if command == "focus" and screen_focus then
                 local dir = ({ l = "prev", r = "next" })[arg]
                 if dir then
-                    local target_ws = screen_focus(dir)
+                    -- nil workspace, deliberately: there is no id to give,
+                    -- and that is the signal for the hook to fall back to
+                    -- the screen in front. See edge_workspace in deskbinds.
+                    local target_ws = screen_focus(nil, dir)
                     if target_ws then
                         hl.dispatch(hl.dsp.focus({ workspace = target_ws }))
                     end
@@ -922,7 +934,7 @@ hl.layout.register("columns", {
                 -- even when it is empty. The point is to keep moving: the next
                 -- press carries on from there, and the opposite direction
                 -- comes straight back.
-                local target_ws = screen_focus(dir)
+                local target_ws = screen_focus(ws, dir)
                 if target_ws then
                     hl.dispatch(hl.dsp.focus({ workspace = target_ws }))
                 end
@@ -936,7 +948,7 @@ hl.layout.register("columns", {
             -- its existing behaviour: it splits off a new column inward.
             if (dir == "prev" or dir == "next") and at_edge(st, id, dir)
                and alone_in_column(st, id) and screen_step then
-                local target_ws = screen_step(dir)
+                local target_ws = screen_step(ws, dir)
                 if target_ws then
                     move_window_to_screen(st, id, dir, target_ws)
                 end
