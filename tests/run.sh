@@ -93,6 +93,16 @@ echo "all good"
 # whichever screen is in front, which is what an unbound id already gets.
 # window.close does take window = "address:0x..." and closes that window rather
 # than the focused one, which is how a desktop closes its own quake terminal.
+#
+# And: focusing a workspace takes the focus to *its monitor*, which is the only
+# way to make a desktop on a screen you are not on -- there is no dispatcher
+# that creates one elsewhere, so deskbinds focuses the target screen and lets
+# the next focus be born there. Verified with a second headless output in the
+# sandbox (`hyprctl output create headless`). The stub had to be taught to
+# follow focus for this: without it the sequence looks like it works while
+# putting every desktop on the screen the test started on. Note the screen you
+# left keeps no empty desktop behind -- it lapses as focus leaves it, so a
+# screen with one empty desktop still has exactly one afterwards.
 # Dispatcher tables are not field-validated, so --verify-config accepts any
 # spelling here: only a running instance shows which one works.
 #

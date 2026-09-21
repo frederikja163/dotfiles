@@ -161,25 +161,38 @@ one has pinned yet follow in id order. A screen's line can also carry
 `monitors.lua` applies; the same script asks for it, and then for the row's
 direction — monitor 1 on the left (the default `ltr`), on the right (`rtl`),
 or the screens stacked top-to-bottom (`ttb`). A screen number acts on that
-screen — or, when it is the screen you are already on, on a brand-new desktop
-there. The overload is the same at every scope:
+screen, and does nothing when it is the screen you are already on. Adding
+`CTRL` makes the destination a **desktop that does not exist yet** on that
+screen, and that reading answers the same wherever you are:
 
-|                          | another screen    | the one you are on          |
-| ------------------------ | ----------------- | --------------------------- |
-| `SUPER + n`              | go there          | a new desktop, kept while empty |
-| `SUPER+M` then `n`       | window there      | window to a new desktop     |
-| `SUPER+SHIFT+M` then `n` | column there      | column to a new desktop     |
-| `SUPER+CTRL+M` then `n`  | this desktop there | —                          |
-| `SUPER+D` then `n`       | duplicate/extend  | —                           |
+|                                 | acts on screen `n`                 |
+| ------------------------------- | ---------------------------------- |
+| `SUPER + n`                      | go there                           |
+| `SUPER+CTRL + n`                 | go to a new desktop there, kept while empty |
+| `SUPER+M` then `n`               | window there                       |
+| `SUPER+M` then `CTRL+n`          | window to a new desktop there      |
+| `SUPER+SHIFT+M` then `n`         | column there                       |
+| `SUPER+SHIFT+M` then `CTRL+n`    | column to a new desktop there      |
+| `SUPER+CTRL+M` then `n`          | this desktop there                 |
+| `SUPER+SHIFT+D` then `n`         | duplicate/extend                   |
+
+`CTRL` used to be unnecessary: a screen number meant "a new desktop" when it
+named the screen you were already on. With `follow_mouse` that is wherever the
+*cursor* rests rather than where you are looking, so the same chord changed
+screen or minted a desktop depending on where the mouse had been left — and a
+desktop could only ever be made on the screen already in front. Both readings
+are their own key now.
 
 Cycling desktops is the other axis, on `Tab`, so none of this depends on how
-many desktops happen to exist: `SUPER + n` always makes one, `SUPER + Tab`
+many desktops happen to exist: `SUPER+CTRL + n` always makes one, `SUPER + Tab`
 always moves between the ones there are.
 
 A number addresses a *screen*, so going to a particular **desktop** by number
 has a verb of its own: `SUPER + D` then `2` is the second desktop on this
 screen — the second button on the bar — whichever workspace id it happens to
-hold. It does nothing if there is no such desktop; making one is `SUPER + n`.
+hold. It does nothing if there is no such desktop; making one is
+`SUPER+CTRL + n`, or `SUPER + D` then `n` for one on whichever screen is in
+front.
 
 The same split applies inside a move mode, where a number also means a screen.
 Press `d` there and the numbers start counting desktops instead, so

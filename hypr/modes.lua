@@ -6,8 +6,8 @@
 --
 --   h j k l    a direction inside the desktop
 --   Tab        the next desktop on this screen; SHIFT+Tab the previous one
---   1 .. 0     screen n -- or, when it is the screen you are already on, a
---              brand-new desktop on it (see deskbinds.lua for that overload)
+--   1 .. 0     screen n, and nothing when you are already on it
+--   CTRL+1..0  a brand-new desktop on screen n, whichever screen you are on
 --
 -- Normal mode navigates: SUPER + a motion goes there. A verb key enters a
 -- mode, and inside a mode the motions work with or without SUPER held -- see
@@ -46,7 +46,8 @@
 -- Modifiers therefore carry almost nothing. SHIFT reverses a motion (Tab),
 -- widens a verb's scope (M), or marks the other variant of a letter
 -- (keybinds.lua's SUPER+SHIFT+C for a force kill, SUPER+SHIFT+F for floating
--- beside fullscreen). CTRL appears once, on M. ALT is unused.
+-- beside fullscreen). CTRL appears twice: on M, and on a screen number, where
+-- it means "a new desktop there" rather than "there". ALT is unused.
 --
 --
 -- Things that cost an afternoon each, all verified against Hyprland 0.56.2:
@@ -406,10 +407,18 @@ hl.bind(mainMod .. " + mouse_down", function() deskbinds.focus_neighbour_desktop
 hl.bind(mainMod .. " + mouse_up", function() deskbinds.focus_neighbour_desktop(-1) end,
         { description = "Previous desktop on this screen" })
 
--- The screen axis.
+-- The screen axis, and the new-desktop axis laid over it.
+--
+-- A bare number is a place: screen n, and nothing at all when that is the
+-- screen you are on. CTRL makes it a place that does not exist yet -- a new
+-- desktop on screen n -- and that answers the same whichever screen is in
+-- front, so it is one chord rather than a chord whose meaning depends on where
+-- the mouse happens to be resting. deskbinds.lua's header has the history.
 for n = 1, SCREENS do
     hl.bind(mainMod .. " + " .. screen_key(n), function() deskbinds.focus_screen(n) end,
-            { description = ("Screen %d: go there, or a new desktop if already there"):format(n) })
+            { description = ("Screen %d"):format(n) })
+    hl.bind(mainMod .. " + CTRL + " .. screen_key(n), function() deskbinds.new_desktop_on_screen(n) end,
+            { description = ("A new desktop on screen %d, kept while empty"):format(n) })
 end
 
 ----------------------------------------------------------------------------
@@ -438,6 +447,7 @@ local MOVE_SCOPES = {
         end,
         desktop = function(step) deskbinds.move_window_to_neighbour_desktop(step) end,
         screen = function(n) deskbinds.move_window_to_screen(n) end,
+        screen_new = function(n) deskbinds.move_window_to_new_desktop_on_screen(n) end,
         desktop_index = function(n) deskbinds.move_window_to_desktop_index(n) end,
     },
     {
@@ -452,6 +462,7 @@ local MOVE_SCOPES = {
         end,
         desktop = function(step) deskbinds.move_column_to_neighbour_desktop(step) end,
         screen = function(n) deskbinds.move_column_to_screen(n) end,
+        screen_new = function(n) deskbinds.move_column_to_new_desktop_on_screen(n) end,
         desktop_index = function(n) deskbinds.move_column_to_desktop_index(n) end,
     },
     {
@@ -467,10 +478,13 @@ local MOVE_SCOPES = {
             local step = d.col == "prev" and -1 or 1
             return function() deskbinds.move_desktop_in_row(step) end
         end,
-        -- A desktop cannot move to a desktop; only to another screen.
+        -- A desktop cannot move to a desktop; only to another screen. Nor to a
+        -- new desktop, which is why there is no CTRL variant here either --
+        -- "send this desktop to a desktop that does not exist" says nothing.
         desktop = nil,
         desktop_index = nil,
         screen = function(n) deskbinds.move_desktop_to_screen(n) end,
+        screen_new = nil,
     },
 }
 
@@ -508,8 +522,16 @@ for _, scope in ipairs(MOVE_SCOPES) do
             -- destination, not a nudge, and there is nothing to repeat once you
             -- are there.
             bind_in_mode(screen_key(n), oneshot(function() scope.screen(n) end),
-                         { description = ("Move the %s to screen %d, or a new desktop if already there")
-                                         :format(scope.noun, n) })
+                         { description = ("Move the %s to screen %d"):format(scope.noun, n) })
+
+            -- CTRL means the same thing here as it does in normal mode: the
+            -- destination is a desktop that does not exist yet, on that
+            -- screen, whichever screen is in front.
+            if scope.screen_new then
+                bind_in_mode("CTRL + " .. screen_key(n), oneshot(function() scope.screen_new(n) end),
+                             { description = ("Move the %s to a new desktop on screen %d")
+                                             :format(scope.noun, n) })
+            end
         end
 
         -- No catchall: the motions above are sticky now, and it would cancel
@@ -634,14 +656,10 @@ define_mode(SUBMAP_DESKTOP, mainMod .. " + D", function()
 
     -- Making a desktop without naming a screen.
     --
-    -- SUPER+n does this too, but only if n is the screen you are on -- and with
-    -- follow_mouse the screen you are on is wherever the *cursor* is, not where
-    -- you are looking. Press SUPER+1 while the mouse happens to rest on the
-    -- other screen and you get "go to screen 1" instead of a new desktop, which
-    -- is why it felt like the desktop appeared at random.
-    --
-    -- This asks for the same thing without having to be right about which
-    -- screen that is.
+    -- SUPER+CTRL+n does this too, but it names a screen. This is the one that
+    -- says "here", for when you do not care which screen that is and do not
+    -- want to have to be right about it -- with follow_mouse, "here" is
+    -- wherever the cursor rests rather than where you are looking.
     bind_in_mode("n", oneshot(function() deskbinds.new_desktop_here(true) end),
                  { description = "A new desktop here, kept while empty" })
 

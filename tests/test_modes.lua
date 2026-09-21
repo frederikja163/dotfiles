@@ -215,6 +215,11 @@ check("previous desktop", normal["SUPER + SHIFT + Tab"], true)
 check("the mouse cycles desktops as well", normal["SUPER + mouse_down"], true)
 for n = 1, mod.SCREENS do
     check("screen " .. n, normal["SUPER + " .. mod.screen_key(n)], true)
+    -- CTRL is the second reading of a screen number: a desktop on screen n
+    -- that does not exist yet. A separate chord rather than the old overload
+    -- on "n is the screen you are already on", which with follow_mouse turned
+    -- on where the cursor happened to be resting.
+    check("a new desktop on screen " .. n, normal["SUPER + CTRL + " .. mod.screen_key(n)], true)
 end
 
 print("scenario: normal mode does NOT keep the old move/resize chords")
@@ -224,7 +229,9 @@ for _, keys in ipairs({
     "SUPER + SHIFT + h", "SUPER + SHIFT + l", "SUPER + SHIFT + j", "SUPER + SHIFT + k",
     "SUPER + CTRL + h",  "SUPER + CTRL + l",  "SUPER + CTRL + j",  "SUPER + CTRL + k",
     "SUPER + ALT + SHIFT + h", "SUPER + ALT + SHIFT + 1",
-    "SUPER + SHIFT + 1", "SUPER + CTRL + 1", "SUPER + CTRL + SHIFT + 1",
+    -- SUPER+CTRL+1 is deliberately absent from this list: it is bound again,
+    -- but as "a new desktop on screen 1" rather than whatever it once meant.
+    "SUPER + SHIFT + 1", "SUPER + CTRL + SHIFT + 1",
 }) do
     check("gone: " .. keys, normal[keys], nil)
 end
@@ -371,6 +378,12 @@ for _, scope in ipairs(mod.MOVE_SCOPES) do
 
     for n = 1, mod.SCREENS do
         check(("%s: screen %d"):format(scope.submap, n), k[mod.screen_key(n)], true)
+        -- ...and the same number under CTRL, meaning a new desktop there,
+        -- wherever the scope says that reading applies. It does not for a
+        -- desktop: "send this desktop to a desktop that is not there" says
+        -- nothing, so the move desktop mode declares screen_new = nil.
+        check(("%s: a new desktop on screen %d"):format(scope.submap, n),
+              k["CTRL + " .. mod.screen_key(n)] == true, scope.screen_new ~= nil)
     end
 end
 
@@ -403,6 +416,11 @@ for _, scope in ipairs(mod.MOVE_SCOPES) do
         local keys = mod.screen_key(n)
         check(("%s: screen %s is a destination, so the mode ends"):format(scope.submap, keys),
               ends_in_submap(binds[scope.submap][keys]), "reset")
+
+        if scope.screen_new then
+            check(("%s: a new desktop on screen %s ends it too"):format(scope.submap, keys),
+                  ends_in_submap(binds[scope.submap]["CTRL + " .. keys]), "reset")
+        end
     end
 end
 

@@ -124,6 +124,21 @@ local function reset(w)
                             { id = a.workspace, special = false, monitor = mon })
                     end
                 end
+                -- And the focus lands on whichever screen the desktop is on,
+                -- which is the whole mechanism behind making a desktop on a
+                -- screen you are not on: there is no dispatcher that creates
+                -- one elsewhere, so deskbinds focuses the target screen first
+                -- and lets the next focus be born there. Without the stub
+                -- following focus, that sequence looks like it works while
+                -- putting every desktop on the screen the test started on.
+                if not a.window then
+                    for _, ws in ipairs(world.workspaces) do
+                        if ws.id == a.workspace and ws.monitor then
+                            world.focused_monitor_id = ws.monitor.id
+                            ws.monitor.active_workspace = ws
+                        end
+                    end
+                end
                 return { kind = "focus", arg = a }
             end,
             window = {
@@ -211,7 +226,9 @@ print("scenario: monitor 1 (eDP-1) focused")
 reset(two_monitors(0))
 check("no keys bound here", bind_count(), 0)
 for _, name in ipairs({
-    "focus_screen", "move_window_to_screen", "move_column_to_screen",
+    "focus_screen", "new_desktop_on_screen",
+    "move_window_to_screen", "move_window_to_new_desktop_on_screen",
+    "move_column_to_screen", "move_column_to_new_desktop_on_screen",
     "move_desktop_to_screen", "toggle_mirror_screen", "focus_neighbour_desktop",
     "move_window_to_neighbour_desktop", "move_column_to_neighbour_desktop",
 }) do
@@ -223,8 +240,22 @@ reset(two_monitors(0))
 mod.focus_screen(2)
 check("another screen -> focus its workspace", last().arg.workspace, 3)
 
+-- The screen number no longer means two things depending on where you are.
+-- It used to make a desktop here when you named the screen you were already
+-- on, which with follow_mouse depended on where the cursor had been left.
 reset(two_monitors(0))
+local before_self = #dispatched
 mod.focus_screen(1)
+check("the screen you are on -> nothing at all", #dispatched, before_self)
+
+reset(two_monitors(0))
+local before = #dispatched
+mod.focus_screen(5)
+check("a screen that is not there -> nothing", #dispatched, before)
+
+print("scenario: a new desktop on a named screen")
+reset(two_monitors(0))
+mod.new_desktop_on_screen(1)
 check("the screen you are on -> a new desktop, lowest free id", last_of("focus").arg.workspace, 4)
 local persisted_new = nil
 for _, rule in ipairs(rules) do
@@ -232,10 +263,30 @@ for _, rule in ipairs(rules) do
 end
 check("...and it is kept while empty", persisted_new, true)
 
+-- The half that was impossible before: a desktop on a screen you are not on.
+-- Creating one means focusing it, and it is born wherever focus is, so the
+-- target screen has to be focused first -- and the focus comes along, which is
+-- what asking for a desktop over there means.
+reset(two_monitors(0)) -- eDP-1 focused
+mod.new_desktop_on_screen(2)
+local made = last_of("focus").arg.workspace
+check("another screen -> a desktop is made there too", made, 4)
+local born_on
+for _, ws in ipairs(world.workspaces) do
+    if ws.id == made then born_on = ws.monitor and ws.monitor.name end
+end
+check("...on that screen, not the one you were on", born_on, "DP-4")
+check("...and the focus went with it", world.focused_monitor_id, 1)
+local pinned_new
+for _, rule in ipairs(rules) do
+    if rule.workspace == tostring(made) then pinned_new = rule.monitor end
+end
+check("...with its rule naming the screen asked for", pinned_new, "DP-4")
+
 reset(two_monitors(0))
-local before = #dispatched
-mod.focus_screen(5)
-check("a screen that is not there -> nothing", #dispatched, before)
+local before_missing = #dispatched
+mod.new_desktop_on_screen(5)
+check("a screen that is not there -> nothing", #dispatched, before_missing)
 
 print("scenario: a new desktop lands at the end of its own screen")
 -- The shape that used to get this wrong: a lower id is free, but it belongs
@@ -247,7 +298,7 @@ for i, ws in ipairs(gap.workspaces) do
     if ws.id == 2 then table.remove(gap.workspaces, i) break end
 end
 reset(gap)
-mod.focus_screen(2) -- the screen you are on: makes a desktop
+mod.new_desktop_on_screen(2) -- the screen you are on
 check("skips the free id below this screen's own", last_of("focus").arg.workspace, 4)
 
 -- ...and the gap is still available to the screen it sorts correctly on.
@@ -256,7 +307,7 @@ for i, ws in ipairs(gap2.workspaces) do
     if ws.id == 2 then table.remove(gap2.workspaces, i) break end
 end
 reset(gap2)
-mod.focus_screen(1)
+mod.new_desktop_on_screen(1)
 check("but reuses it where it does sort last", last_of("focus").arg.workspace, 2)
 
 print("scenario: crossing screens at the edge")
@@ -341,10 +392,28 @@ check("to another screen", last().arg.workspace, 3)
 check("...by moving it", last().kind, "move")
 
 reset(two_monitors(0))
+local before_self_move = #dispatched
 mod.move_window_to_screen(1)
-check("to a new desktop on the screen you are on", last_of("focus").arg.workspace, 4)
+check("to the screen it is already on -> nothing", #dispatched, before_self_move)
+
+print("scenario: moving the window to a desktop that does not exist yet")
+reset(two_monitors(0))
+mod.move_window_to_new_desktop_on_screen(1)
+check("a new desktop on the screen you are on", last_of("focus").arg.workspace, 4)
 check("...and the window follows", last_of("move").arg.workspace, 4)
 check("...addressed by window, since focus has moved on", last_of("move").arg.window, "address:0xWIN1")
+check("...with no rule: it has a window on it, so it cannot lapse", #rules, 0)
+
+reset(two_monitors(0)) -- eDP-1 focused
+mod.move_window_to_new_desktop_on_screen(2)
+local sent = last_of("focus").arg.workspace
+check("a new desktop on the other screen", sent, 4)
+check("...and the window follows there", last_of("move").arg.workspace, sent)
+local landed_on
+for _, ws in ipairs(world.workspaces) do
+    if ws.id == sent then landed_on = ws.monitor and ws.monitor.name end
+end
+check("...which really is on that screen", landed_on, "DP-4")
 
 reset(two_monitors(0))
 mod.move_window_to_neighbour_desktop(1)
@@ -505,6 +574,64 @@ reset(none)
 local before_none = #dispatched
 mod.move_column_to_neighbour_desktop(1)
 check("no window, no column", #dispatched, before_none)
+
+print("scenario: taking the column to a screen")
+-- columns.lua keeps its own layout state, which this harness has none of, so
+-- the real move_column_to_workspace bails before dispatching anything. What is
+-- being checked here is which desktop deskbinds hands it, so the function is
+-- swapped for a recorder. Mutating the field works because deskbinds looks it
+-- up on the shared module table at call time.
+local function tiled_on(ws_id)
+    return { address = "0xWIN1", stable_id = "win1", floating = false,
+             workspace = { id = ws_id } }
+end
+
+local sent_col
+local function record_column()
+    sent_col = nil
+    package.loaded.columns.move_column_to_workspace = function(from, to, id)
+        sent_col = { from = from, to = to, id = id }
+        return true
+    end
+end
+
+reset(two_monitors(0))
+record_column()
+world.active_window = tiled_on(1)
+mod.move_column_to_screen(2)
+check("to the desktop in view there", sent_col and sent_col.to, 3)
+check("...read from the desktop it was on", sent_col and sent_col.from, 1)
+
+reset(two_monitors(0))
+record_column()
+world.active_window = tiled_on(1)
+mod.move_column_to_screen(1)
+check("the screen it is already on -> nothing", sent_col, nil)
+
+print("scenario: taking the column to a desktop that does not exist yet")
+reset(two_monitors(0)) -- eDP-1 focused
+record_column()
+world.active_window = tiled_on(1)
+mod.move_column_to_new_desktop_on_screen(2)
+check("a desktop is made on the other screen", sent_col and sent_col.to, 4)
+-- The source has to be captured before anything moves: creating a desktop
+-- means focusing it, and the stub clears the active window with the focus
+-- exactly as Hyprland hands the view over.
+check("...and the source survives the focus that created it", sent_col and sent_col.from, 1)
+
+reset(two_monitors(0))
+record_column()
+world.active_window = tiled_on(1)
+mod.move_column_to_new_desktop_on_screen(1)
+check("...the same on the screen you are already on", sent_col and sent_col.to, 4)
+
+local fl3 = two_monitors(0)
+fl3.active_window = { address = "0xFLOAT", stable_id = "f", floating = true }
+reset(fl3)
+record_column()
+local before_fl3 = #dispatched
+mod.move_column_to_new_desktop_on_screen(2)
+check("a floating window has no column, so no desktop is made", #dispatched, before_fl3)
 
 print("scenario: duplicate then un-duplicate with the same key")
 local m = two_monitors(0)
@@ -880,12 +1007,11 @@ check("named as it was created", renames[1] and renames[1].workspace, 4)
 check("...with its position and screen", renames[1] and renames[1].name, "3.1")
 
 print("scenario: a desktop asked for outright survives being left empty")
--- The plain screen key, pressed on the screen you are already on. Asking for a
--- desktop and passing through one are different keys now, and only the first
--- gets a persistence rule.
+-- The new-desktop key. Asking for a desktop and passing through one are
+-- different keys, and only the first gets a persistence rule.
 local p1 = two_monitors(0)
 reset(p1)
-mod.focus_screen(1)
+mod.new_desktop_on_screen(1)
 check("created the desktop", last_of("focus").arg.workspace, 4)
 check("...and asked for it to persist", last_rule_for(4) and last_rule_for(4).persistent, true)
 check("addressed by id as a string", last_rule_for(4) and last_rule_for(4).workspace, "4")
@@ -898,7 +1024,7 @@ print("scenario: a persistent desktop's rule names the screen it belongs to")
 -- desktop on one screen dragged every empty desktop from the other screen
 -- across to join it.
 reset(two_monitors(0)) -- eDP-1 focused
-mod.focus_screen(1)    -- the screen you are on: makes a desktop, id 4
+mod.new_desktop_on_screen(1) -- the screen you are on: makes a desktop, id 4
 local pinned = last_rule_for(4)
 check("the new desktop is kept while empty", pinned and pinned.persistent, true)
 check("...and pinned to the screen it was made on", pinned and pinned.monitor, "eDP-1")
@@ -916,7 +1042,7 @@ check("...and now pinned to the screen it moved to", last_rule_for(1) and last_r
 print("scenario: a desktop made on the way somewhere is not persistent")
 local p2 = two_monitors(1) -- DP-4 focused, a single desktop on it
 reset(p2)
-mod.move_window_to_screen(2) -- takes the window onto a fresh desktop
+mod.move_window_to_new_desktop_on_screen(2) -- takes the window onto a fresh desktop
 check("created one", last_of("focus").arg.workspace, 4)
 check("...with no rule: it has a window on it, so it cannot lapse", #rules, 0)
 
@@ -973,20 +1099,17 @@ end
 local reuse = two_monitors(0) -- eDP-1 focused, holding ws1 and ws2
 reset(reuse)
 
-mod.focus_screen(1) -- the screen you are on: makes a desktop, id 4
+mod.new_desktop_on_screen(1) -- makes a desktop on the screen in front, id 4
 local first = last_of("focus").arg.workspace
 check("made on the screen in front", ws_by_id(first).monitor.name, "eDP-1")
 
--- Hyprland shows a desktop it has just created; the stub does not follow
--- focus on its own, so say so before closing the thing.
-world.monitors[1].active_workspace = ws_by_id(first)
+-- Hyprland shows a desktop it has just created, and the stub follows focus,
+-- so the new desktop is already the one in view here.
 check("closed it again", mod.close_desktop_here(), true)
 drop_ws(first) -- as Hyprland removes it
-world.monitors[1].active_workspace = ws_by_id(1)
 
 -- Over on the other screen, where the freed id is the next one going.
-world.focused_monitor_id = 1
-mod.focus_screen(2)
+mod.new_desktop_on_screen(2)
 local second = last_of("focus").arg.workspace
 check("the same id is handed out again", second, first)
 check("...and the new desktop is born where it was asked for", ws_by_id(second).monitor.name, "DP-4")

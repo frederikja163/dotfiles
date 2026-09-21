@@ -11,17 +11,36 @@
 -- (DP-4 came back as DP-5). Monitors that have never been pinned trail the
 -- pinned ones, in id order; see the pin loading below.
 --
--- A screen number is overloaded on whether it is the screen you are already
--- on, and the overload is the same at every scope: acting "towards" the screen
--- you are on means acting towards a brand-new desktop on it.
+-- A screen number names a screen and nothing else. Pressed for the screen you
+-- are already on it does nothing, because there is nowhere to go.
 --
---   #n = a screen you are not on             #f = the screen you are on
+-- It used to be overloaded on exactly that case: acting "towards" the screen
+-- you were on meant acting towards a brand-new desktop on it, and that was how
+-- a desktop got made. It was wrong twice over. With follow_mouse the screen you
+-- are on is wherever the *cursor* rests rather than where you are looking, so
+-- the same chord changed screen or minted a desktop depending on where the
+-- mouse had been left -- and a desktop could only ever be made on the screen
+-- already in front.
 --
---   focus_screen            go there         a new desktop, kept while empty
---   move_window_to_screen   window there     window to a new desktop
---   move_column_to_screen   column there     column to a new desktop
---   move_desktop_to_screen  desktop there    nothing (it is already here)
---   toggle_mirror_screen    duplicate it     nothing (cannot mirror itself)
+-- So the two readings are two keys now, and the new-desktop one takes a screen
+-- like any other, the one you are on included:
+--
+--   #n = a screen you are not on            #f = the screen you are on
+--
+--   focus_screen                            go there        nothing
+--   move_window_to_screen                   window there    nothing
+--   move_column_to_screen                   column there    nothing
+--   move_desktop_to_screen                  desktop there   nothing (already here)
+--   toggle_mirror_screen                    duplicate it    nothing (cannot mirror itself)
+--
+--   new_desktop_on_screen                   a new desktop there, kept while empty
+--   move_window_to_new_desktop_on_screen    window to a new desktop there
+--   move_column_to_new_desktop_on_screen    column to a new desktop there
+--
+-- The three in the second group answer the same whichever screen is in front.
+-- A desktop is born on whichever monitor has focus and no dispatcher says
+-- otherwise, so "on screen n" is done by focusing that screen first; the focus
+-- follows the new desktop across, which is what asking for one there means.
 --
 -- Cycling desktops is a separate axis -- focus_neighbour_desktop and friends,
 -- on Tab -- so nothing here depends on how many desktops happen to exist. The
@@ -880,8 +899,16 @@ local function place_desktop(id, wanted, persistent)
     schedule_renumber()
 end
 
--- Focusing an id that does not exist yet creates the desktop on the focused
--- monitor, so this only works for the monitor that currently has focus.
+-- Create a new desktop on `mon` and return its id. The caller may then move the
+-- focused window onto it, so a move-and-make-a-desktop key does not have to
+-- create it twice.
+--
+-- Focusing an id that does not exist yet is what creates the desktop, and it is
+-- born on whichever monitor has focus. There is no dispatcher that says
+-- otherwise, so naming another screen means going there first -- which is why
+-- every one of these keys takes the focus across with it. That is not a side
+-- effect to be apologised for: asking for a desktop on screen 2 is asking to be
+-- on screen 2.
 --
 -- Created by id and renamed in the same breath, rather than left to the
 -- deferred pass, which would show the bare id on the bar for the ~80ms until it
@@ -892,31 +919,39 @@ end
 -- Hyprland numbers named workspaces from -1337 downwards, and those negative
 -- ids sort ahead of every ordinary desktop, so a new desktop would insert
 -- itself before the ones already there and quietly renumber them.
--- Create a new desktop on the focused monitor and return its id. The caller may
--- then move the focused window onto it, so a move-and-make-a-desktop key does
--- not have to create it twice.
 --
 -- `persistent` asks for a desktop that stays open while empty, which is what
--- focus_screen makes on the screen you are already on: asked for one outright,
--- you get to leave it and come back to it before there is anything on it. The paths that put a window on the new
--- desktop do not need it -- a desktop with a window on it is never swept up --
--- and would leave the empty husk behind after the window closes.
+-- the plain new-desktop key makes: asked for one outright, you get to leave it
+-- and come back to it before there is anything on it. The paths that put a
+-- window on the new desktop do not need it -- a desktop with a window on it is
+-- never swept up -- and would leave the empty husk behind after the window
+-- closes.
 --
 -- The rule goes on after the focus dispatch, not before: it is the focus that
 -- decides which monitor the desktop is born on, and a persistent rule naming
 -- no monitor would have Hyprland pick.
-local function create_new_desktop_here(persistent)
-    -- The desktop is born on whichever monitor has focus, so that is the row
-    -- it has to land at the end of.
-    local id = unused_desktop_id(hl.get_active_monitor())
+local function create_new_desktop_on(mon, persistent)
+    if not mon then
+        return nil
+    end
+
+    local active = hl.get_active_monitor()
+    if not (active and active.id == mon.id) then
+        focus_workspace(mon.active_workspace)
+    end
+
+    -- `mon` is the row the desktop has to land at the end of, and it is used
+    -- rather than re-reading the focused monitor so that every decision here
+    -- names the screen that was asked for, not the one Hyprland happens to
+    -- report a dispatch later.
+    local id = unused_desktop_id(mon)
     hl.dispatch(hl.dsp.focus({ workspace = id }))
 
     if persistent then
-        local mon = hl.get_active_monitor()
-        set_persistent(id, true, mon and mon.name)
+        set_persistent(id, true, mon.name)
     end
 
-    local name = name_for_new_desktop(hl.get_active_monitor())
+    local name = name_for_new_desktop(mon)
     if name then
         hl.dispatch(hl.dsp.workspace.rename({ workspace = id, name = name }))
     end
@@ -925,8 +960,12 @@ local function create_new_desktop_here(persistent)
     return id
 end
 
+-- The same without naming a screen: whichever one is in front. SUPER+D then
+-- `n`, for when you do not care which screen that is and do not want to have
+-- to be right about it -- with follow_mouse, "in front" is wherever the cursor
+-- rests rather than where you are looking.
 local function new_desktop_here(persistent)
-    create_new_desktop_here(persistent)
+    create_new_desktop_on(hl.get_active_monitor(), persistent)
 end
 
 -- Close the desktop in view, if there is nothing on it. This is the other half
@@ -983,20 +1022,22 @@ local function move_window_to(ws)
     end
 end
 
--- Move the focused window onto a brand-new desktop and name it there.
+-- Move the focused window onto a brand-new desktop on `mon`, and name it there.
 --
 -- Creating a desktop means focusing it, which hands the active view over to an
 -- empty desktop, so hl.get_active_window() would answer with nothing (or the
 -- wrong window) afterwards. The address has to be captured before the desktop
 -- exists; the move then targets that window explicitly.
-local function move_focused_window_to_new_desktop()
+local function move_focused_window_to_new_desktop(mon)
     local win = hl.get_active_window()
     if not (win and win.address) then
         return
     end
 
-    local id = create_new_desktop_here()
-    hl.dispatch(hl.dsp.window.move({ workspace = id, window = "address:" .. win.address }))
+    local id = create_new_desktop_on(mon)
+    if id then
+        hl.dispatch(hl.dsp.window.move({ workspace = id, window = "address:" .. win.address }))
+    end
 end
 
 -- Waybar builds one bar per output, keyed by monitor name, and its workspace
@@ -1112,44 +1153,76 @@ end
 -- screen or because it is duplicating another one and so has no desktops of
 -- its own.
 
--- Focus a screen. On the screen you are already on there is nothing to focus,
--- so it makes a desktop instead: "go to a desktop that does not exist yet".
--- Persistent, because a desktop asked for outright should survive being left
--- empty, unlike one passed through on the way somewhere else.
+-- Focus a screen. Nothing to do on the screen you are already on: you are
+-- there. That case used to mint a desktop instead, which is now a key of its
+-- own -- see the header for why the overload went.
 local function focus_screen(n)
     local slot = monitor_for(n)
-    if not slot or not slot.monitor then
+    if not slot or not slot.monitor or is_focused(slot) then
         return
     end
 
-    if is_focused(slot) then
-        new_desktop_here(true)
-    else
-        focus_workspace(slot.monitor.active_workspace)
-    end
+    focus_workspace(slot.monitor.active_workspace)
 end
 
--- Take the focused window to a screen, or to a fresh desktop on the screen you
--- are on -- the same overload as focus_screen, one scope down.
-local function move_window_to_screen(n)
+-- Go to a brand-new desktop on a screen, whichever screen is in front.
+--
+-- Persistent, because a desktop asked for outright should survive being left
+-- empty, unlike one passed through on the way somewhere else.
+local function new_desktop_on_screen(n)
     local slot = monitor_for(n)
     if not slot or not slot.monitor then
         return
     end
 
-    if is_focused(slot) then
-        move_focused_window_to_new_desktop()
-    else
-        move_window_to(slot.monitor.active_workspace)
+    create_new_desktop_on(slot.monitor, true)
+end
+
+-- Take the focused window to the desktop in view on another screen.
+local function move_window_to_screen(n)
+    local slot = monitor_for(n)
+    if not slot or not slot.monitor or is_focused(slot) then
+        return
     end
+
+    move_window_to(slot.monitor.active_workspace)
+end
+
+-- ...and the same to a desktop that does not exist yet, on any screen.
+local function move_window_to_new_desktop_on_screen(n)
+    local slot = monitor_for(n)
+    if not slot or not slot.monitor then
+        return
+    end
+
+    move_focused_window_to_new_desktop(slot.monitor)
 end
 
 -- Take the focused window's whole column across.
+local function move_column_to_screen(n)
+    local slot = monitor_for(n)
+    if not slot or not slot.monitor or is_focused(slot) then
+        return
+    end
+
+    local win = hl.get_active_window()
+    if not win or win.floating or not win.workspace then
+        return
+    end
+
+    local target = slot.monitor.active_workspace
+    if target then
+        columns.move_column_to_workspace(win.workspace.id, target.id, win.stable_id)
+    end
+end
+
+-- ...and to a brand-new desktop on that screen.
 --
 -- The window has to be read before anything moves: creating a desktop means
--- focusing it, and the column is identified by the focused window's stable id,
--- which would by then be gone (or be a different window).
-local function move_column_to_screen(n)
+-- focusing it, and the column is identified by the focused window's stable id
+-- and the desktop it is on, both of which would by then be gone (or be a
+-- different window).
+local function move_column_to_new_desktop_on_screen(n)
     local slot = monitor_for(n)
     if not slot or not slot.monitor then
         return
@@ -1160,16 +1233,10 @@ local function move_column_to_screen(n)
         return
     end
 
-    local target_id
-    if is_focused(slot) then
-        target_id = create_new_desktop_here()
-    else
-        local target = slot.monitor.active_workspace
-        target_id = target and target.id
-    end
-
+    local source = win.workspace.id
+    local target_id = create_new_desktop_on(slot.monitor)
     if target_id then
-        columns.move_column_to_workspace(win.workspace.id, target_id, win.stable_id)
+        columns.move_column_to_workspace(source, target_id, win.stable_id)
     end
 end
 
@@ -1228,8 +1295,8 @@ end
 -- screen, regardless of what global ids those desktops happen to hold.
 --
 -- Does nothing when there is no such desktop. Going somewhere that is not
--- there is not a request to create it -- SUPER+n on the screen you are on is
--- how a desktop gets made, and it stays deliberately separate.
+-- there is not a request to create it -- SUPER+CTRL+n is how a desktop gets
+-- made, and it stays deliberately separate.
 local function desktop_at(n)
     local mon = hl.get_active_monitor()
     return mon and desktops_on(mon)[n]
@@ -1393,8 +1460,11 @@ columns.set_screen_focus(edge_workspace)
 return {
     -- Actions, called by modes.lua, which owns the keys.
     focus_screen = focus_screen,
+    new_desktop_on_screen = new_desktop_on_screen,
     move_window_to_screen = move_window_to_screen,
+    move_window_to_new_desktop_on_screen = move_window_to_new_desktop_on_screen,
     move_column_to_screen = move_column_to_screen,
+    move_column_to_new_desktop_on_screen = move_column_to_new_desktop_on_screen,
     move_desktop_to_screen = move_desktop_to_screen,
     move_desktop_in_row = move_desktop_in_row,
     toggle_mirror_screen = toggle_mirror_screen,
