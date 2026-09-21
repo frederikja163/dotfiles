@@ -98,23 +98,71 @@ vim.lsp.config('roslyn_ls', {
   -- gets no server rather than a dead or silent one. A .csx script is
   -- OmniSharp's job -- it has a real scripting engine -- so roslyn never
   -- attaches there either.
+  --
+  -- root_dir must be the directory the sln/slnx/csproj is *in*, not the
+  -- buffer's own directory. Nothing about the protocol makes the server look
+  -- for a project itself: lspconfig's on_init lists root_dir, and sends
+  -- solution/open or project/open only for a marker sitting directly there.
+  -- Handing it the buffer's directory was tried and looks like it works,
+  -- because the client still attaches and hover still answers out of roslyn's
+  -- miscellaneous-files fallback -- but no project is ever opened, so
+  -- workspace/projectInitializationComplete never fires and the file reports
+  -- zero diagnostics. Only a .cs file sitting next to its own .csproj
+  -- happened to load anything, and then the project rather than the solution,
+  -- so a multi-project .slnx was never read at all.
+  --
+  -- Solution before project, so a .slnx at the repo root wins over the
+  -- nearest .csproj and cross-project navigation works.
   root_dir = function(bufnr, on_dir)
     local fname = vim.api.nvim_buf_get_name(bufnr)
     if fname == '' or fname:match('%.csx$') then
       return
     end
-    if vim.fs.find(function(name)
-      return name:match('%.sln$')
-          or name:match('%.slnx$')
-          or name:match('%.csproj$')
-    end, {
-      path = vim.fn.fnamemodify(fname, ':h'),
-      upward = true,
-      type = 'file',
-    })[1] then
-      on_dir(vim.fn.fnamemodify(fname, ':h'))
+    local root = vim.fs.root(bufnr, function(name)
+      return name:match('%.slnx?$') ~= nil
+    end) or vim.fs.root(bufnr, function(name)
+      return name:match('%.csproj$') ~= nil
+    end)
+    if root then
+      on_dir(root)
     end
   end,
+  handlers = {
+    -- A file opened while the solution is still loading gets its diagnostics
+    -- computed against a compilation with no references resolved, so every
+    -- using in it comes back as a single IDE0005 "Using directive is
+    -- unnecessary" spanning the whole block. It is tagged Unnecessary, so the
+    -- whole block renders greyed out, and it is wrong -- delete the usings and
+    -- the build fails with CS0103.
+    --
+    -- The server will not recompute for a document that has not changed, so
+    -- simply asking again does not help: lspconfig's own handler here re-runs
+    -- textDocument/diagnostic and gets the same stale answer back, and the
+    -- greying then survives for as long as the file is left untouched. Any
+    -- real edit clears it, which is what makes it look like a rendering quirk
+    -- rather than a wrong answer.
+    --
+    -- Re-attaching makes nvim send didClose then didOpen, so the server drops
+    -- the document and analyses it again, now against the loaded solution.
+    -- Editing the buffer and undoing it fixes the diagnostics too, but leaves
+    -- 'modified' set on a file the user never touched; this does not.
+    ['workspace/projectInitializationComplete'] = function(_, _, ctx)
+      local client = vim.lsp.get_client_by_id(ctx.client_id)
+      if not client then
+        return vim.NIL
+      end
+      local buffers = vim.tbl_keys(client.attached_buffers)
+      vim.schedule(function()
+        for _, buf in ipairs(buffers) do
+          if vim.api.nvim_buf_is_loaded(buf) then
+            vim.lsp.buf_detach_client(buf, client.id)
+            vim.lsp.buf_attach_client(buf, client.id)
+          end
+        end
+      end)
+      return vim.NIL
+    end,
+  },
   -- The server shim from the dotnet global tool is named roslyn-language-server,
   -- not the Microsoft.CodeAnalysis.LanguageServer binary lspconfig's default cmd
   -- reaches for off PATH.
