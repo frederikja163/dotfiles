@@ -2,6 +2,19 @@
   "$schema": "https://opencode.ai/config.json",
   "model": "anthropic/claude-opus-5",
 
+  // Appended to every agent's context. "instructions" is documented as
+  // additive, unlike an agent's "prompt", which does not say whether it
+  // replaces a built-in agent's own prompt -- not worth finding out on build
+  // mode.
+  //
+  // The path must be "~/"-anchored. A plain "comments.md" here resolves
+  // against the *project*, not against this file, so it silently loaded
+  // nothing outside this repo -- checked with a sentinel, since a missing
+  // instruction file is not reported. install.sh links opencode/ to
+  // ~/.config/opencode, so this still points at the repo's own copy on any
+  // machine.
+  "instructions": ["~/.config/opencode/comments.md"],
+
   // No mode may touch git history without being asked to.
   //
   // Everything that writes a commit, moves a ref, rewrites what is already
