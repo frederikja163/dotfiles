@@ -35,6 +35,7 @@ curl -fsSL https://raw.githubusercontent.com/frederikja163/dotfiles/main/setup.s
 | `yazi`     | `~/.config/yazi`              | `yazi.toml`, software video previewer |
 | `zsh`      | `~/.zshenv`, `~/.config/zsh/` | oh-my-zsh setup, `PATH`, prompt, `title` |
 | `git`      | `~/.config/git`               | identity and settings                |
+| `opencode` | `~/.config/opencode`          | model, and the `review` agent; no credentials (see `AGENTS.md`) |
 | `xdg`      | `~/.config/mimeapps.list`, `~/.local/share/{applications,dbus-1}` | yazi as the file explorer, browser "show in folder" included |
 | `bin`      | `~/.local/bin`                | small scripts, on `PATH`             |
 | `system`   | `/etc`                        | system config (needs root)           |

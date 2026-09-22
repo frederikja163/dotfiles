@@ -32,8 +32,11 @@ is a backstop for the lapse, not permission to try.
 it; that is deliberate, not an obstacle to route around.
 
 Nothing secret belongs in this repo — it is public on GitHub. Credentials stay
-in `~/.local/share/opencode/auth.json` and the global config, neither of which
-is tracked here.
+in `~/.local/share/opencode/auth.json`, which is outside the config directory
+and is not tracked. opencode's global config *is* tracked, as `opencode/`,
+linked to `~/.config/opencode` — it carries the model and the agents and
+nothing private. Keep it that way: an API key belongs in `auth.json`, not in
+a `provider` block here.
 
 The reasoning for anything non-obvious lives in a comment at the top of the file
 it concerns, and is expected to say what was tried and rejected. `README.md` is

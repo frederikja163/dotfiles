@@ -1,0 +1,115 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "anthropic/claude-opus-5",
+
+  // No mode may touch git history without being asked to.
+  //
+  // Everything that writes a commit, moves a ref, rewrites what is already
+  // recorded, or publishes it is gated below. Reading history is untouched:
+  // log, show, diff, status, blame, describe, rev-parse and fetch all stay
+  // silent, so an agent can still orient itself without asking.
+  //
+  // "ask" rather than "deny", because the point is that *you* decide, not
+  // that it becomes impossible. An explicit "commit this" then costs one
+  // confirmation, while an agent that decided to tidy up after itself gets
+  // stopped. A deny would also refuse the explicit request, which is not
+  // what was wanted. (agent/review.md is the exception: it denies the same
+  // list, because that agent is read-only by construction and has no
+  // business committing even when asked.)
+  //
+  // Patterns lead with "*" because a bash rule is matched against the whole
+  // command line: a bare "git commit -m x" and a chained
+  // "cd sub && git commit -m x" both have to match, and a leading wildcard
+  // catches both (verified -- "*" matches the empty string, so the leading
+  // form covers the unchained case too and no second pattern is needed).
+  //
+  // These live on each agent rather than at the top level on purpose. Rules
+  // are evaluated in order with the last match winning, and an agent's rules
+  // are appended after a project's -- so a top-level rule here would be
+  // silently overridden by any project whose own config says
+  // bash "*": "allow", which is common. On an agent they always land last.
+  //
+  // Note there is no "*": "allow" in either block. That would land after a
+  // project's rules too, and would re-permit anything the project had
+  // denied. opencode already allows bash by default, so leaving it out costs
+  // nothing and keeps project denials intact.
+  //
+  // The list is written out once per agent because the config format has no
+  // way to share it -- no anchors, no includes -- and a plugin that injected
+  // it would be one silent failure away from removing the guard entirely,
+  // which is the whole thing being guarded against. Copies that must stay in
+  // step are a liability, so tests/test_opencode_agents.sh fails if build,
+  // plan and review ever stop guarding the same set.
+  "agent": {
+    "build": {
+      "permission": {
+        "bash": {
+          // Writes a commit, or publishes one.
+          "*git commit*": "ask",
+          "*git push*": "ask",
+          "*git pull*": "ask",
+          "*git merge*": "ask",
+          "*git am*": "ask",
+          "*git cherry-pick*": "ask",
+          "*git revert*": "ask",
+
+          // Rewrites or discards what is already recorded.
+          "*git rebase*": "ask",
+          "*git reset*": "ask",
+          "*git filter-branch*": "ask",
+          "*git filter-repo*": "ask",
+          "*git replace*": "ask",
+
+          // Moves refs, or drops the means of recovering them.
+          "*git update-ref*": "ask",
+          "*git tag*": "ask",
+          "*git branch -d*": "ask",
+          "*git branch -D*": "ask",
+          "*git branch --delete*": "ask",
+          "*git reflog*": "ask",
+          "*git gc*": "ask",
+          "*git prune*": "ask",
+
+          // Not history as such, but it commits to refs/stash and `drop`
+          // and `clear` lose work outright.
+          "*git stash*": "ask"
+        }
+      }
+    },
+
+    // Identical to build. Plan mode already refuses to edit files, but bash
+    // is open to it, so without this it could commit what build had just been
+    // stopped from committing -- the guard has to be on every mode that can
+    // reach a shell or it is only a speed bump.
+    "plan": {
+      "permission": {
+        "bash": {
+          "*git commit*": "ask",
+          "*git push*": "ask",
+          "*git pull*": "ask",
+          "*git merge*": "ask",
+          "*git am*": "ask",
+          "*git cherry-pick*": "ask",
+          "*git revert*": "ask",
+
+          "*git rebase*": "ask",
+          "*git reset*": "ask",
+          "*git filter-branch*": "ask",
+          "*git filter-repo*": "ask",
+          "*git replace*": "ask",
+
+          "*git update-ref*": "ask",
+          "*git tag*": "ask",
+          "*git branch -d*": "ask",
+          "*git branch -D*": "ask",
+          "*git branch --delete*": "ask",
+          "*git reflog*": "ask",
+          "*git gc*": "ask",
+          "*git prune*": "ask",
+
+          "*git stash*": "ask"
+        }
+      }
+    }
+  }
+}

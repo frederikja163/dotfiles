@@ -341,6 +341,19 @@ install_links() {
     link bin      "$HOME/.local/bin"
     link .omnisharp "$HOME/.omnisharp"     # global omnisharp.json for .csx scripts
 
+    # opencode's *global* config, which is the one that carries the model and
+    # the agents; the repo's own opencode.json beside AGENTS.md is a separate,
+    # project-scoped file and is not linked anywhere.
+    #
+    # No credentials go through here. opencode keeps those in
+    # ~/.local/share/opencode/auth.json, outside the config directory entirely,
+    # which is what makes this safe to track in a public repo.
+    #
+    # opencode installs @opencode-ai/plugin into whatever directory this
+    # resolves to and writes a .gitignore covering the npm droppings; that
+    # .gitignore is tracked verbatim so regenerating it is a no-op.
+    link opencode "$HOME/.config/opencode"
+
     # What opens a directory: yazi, via the kitty-wrapping entry in the same
     # folder (see the comments in xdg/mimeapps.list). Separate links rather
     # than a linked xdg/ because the two files live on opposite sides of the
