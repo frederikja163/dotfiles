@@ -1,5 +1,5 @@
-# Two departures from yazi's stock config: which plugin handles video previews,
-# and a modification time against every row.
+# Three departures from yazi's stock config: which plugin handles video
+# previews, what opens a zip, and a modification time against every row.
 #
 # The stock `video` previewer and preloader run ffmpeg with `-hwaccel auto`,
 # which on this machine selects the Radeon VCN decoder. VCN faults and forces a
@@ -15,9 +15,51 @@
 [plugin]
 prepend_previewers = [
 	{ mime = "video/*", run = "video-soft" },
+	# Hovering a zip, for the same reason Enter on one is rerouted below: the
+	# stock `archive` previewer shells out to 7-zip and fills the pane with
+	# "Do you have 7-zip installed?". See plugins/zip-list.yazi/main.lua.
+	#
+	# No preloader to go with it. A preloader exists to build a cache ahead of
+	# the cursor, and there is nothing to cache here -- unzip reads the central
+	# directory at the end of the file and answers immediately.
+	{ mime = "application/zip", run = "zip-list" },
 ]
 prepend_preloaders = [
 	{ mime = "video/*", run = "video-soft" },
+]
+
+# Zips are opened with unzip, not 7-zip.
+#
+# Stock yazi sends every archive mime to its "extract" opener, which publishes
+# to the built-in extract plugin, which shells out to `7zz` or `7z`. Neither is
+# installed here and neither is wanted -- `unzip` already is, and is already
+# declared in packages/pacman.txt -- so pressing Enter on a zip answered "Do
+# you have 7-zip installed?" and did nothing.
+#
+# Only `application/zip` is rerouted. The stock rule also covers rar, tar,
+# gzip, xz, zstd and the rest, and unzip reads none of those, so pointing the
+# whole rule at it would turn a clear "install 7-zip" into a wrong "not a zip
+# file". Those formats still want 7-zip (or bsdtar, which is installed and
+# reads them); nothing here changes them.
+#
+# prepend_rules, so this is tried before the stock archive rule rather than
+# replacing it -- the first match wins, and everything else still falls
+# through to the original.
+#
+# The work is in bin/unzip-here rather than inline, because `unzip a.zip b.zip`
+# treats the second archive as a member pattern inside the first and quietly
+# extracts nothing. That script and its header explain the rest.
+#
+# "reveal" is kept as the second choice so the stock Enter-then-pick menu still
+# offers to open the containing folder, as it does for every other archive.
+[opener]
+extract-zip = [
+	{ run = 'unzip-here %s', desc = "Extract here", for = "unix" },
+]
+
+[open]
+prepend_rules = [
+	{ mime = "application/zip", use = [ "extract-zip", "reveal" ] },
 ]
 
 # The linemode is the right-hand column of the file list, and stock yazi leaves

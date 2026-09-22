@@ -87,6 +87,7 @@ dotfiles, and is named after whatever it drives instead.
 | `screenshot-region`      | `Print`: select a region, onto the clipboard                        |
 | `terminal-cwd`           | the working directory of each terminal's shell, given their pids    |
 | `title`                  | `title comms`: name the desktop you are on; no argument clears it   |
+| `unzip-here`             | extract zips into the current directory; what yazi's Enter runs     |
 | `waybar-main`            | starts waybar on every monitor, full bar on the largest             |
 
 Shared shell code lives in `lib/`, which is not on `PATH`: see

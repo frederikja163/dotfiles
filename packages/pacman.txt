@@ -5,7 +5,8 @@
 git
 base-devel          # compiler toolchain, needed by treesitter auto_install
 curl
-unzip
+unzip               # bin/unzip-here, which is what yazi opens a zip with --
+                    # see yazi/yazi.toml for why it is not 7-zip
 man-pages
 desktop-file-utils  # update-desktop-database, run by install.sh after linking
                     # xdg/applications/yazi.desktop
