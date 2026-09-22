@@ -8,6 +8,7 @@ Sometimes closing the last window and then moving to a different desktop will cl
 nvim better keyboard keybinds for using as a fully fletched C# ide
 $g variable to go to git root
 Move desktop mode -> D -> 2 should move desktop after number two. Maybe with shift to mean before/after
+Opencode config "Code review"
 Git prune worktrees command
 Media keys to scroll movies and videos backwards and forwards by a small amount
 Rider config copying
