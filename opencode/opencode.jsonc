@@ -50,7 +50,12 @@
   // table and commits only once you agree. build and plan therefore *deny*
   // `git commit` rather than ask -- the answer to "commit this" is to switch
   // agent, not to approve a prompt at the last moment. The commit agent
-  // allows it outright, because that table is the approval.
+  // allows it outright, because that table is the approval, and it carries a
+  // looser version of the list below: its whole job is git, so everything
+  // except push runs, with the destructive commands confirming first. Its
+  // patterns are anchored rather than wildcarded, because a commit message is
+  // part of the matched command line and a leading "*" let a message that
+  // mentioned "git push" or "git reset" block the commit carrying it.
   //
   // Everything else that moves a ref, rewrites what is already recorded, or
   // publishes it is gated below. Reading history is untouched: log, show,
@@ -85,8 +90,8 @@
   // way to share it -- no anchors, no includes -- and a plugin that injected
   // it would be one silent failure away from removing the guard entirely,
   // which is the whole thing being guarded against. Copies that must stay in
-  // step are a liability, so tests/test_opencode_agents.sh fails if build,
-  // plan, review and commit ever drift from the action each is meant to have.
+  // step are a liability, so tests/test_opencode_agents.sh fails if any mode
+  // drifts from the action it is meant to have.
   "agent": {
     "build": {
       "permission": {
