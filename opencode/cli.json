@@ -17,5 +17,9 @@
   "animations": true,
   "theme": {
     "name": "catppuccin"
+  },
+  "tabs": {
+    "indicators": "status",
+    "layout": "horizontal"
   }
 }

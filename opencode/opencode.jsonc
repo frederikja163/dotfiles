@@ -2,6 +2,35 @@
   "$schema": "https://opencode.ai/config.json",
   "model": "anthropic/claude-opus-5",
 
+  // Restores the todo tool OpenCode V2 removed.
+  //
+  // review.md queues requested fixes with `todowrite` so they outlive the user
+  // switching to build mode, but V2 dropped `todowrite` and `todoread` from the
+  // runtime: the installed 2.0.12 binary has no such tool, there is no
+  // /api/todo endpoint, and the docs list neither the tool nor an action for
+  // it. Upstream closed the tracking issue (anomalyco/opencode#42421) as "not
+  // planned", and v2.0.18 still ships without it, so updating does not bring it
+  // back. The plugin re-registers `todowrite` and re-injects the current list
+  // each round, which is what makes the queue visible again after a mode
+  // switch.
+  //
+  // Vendored rather than installed from npm. The published 0.2.1 ships its
+  // sidebar as raw JSX (src/tui.tsx) with `tui: true`, and 2.0.12 compiles JSX
+  // with Bun's default React transform whenever the file sits under
+  // node_modules -- its Solid transform skips those paths. So the npm install
+  // always fails the TUI half with "Cannot find package 'react'". There is no
+  // way to keep the tool and drop only the TUI half: the `-opencode2.todo.tui`
+  // disable directive is not honoured for TUI plugins, `enabled: false` removes
+  // the tool as well, and 2.0.12 rejects a file path in `plugins` -- it wants a
+  // directory. The copy in plugins/opencode2-todo/ is the server half only, so
+  // the sidebar is never requested; see its README for the two-line change. It
+  // loads from outside node_modules and needs no node_modules of its own.
+  //
+  // It is someone else's package, and its upstream repo is archived, so treat
+  // it as a stopgap: if OpenCode ships the tool again, delete plugins/ and this
+  // entry and nothing else changes.
+  "plugins": ["./plugins/opencode2-todo"],
+
   // Appended to every agent's context. "instructions" is documented as
   // additive, unlike an agent's "prompt", which does not say whether it
   // replaces a built-in agent's own prompt -- not worth finding out on build
@@ -15,20 +44,25 @@
   // machine.
   "instructions": ["~/.config/opencode/comments.md"],
 
-  // No mode may touch git history without being asked to.
+  // No mode may touch git history without a decision from you.
   //
-  // Everything that writes a commit, moves a ref, rewrites what is already
-  // recorded, or publishes it is gated below. Reading history is untouched:
-  // log, show, diff, status, blame, describe, rev-parse and fetch all stay
-  // silent, so an agent can still orient itself without asking.
+  // Commits belong to the `commit` agent: it plans the split, shows it as a
+  // table and commits only once you agree. build and plan therefore *deny*
+  // `git commit` rather than ask -- the answer to "commit this" is to switch
+  // agent, not to approve a prompt at the last moment. The commit agent
+  // allows it outright, because that table is the approval.
   //
-  // "ask" rather than "deny", because the point is that *you* decide, not
-  // that it becomes impossible. An explicit "commit this" then costs one
-  // confirmation, while an agent that decided to tidy up after itself gets
-  // stopped. A deny would also refuse the explicit request, which is not
-  // what was wanted. (agent/review.md is the exception: it denies the same
-  // list, because that agent is read-only by construction and has no
-  // business committing even when asked.)
+  // Everything else that moves a ref, rewrites what is already recorded, or
+  // publishes it is gated below. Reading history is untouched: log, show,
+  // diff, status, blame, describe, rev-parse and fetch all stay silent, so an
+  // agent can still orient itself without asking.
+  //
+  // For those, "ask" rather than "deny", because the point is that *you*
+  // decide, not that it becomes impossible. An explicit "push this" then
+  // costs one confirmation, while an agent that decided to tidy up after
+  // itself gets stopped. (agent/review.md denies the whole list, because that
+  // agent is read-only by construction and has no business committing or
+  // pushing even when asked.)
   //
   // Patterns lead with "*" because a bash rule is matched against the whole
   // command line: a bare "git commit -m x" and a chained
@@ -52,13 +86,16 @@
   // it would be one silent failure away from removing the guard entirely,
   // which is the whole thing being guarded against. Copies that must stay in
   // step are a liability, so tests/test_opencode_agents.sh fails if build,
-  // plan and review ever stop guarding the same set.
+  // plan, review and commit ever drift from the action each is meant to have.
   "agent": {
     "build": {
       "permission": {
         "bash": {
-          // Writes a commit, or publishes one.
-          "*git commit*": "ask",
+          // Commits are the `commit` agent's job, refused here rather than
+          // asked so build cannot commit by approving a prompt.
+          "*git commit*": "deny",
+
+          // Publishes a commit.
           "*git push*": "ask",
           "*git pull*": "ask",
           "*git merge*": "ask",
@@ -97,7 +134,8 @@
     "plan": {
       "permission": {
         "bash": {
-          "*git commit*": "ask",
+          // As build: commits go through the `commit` agent.
+          "*git commit*": "deny",
           "*git push*": "ask",
           "*git pull*": "ask",
           "*git merge*": "ask",

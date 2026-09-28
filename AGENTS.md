@@ -25,8 +25,11 @@ prefer asking to guessing when a change is hard to undo.
 often built across many prompts, and several turns of work belong in one commit
 rather than one each. A dirty working tree is the normal state between them, not
 something to tidy away — finishing a change is not a reason to commit it. Say
-what is left uncommitted and wait. `opencode.json` makes `git commit` ask, which
-is a backstop for the lapse, not permission to try.
+what is left uncommitted and wait. Commits are made by the `commit` agent, which
+plans the split, shows it as a table for approval and only then commits; build
+and plan refuse `git commit` outright, so the answer to "commit this" is to
+switch agent, not to approve a prompt. `opencode.json` keeps its commit rule ask
+as a backstop for any agent that is not one of those three.
 
 `roadmap.md` is the user's own notes. `opencode.json` denies reading and editing
 it; that is deliberate, not an obstacle to route around.
