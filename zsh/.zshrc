@@ -81,6 +81,20 @@ _prompt_to_bottom() {
 autoload -Uz add-zsh-hook
 add-zsh-hook precmd _prompt_to_bottom
 
+# --- git root ------------------------------------------------------------------
+export_git_root() {
+    local git_root_dir=$(git rev-parse --show-toplevel 2> /dev/null)
+    if [[ $git_root_dir == "" ]]; then
+        unset git
+    else
+        export git=$git_root_dir
+    fi
+}
+ 
+autoload -U add-zsh-hook
+add-zsh-hook chpwd export_git_root
+export_git_root
+
 # --- path ------------------------------------------------------------------
 # bob-managed neovim
 export PATH="$HOME/.local/share/bob/nvim-bin:$PATH"
