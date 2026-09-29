@@ -221,7 +221,29 @@ vim.keymap.set('n', '<leader>ca', vim.lsp.buf.code_action)
 vim.keymap.set('n', 'grd', vim.lsp.buf.definition, { desc = 'Go to declaration' })
 
 -- Theme
+--
+-- transparent_background clears Normal's background so kitty's own
+-- `background_opacity 0.95` shows through. Without it nvim paints every cell
+-- an opaque background and the terminal goes solid the moment nvim starts --
+-- the whole of the "kitty is see-through until I open a file" effect.
+--
+-- Making the two backgrounds equal instead looks like the obvious fix and is
+-- the wrong end of the problem. kitty honours window opacity for any cell
+-- whose background matches its configured `background`, so #1e1e2e on both
+-- sides would indeed go transparent -- but catppuccin's `kitty` option (on by
+-- default whenever $KITTY_WINDOW_ID is set) exists to stop exactly that. It
+-- shifts every palette colour by one in the blue channel, on the grounds that
+-- a theme should not turn the window see-through by accident. Colour-matching
+-- is therefore a fight with that workaround, and one the workaround wins;
+-- clearing Normal's background needs no agreement between the two configs.
+--
+-- float.transparent is left at its default of false on purpose. Normal going
+-- transparent is the point, but a hover or diagnostic window has code
+-- underneath it, and two layers of text in the same cells is unreadable --
+-- so NormalFloat keeps a solid mantle, one the kitty shift has already moved
+-- clear of the background colour.
 vim.pack.add({ { src = "https://github.com/catppuccin/nvim" } })
+require('catppuccin').setup({ transparent_background = true })
 vim.cmd.colorscheme "catppuccin-mocha"
 
 vim.pack.add({ { src = "https://github.com/nvim-treesitter/nvim-treesitter" } })
