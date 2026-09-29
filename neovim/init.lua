@@ -193,6 +193,33 @@ vim.keymap.set('n', '<leader>d', vim.diagnostic.open_float)
 vim.keymap.set('n', '<leader>cf', vim.lsp.buf.format)
 vim.keymap.set('n', '<leader>ca', vim.lsp.buf.code_action)
 
+-- Code navigation, for coming to this from Rider. Almost none of it is
+-- configured here: 0.12 sets these up itself when a server attaches, and the
+-- Rider habit each one replaces is worth writing down once.
+--
+--   grd, <C-]>       go to declaration        Rider Ctrl+B
+--   <C-t>            back where you came from Rider Ctrl+Alt+Left
+--   K                documentation            Rider Ctrl+Space
+--   K K              scroll inside that window (press it again to enter)
+--   <C-s>, insert    signature help           Rider Ctrl+P
+--   grr              find all references      Rider Alt+F7
+--   ]q, [q           step through the results
+--   gri grt          implementations, type declaration
+--   grn gra gO       rename, code action, symbols in file
+--
+-- grr fills the quickfix list, which is where ]q and [q read from, so a
+-- reference list behaves like every other list of locations in nvim rather
+-- than like its own window with its own keys.
+--
+-- Only grd is added. K is 'keywordprg' and <C-]> is 'tagfunc', both pointed at
+-- the LSP by vim.lsp on attach, so they need nothing here. Declaration is the
+-- one verb with no key in the gr* family precisely because tagfunc already
+-- covers it -- but <C-]> is then the odd one out next to grr and gri, and the
+-- point of the family is that related things are spelled alike. Builtin gd
+-- (declaration local to the function) keeps its meaning deliberately; it
+-- answers a different question and is still useful in a long method.
+vim.keymap.set('n', 'grd', vim.lsp.buf.definition, { desc = 'Go to declaration' })
+
 -- Theme
 vim.pack.add({ { src = "https://github.com/catppuccin/nvim" } })
 vim.cmd.colorscheme "catppuccin-mocha"
