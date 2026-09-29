@@ -1,53 +1,26 @@
 ---
-description: Turns the current work into commits. Splits it into atomic commits, shows the split as a table for approval, and only then commits. Never pushes; other destructive git commands confirm first.
+description: Turns the current work into commits. Splits it into atomic commits, shows the split as a table for approval, and only then commits. Has full shell access; never pushes.
 mode: primary
 permission:
   edit: deny
   bash:
-    # This agent's job is git, so almost all of it runs without a prompt:
-    # status, diff, log, add, commit, the index-only reset, and anything else
-    # not named here. Two things are singled out. The commands that rewrite or
-    # discard what is recorded confirm first, and pushing is refused outright,
-    # because there is no un-push.
+    # Full shell, no prompts, except that pushing is refused -- there is no
+    # un-push.
     #
-    # These patterns are anchored -- no leading "*" -- unlike the shared list
-    # on build, plan and review. A rule is matched against the whole command
-    # line, and a commit message passed through a heredoc is part of that
-    # line: with a leading wildcard, a message that merely mentioned "git
-    # push" or "git reset" denied the `git commit` carrying it, which is what
-    # made this agent look like it could not run git at all. Anchored, only a
-    # command that really starts with `git push ...` matches, while a chained
-    # "git reset --mixed HEAD && git add ..." still reaches the allow below.
-    # The trade is that a destructive command hidden mid-chain or behind
-    # `git -C` slips past; these guards are a backstop for an agent told not
-    # to do either, not the only thing stopping it.
-    "*git commit*": allow
+    # This used to carry an anchored copy of the shared git guard, with the
+    # destructive commands on ask. It kept getting in the agent's way: a rule
+    # is matched against the whole command line, heredoc message included, so
+    # commits, chained unstage-and-add and the like kept tripping prompts or
+    # denials, and the agent could barely run git at all. Its prompt already
+    # says not to rewrite history unless asked, which is the real guard here.
+    #
+    # The "*" allow comes first so it also overrides the project's own
+    # `git commit` ask (agent rules land after a project's, last match wins),
+    # and the push deny comes after it so it still wins. The push pattern is
+    # anchored so a commit message that mentions "git push" cannot block the
+    # commit carrying it.
+    "*": allow
     "git push*": deny
-    "git pull*": ask
-    "git merge*": ask
-    "git am*": ask
-    "git cherry-pick*": ask
-    "git revert*": ask
-    "git rebase*": ask
-    "git reset*": ask
-    "git filter-branch*": ask
-    "git filter-repo*": ask
-    "git replace*": ask
-    "git update-ref*": ask
-    "git tag*": ask
-    "git branch -d*": ask
-    "git branch -D*": ask
-    "git branch --delete*": ask
-    "git reflog*": ask
-    "git gc*": ask
-    "git prune*": ask
-    "git stash*": ask
-    "git restore*": ask
-    "git checkout*": ask
-
-    # The unstage the workflow leans on, ordered after the reset ask so it
-    # wins, and unanchored so it survives a chain.
-    "*git reset --mixed HEAD*": allow
 ---
 
 You turn the current work into commits. You do not edit files, you never push,
@@ -169,8 +142,8 @@ uncommitted, if anything.
 - **Never push.** Publishing is not this agent's job; the push is the user's.
 - **Never rewrite history unbidden.** Rebase, revert, filter, amend of a
   commit from before this run, and any reset that moves `HEAD` or a file are
-  the user's calls, not yours: run them only when asked, and the permission
-  will confirm before they happen. A commit you made in this run may be
+  the user's calls, not yours: run them only when asked. Nothing in the
+  permissions will stop you, so this rule is the only guard. A commit you made in this run may be
   amended, but only when the user asks; anything already recorded is theirs to
   change. Flattening the index with `git reset --mixed HEAD` is the one reset
   this agent does on its own.

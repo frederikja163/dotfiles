@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 # Harness for opencode/: that every mode which can reach a shell gates the
 # shared set of git commands with the action it is meant to, that the commit
-# agent confirms rather than denies, and that nobody re-opens what a project
-# has closed.
+# agent has an open shell with only push refused, and that nobody else
+# re-opens what a project has closed.
 #
-# This exists because the guard is written out four times -- build, plan and
-# review share one list, while the commit agent carries an anchored variant of
-# its own -- and the config format has no way to share a list. A plugin could
+# This exists because the guard is written out three times -- build, plan and
+# review share one list -- and the config format has no way to share a list. A plugin could
 # have injected it from one place and was rejected: a plugin that fails to load
 # takes the guard with it silently, which is the exact failure being guarded
 # against. Copies are safer and drift is the price, so the drift is what gets
@@ -95,9 +94,7 @@ CMDS
 # - review denies everything: read-only by construction.
 # - build and plan deny commit, which is the commit agent's job, and ask on the
 #   rest so the user decides.
-# - commit is checked separately: its whole job is git, so it confirms the
-#   destructive commands instead of denying them and refuses only push, and its
-#   patterns are anchored so a commit message cannot trip them.
+# - commit is checked separately: it has an open shell and refuses only push.
 expected_action() {
     case "$1:$2" in
         review:*)      printf 'deny' ;;
@@ -129,32 +126,22 @@ for agent in build plan review; do
     check "$agent uses the action each command should have" "${wrongaction:-none}" none
 done
 
-echo "scenario: commit confirms the shared commands and refuses only push"
-# The commit agent is the mode whose whole job is git, so it does not deny the
-# shared list -- the destructive commands confirm and only push is refused. Its
-# patterns are anchored (no leading "*") on purpose: a commit message is part
-# of the matched command line, and an unanchored guard blocked any commit whose
-# message happened to mention the command. That is also why `commit` itself is
-# allowed with a wildcard, so a chained `git add ... && git commit` still gets
-# past the project's own ask.
-while IFS= read -r cmd; do
-    [ -n "$cmd" ] || continue
-    [ "$cmd" = commit ] && continue
-    case "$cmd" in
-        push) want=deny ;;
-        *)    want=ask ;;
-    esac
-    got="$(grep -F -- "commit shell " "$TMP/flat" \
-           | grep -F -- " git $cmd*" | tail -1 | awk '{print $3}')"
-    check "commit: $cmd" "${got:-missing}" "$want"
-done < <(shared_commands)
-commit_rule="$(grep -F -- "commit shell " "$TMP/flat" | grep -F -- ' *git commit*' | tail -1 | awk '{print $3}')"
-check "commit: commit is allowed outright" "$commit_rule" allow
-# And no destructive guard on it may lead with "*", or a message could trip it.
-wild="$(grep -F -- "commit shell " "$TMP/flat" \
-        | grep -E ' (deny|ask) \*git (push|pull|merge|am|cherry-pick|revert|rebase|reset|filter-branch|filter-repo|replace|update-ref|tag|branch|reflog|gc|prune|stash|restore|checkout)' \
-        | wc -l)"
-check "commit carries no wildcarded guard a message could trip" "$wild" 0
+echo "scenario: commit has the whole shell and refuses only push"
+# The commit agent's whole job is git, and a per-command guard kept tripping on
+# its own commit messages, so it gets an open shell with push as the one
+# refusal. The allow-all must come before the push deny, or it would win.
+allow_line="$(grep -nF -- "commit shell allow *" "$TMP/flat" | grep -E 'allow \*$' | tail -1 | cut -d: -f1)"
+push_line="$(grep -nF -- "commit shell deny git push*" "$TMP/flat" | tail -1 | cut -d: -f1)"
+check "commit: shell is allowed outright" "${allow_line:+yes}" yes
+check "commit: push is denied" "${push_line:+yes}" yes
+order=no
+[ -n "$allow_line" ] && [ -n "$push_line" ] && [ "$push_line" -gt "$allow_line" ] && order=yes
+check "commit: the push deny comes after the allow-all" "$order" yes
+others="$(grep -F -- "commit shell " "$TMP/flat" | grep -vE 'allow \*$| deny git push\*$' | wc -l)"
+check "commit carries no other shell rule" "$others" 0
+# Anchored, so a commit message that mentions "git push" cannot trip it.
+wild="$(grep -cF -- "commit shell deny *git push" "$TMP/flat" || true)"
+check "commit's push deny is anchored" "${wild:-0}" 0
 
 echo "scenario: no agent re-opens what a project has closed"
 # An agent's rules are appended after the project's and the last match wins, so
@@ -163,7 +150,8 @@ echo "scenario: no agent re-opens what a project has closed"
 # wildcard allow, or a shell-scoped one, means an agent carries its own. (V1
 # spelled the same guard as `bash allow *`; V2 renamed the action to shell and
 # moved the base policy from the tool to `*`.)
-for agent in build plan review commit; do
+# The commit agent is exempt: an open shell is deliberately its setting.
+for agent in build plan review; do
     broad="$(grep -cE "^$agent (\*|shell) allow \*$" "$TMP/flat" || true)"
     shell="$(grep -cE "^$agent shell allow \*$" "$TMP/flat" || true)"
     verdict=ok
@@ -191,23 +179,13 @@ for agent in build plan review commit; do
     check "$agent leaves read-only git alone" "${gated:-none}" none
 done
 
-echo "scenario: only the commit agent may flatten the index"
-# Flattening the user's scratch staging is the commit agent's own job. It is an
-# index-only reset, so it sits after the broader reset ask and wins -- last
-# match wins -- and it must not appear on any other mode.
-for agent in build plan review commit; do
-    ask_line="$(grep -nF -- "$agent shell ask git reset*" "$TMP/flat" | tail -1 | cut -d: -f1)"
+echo "scenario: no other mode may flatten the index"
+# Flattening the user's scratch staging is the commit agent's own job, covered
+# by its open shell; no other mode may carry an allow that gets around its
+# reset ask.
+for agent in build plan review; do
     allow_line="$(grep -nF -- "$agent shell allow *git reset --mixed HEAD*" "$TMP/flat" | tail -1 | cut -d: -f1)"
-    want_allow=no
-    [ "$agent" = commit ] && want_allow=yes
-    got_allow=no
-    [ -n "$allow_line" ] && got_allow=yes
-    check "$agent allows only a flattened index" "$got_allow" "$want_allow"
-    if [ "$got_allow" = yes ]; then
-        order=no
-        [ -n "$ask_line" ] && [ "$allow_line" -gt "$ask_line" ] && order=yes
-        check "$agent orders that allow after the reset ask" "$order" yes
-    fi
+    check "$agent does not allow flattening the index" "${allow_line:+yes}" ""
 done
 
 echo
