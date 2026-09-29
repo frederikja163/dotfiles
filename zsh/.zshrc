@@ -85,8 +85,23 @@ add-zsh-hook precmd _prompt_to_bottom
 # bob-managed neovim
 export PATH="$HOME/.local/share/bob/nvim-bin:$PATH"
 
-# scripts from the dotfiles repo (bin/ is linked to ~/.local/bin)
+# scripts from the dotfiles repo, named by their real location.
+#
+# bin/ used to be symlinked onto ~/.local/bin and reached through that. But
+# ~/.local/bin is the XDG location for user executables and is where pipx, uv
+# and `pip install --user` drop their shims, so every one of those landed
+# inside the repo's working tree -- and the repo is public, leaving a stray
+# tool one `git add -A` from being published. Naming ~/dotfiles/bin directly
+# gives that directory back. The cost is that this line and the copy in
+# hypr/environment.lua now pin the clone to ~/dotfiles, which is the one thing
+# the symlink got for free; nothing else does, as the scripts find the repo
+# root from their own path.
+#
+# Ahead of ~/.local/bin, because `ide`, `title` and `proc-cwd` are generic
+# enough for an installed tool to shadow them, and a keybind that runs the
+# wrong one fails with nobody watching the output.
 export PATH="$HOME/.local/bin:$PATH"
+export PATH="$HOME/dotfiles/bin:$PATH"
 
 # JetBrains Toolbox shell scripts (rider, etc.)
 export PATH="$XDG_DATA_HOME/JetBrains/Toolbox/scripts:$PATH"

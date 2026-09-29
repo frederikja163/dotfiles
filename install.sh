@@ -338,7 +338,10 @@ install_links() {
     link zsh/.zshenv "$HOME/.zshenv"                 # stub: points zsh at ZDOTDIR
     link zsh/.zshrc  "$HOME/.config/zsh/.zshrc"
     link git      "$HOME/.config/git"                # ~/.gitconfig would override it
-    link bin      "$HOME/.local/bin"
+    # bin/ is deliberately not linked. It was linked to ~/.local/bin, which put
+    # the repo's working tree at the exact path pipx, uv and `pip install
+    # --user` install into, inside a repo that is public. zsh/.zshrc and
+    # hypr/environment.lua name ~/dotfiles/bin on PATH instead.
     link .omnisharp "$HOME/.omnisharp"     # global omnisharp.json for .csx scripts
 
     # opencode's *global* config, which is the one that carries the model and

@@ -22,8 +22,10 @@
 # from a temp copy is needed, which was the alternative.
 set -uo pipefail
 
-# The repo is wherever this script really lives: bin/ is a symlink from
-# ~/.local/bin, so the link has to be resolved before taking the parent.
+# The repo is wherever this script really lives. readlink -f rather than plain
+# dirname so this survives being reached through a symlink: bin/ was itself
+# linked from ~/.local/bin until that was undone, and a single script could be
+# linked somewhere again.
 REPO="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)" || exit 1
 
 # shellcheck source=lib/dotfiles-lib.sh

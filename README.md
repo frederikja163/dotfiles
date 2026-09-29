@@ -37,7 +37,7 @@ curl -fsSL https://raw.githubusercontent.com/frederikja163/dotfiles/main/setup.s
 | `git`      | `~/.config/git`               | identity and settings                |
 | `opencode` | `~/.config/opencode`          | model, and the `review` agent; no credentials (see `AGENTS.md`) |
 | `xdg`      | `~/.config/mimeapps.list`, `~/.local/share/{applications,dbus-1}` | yazi as the file explorer, browser "show in folder" included |
-| `bin`      | `~/.local/bin`                | small scripts, on `PATH`             |
+| `bin`      | — (on `PATH` in place)        | small scripts; not linked, see `install.sh` |
 | `system`   | `/etc`                        | system config (needs root)           |
 | `packages` | —                             | `pacman.txt`, `aur.txt`              |
 | `tests`    | —                             | `run.sh`, `sandbox.sh`, Lua tests    |

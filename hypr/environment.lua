@@ -7,8 +7,9 @@ hl.env("HYPRCURSOR_SIZE", "24")
 -- The graphical session never sources the zsh config, so the PATH exports there
 -- do not apply here and have to be repeated:
 --
---   ~/.local/bin                      scripts used by the keybinds, linked to
---                                     the dotfiles bin/ folder
+--   ~/dotfiles/bin                    scripts used by the keybinds
+--   ~/.local/bin                      anything installed there by pipx, uv or
+--                                     pip --user, and scripts not in the repo
 --   bob/nvim-bin                      the bob-managed neovim, which is the only
 --                                     nvim on this machine
 --   JetBrains/Toolbox/scripts         rider
@@ -22,6 +23,14 @@ hl.env("HYPRCURSOR_SIZE", "24")
 -- language servers either.
 --
 -- The guard keeps `hyprctl reload` from prepending the same entries repeatedly.
+--
+-- The repo's bin/ is named by its real path. It used to be symlinked onto
+-- ~/.local/bin, but that is where pipx, uv and `pip install --user` write, so
+-- their shims were landing inside the working tree of a public repo. zsh/.zshrc
+-- carries the same pair of entries and the same reasoning at more length. The
+-- repo goes last in this list and so ends up first on PATH, ahead of
+-- ~/.local/bin: `ide`, `title` and `proc-cwd` are names an installed tool could
+-- collide with, and a keybind running the wrong one is silent.
 local home = os.getenv("HOME")
 local dataHome = os.getenv("XDG_DATA_HOME") or (home .. "/.local/share")
 local currentPath = os.getenv("PATH") or "/usr/local/bin:/usr/bin:/bin"
@@ -31,6 +40,7 @@ for _, dir in ipairs({
     dataHome .. "/bob/nvim-bin",
     home .. "/.dotnet/tools",
     home .. "/.local/bin",
+    home .. "/dotfiles/bin",
 }) do
     if not string.find(currentPath, dir, 1, true) then
         currentPath = dir .. ":" .. currentPath

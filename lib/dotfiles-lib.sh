@@ -50,7 +50,7 @@ dotfiles_https_url() {
 # update can pass "all" and get everything for the price of the checks.
 #
 # The reload is guarded on dotfiles-reload existing on PATH. On a fresh machine
-# bin/ has not been linked into ~/.local/bin yet and nothing is running to
+# no profile has put the repo's bin/ on PATH yet and nothing is running to
 # reload, so skipping it is right; that same guard means a lib pulled by a newer
 # clone than the scripts on the machine does not fail on a missing command.
 dotfiles_apply() {

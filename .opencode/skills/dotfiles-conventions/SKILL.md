@@ -36,7 +36,10 @@ present only as a dependency of `downgrade`, one `pacman -Rs` away from taking
 
 ## Scripts in bin/
 
-`bin/` is symlinked to `~/.local/bin`. A script started from a **keybind** does
+`bin/` is not linked anywhere. It is on `PATH` at its real location, named by
+both `zsh/.zshrc` and `hypr/environment.lua`, which leaves `~/.local/bin` free
+for what pipx and friends install there rather than putting their shims inside
+this repo. A script started from a **keybind** does
 not get a shell profile: its `PATH` comes from `hypr/environment.lua`, and
 anything it calls must be listed there. `nvim` (bob) and `rider` (JetBrains
 Toolbox) both live outside the default `PATH` for this reason.
