@@ -68,6 +68,34 @@ hl.env("PATH", currentPath)
 -- `vi`, which is not worth a second copy of this in .zshrc to close.
 hl.env("EDITOR", "nvim")
 
+-- Qt apps were the only thing on this desktop still opening in light mode. GTK
+-- is already dark by three separate routes and needs nothing: .gtkrc-2.0 names
+-- Breeze-Dark outright, GTK3 reads `gtk-application-prefer-dark-theme` and
+-- picks Breeze's gtk-dark.css, and libadwaita asks the portal, which reports
+-- prefer-dark. Qt6 was the gap because it loads *no* platform theme plugin
+-- unless told to, and bare Fusion never consults the portal at all -- so it
+-- stayed at its built-in light default no matter what the rest of the session
+-- agreed on.
+--
+-- `kde` of the three available plugins. It renders window #202326 on #fcfcfc,
+-- which is pixel-for-pixel what GTK3 resolves to, so the two toolkits match
+-- instead of merely both being dark. `gtk3` was rejected for making Qt apps
+-- wear GTK widgets, and `xdgdesktopportal` for setting only colours and
+-- dialogs, leaving the widget style at Fusion.
+--
+-- The catch, and the reason this is worth spelling out: the colours themselves
+-- are not in this repo. They live in ~/.config/kdeglobals as [Colors:Window]
+-- and friends, written by a Plasma install that is no longer used. Pointed at
+-- an empty XDG_CONFIG_HOME this exact variable renders light (#eff0f1), so on
+-- a fresh machine the env var alone does not produce a dark desktop -- it only
+-- works here because that leftover file happens to still exist.
+--
+-- Needs plasma-integration for the plugin and breeze for the style; both were
+-- only present as Plasma dependencies, so packages/pacman.txt now declares
+-- them. Set here rather than in .zshrc for the same reason as PATH and EDITOR
+-- above. Already-running apps keep the old value until restarted.
+hl.env("QT_QPA_PLATFORMTHEME", "kde")
+
 
 -- Permissions
 -- See https://wiki.hypr.land/Configuring/Advanced-and-Cool/Permissions/

@@ -60,6 +60,11 @@ playerctl                     # used by the media keybinds in hypr/hyprland.lua
 pavucontrol                   # opened by waybar's audio module
 blueman                       # opened by waybar's bluetooth module
 plasma-thunderbolt            # thunderbolt device management
+plasma-integration            # Qt6 platform theme plugin for QT_QPA_PLATFORMTHEME=kde
+                              # in hypr/environment.lua, which is what puts Qt
+                              # apps in dark mode; was only a plasma-workspace
+                              # dependency
+breeze                        # the Breeze Qt widget style that plugin loads
 
 # fonts + icons
 ttf-jetbrains-mono-nerd       # icons for waybar / kitty / lspkind
