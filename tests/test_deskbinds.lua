@@ -474,6 +474,56 @@ table.sort(names)
 check("the row on screen 2", table.concat(row, " "), "1.2 2 dotfiles 3.2")
 check("sorting the names gives the same order", table.concat(names, " "), table.concat(row, " "))
 
+print("scenario: a decorator marks a name after it has been decided")
+-- How musicmark.lua puts a note on the desktop the music is playing from. It
+-- is a separate hook from the labeller because it has to reach a *titled*
+-- desktop as well, and a title beats the labeller outright -- a decoration
+-- added as another labeller would vanish on exactly the desktop most likely to
+-- be playing something.
+local decorated = two_monitors(0)
+table.insert(decorated.workspaces, { id = 6, special = false, monitor = decorated.monitors[2] })
+table.insert(decorated.workspaces, { id = 7, special = false, monitor = decorated.monitors[2] })
+reset(decorated)
+mod.set_labeller(function(ws) return ws.id == 6 and "dotfiles" or nil end)
+mod.set_decorator(function(ws, label)
+    if ws.id == 6 or ws.id == 7 then
+        return (label and label ~= "") and (label .. " *") or "*"
+    end
+    return label
+end)
+mod.renumber_desktops()
+
+local dec = {}
+for _, ren in ipairs(renames) do dec[ren.workspace] = ren.name end
+check("a labelled desktop keeps its label and gains the mark", dec[6], "2 dotfiles *")
+-- The important one: an unnamed desktop must not become "3.2 *", which
+-- waybar's format-icons would not recognise and would print raw.
+check("an unnamed desktop takes the mark as its label", dec[7], "3 *")
+-- ws1 is the first desktop on screen *1*, so "1.1": unmarked, and numbered by
+-- its own screen rather than the one the marked pair are on.
+check("and an unmarked desktop is untouched", dec[1], "1.1")
+
+print("scenario: a decorator reaches a titled desktop, which the labeller cannot")
+reset(decorated)
+mod.set_labeller(function(ws) return ws.id == 6 and "dotfiles" or nil end)
+mod.set_decorator(function(ws, label)
+    return ws.id == 6 and ((label or "") .. " *") or label
+end)
+mod.set_title(6, "comms")
+mod.renumber_desktops()
+local titled = {}
+for _, ren in ipairs(renames) do titled[ren.workspace] = ren.name end
+check("the title wins, and is still marked", titled[6], "2 comms *")
+
+print("scenario: a decorator that returns nothing leaves the name alone")
+reset(decorated)
+mod.set_labeller(function(ws) return ws.id == 6 and "dotfiles" or nil end)
+mod.set_decorator(function() return nil end)
+mod.renumber_desktops()
+local nilled = {}
+for _, ren in ipairs(renames) do nilled[ren.workspace] = ren.name end
+check("the label survives a nil decorator", nilled[6], "2 dotfiles")
+
 print("scenario: shuffling a desktop along its own row")
 -- mon0 gets a row of three: ws1, ws2, ws6.
 local function row_of(mon)

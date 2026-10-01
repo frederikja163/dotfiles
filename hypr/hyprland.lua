@@ -40,6 +40,13 @@ require("quake")
 -- through, and the first pass runs on an event, once all of this has loaded.
 require("desknames")
 
+-- Beside desknames rather than inside it: it adds a marker to whatever name
+-- that one settles on, which is a different question from what the desktop is
+-- called. After quake, which it asks which desktop a drop-down terminal
+-- belongs to. Nothing requires it back -- bin/music reaches it through
+-- `hyprctl repl`.
+require("musicmark")
+
 -- After quake and deskbinds, both of which it asks about the session it is
 -- writing down.
 require("session")

@@ -534,6 +534,20 @@ end
 -- set_labeller, below, once schedule_renumber exists to be called.
 local labeller = nil
 
+-- A second hook, applied *after* the name has been decided, to add a marker to
+-- it. musicmark.lua is the one user: a note on the desktop the music is
+-- playing from.
+--
+-- Separate from the labeller because it is not answering the same question. A
+-- labeller says what a desktop *is*, and the first source with an answer wins,
+-- so a decoration added that way would be lost the moment anything above it
+-- spoke -- in particular a title, which beats the labeller outright and is
+-- exactly the desktop most likely to be playing something. This runs over
+-- whatever the name turned out to be, title included.
+--
+-- Takes (workspace, name) and returns the name to use.
+local decorator = nil
+
 local renaming = false
 
 local function renumber_desktops()
@@ -606,6 +620,16 @@ local function renumber_desktops()
             -- what makes it frozen against the terminal wandering off to
             -- another directory.
             local label = titles[ws.id] or (labeller and labeller(ws))
+
+            -- Applied here rather than inside the labeller so that it also
+            -- reaches a titled desktop, and so that a marker on an otherwise
+            -- unnamed desktop becomes its label: "1 <note>" rather than
+            -- "1.1 <note>", which waybar's format-icons would not recognise
+            -- and would print raw.
+            if decorator then
+                label = decorator(ws, label) or label
+            end
+
             if label and label ~= "" then
                 want = ("%d %s"):format(index, label)
                 if taken[want] then
@@ -1477,6 +1501,12 @@ local function set_labeller(fn)
     labeller = fn
 end
 
+-- Set by musicmark.lua. Renumbers no more than set_labeller does, and for the
+-- same reason: both are called while the config is still loading.
+local function set_decorator(fn)
+    decorator = fn
+end
+
 -- columns.lua works in workspace ids and has no idea what a screen is, so the
 -- crossing itself is looked up here and handed over as the workspace to step
 -- onto. Set once the module is loaded: the layout only ever calls it at
@@ -1512,6 +1542,7 @@ return {
     screen_count = screen_count,
 
     set_labeller = set_labeller,
+    set_decorator = set_decorator,
     -- Naming a desktop outright: set_title_here is bin/title's entry point,
     -- the rest are session.lua writing titles down and putting them back.
     set_title_here = set_title_here,

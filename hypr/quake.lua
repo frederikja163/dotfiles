@@ -619,6 +619,12 @@ return {
     sync = sync,
     under_cursor = under_cursor,
     workspace_for = workspace_for,
+    -- The reverse of workspace_for: which desktop a window in a terminal's
+    -- workspace belongs to, or nil for a window anywhere else. Exported for
+    -- musicmark.lua, which has to turn the focused window into a desktop and
+    -- cannot read a terminal's own workspace id -- that is the special
+    -- workspace's, not the desktop's.
+    desktop_of = desktop_of,
     CLASS = CLASS,
     -- What a desktop with nothing to say is called here, so desknames.lua can
     -- tell that answer from a real directory.
