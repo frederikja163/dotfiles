@@ -1,0 +1,149 @@
+#!/usr/bin/env bash
+# Play everything in ~/Music back to back, with no gap between tracks.
+#
+#   music              alphabetical, looping forever
+#   music --shuffle    random order
+#   music --once       stop after the last track
+#   music --list       print the queue and exit, without needing mpv
+#
+# --list exists so that "what counts as music" is decided here and nowhere
+# else. install.sh seeds a fresh machine only when ~/Music has nothing in it,
+# and the whole of that test is whether this prints anything -- which beats a
+# second copy of the extension list in install.sh and a third in bin/music-get,
+# three lists that would then have to be kept in step.
+#
+# mpv, not a music daemon. mpd and friends want a library, a database and a
+# running service to hold a queue that this does not need: the queue is the
+# directory, read fresh at every start, so a track dropped in ~/Music is in the
+# rotation next time with nothing to update. Waybar's now-playing comes out of
+# mpv the same way it would out of a daemon, so the service bought nothing.
+#
+# --gapless-audio=yes rather than mpv's default, which is "weak". Weak keeps
+# the audio output open only while the next track's format matches the last
+# one's, and reopens it when they differ -- which these do, being 60-odd
+# unrelated netlabel releases at whatever sample rate each was mastered at. The
+# reopen is audible as a gap of roughly a quarter second at exactly the moment
+# the mix is supposed to carry through. "yes" keeps one output open and
+# resamples into it instead, which is the trade this wants.
+#
+# --prefetch-playlist=yes decodes the head of the next track while the current
+# one plays. Without it the gap closes but the first instant of a track can
+# still stutter while the file is opened.
+#
+# The track is named in waybar while this runs, by the mpris module in
+# waybar/config.jsonc -- but only because mpv-mpris is installed. mpv speaks no
+# MPRIS of its own: it sits on the session bus, because its audio backend puts
+# it there, and never claims an org.mpris.MediaPlayer2 name. That is why
+# playerctl listed firefox and not mpv while mpv was running and audible, and
+# why the package is in packages/pacman.txt rather than being optional.
+#
+# Reads MUSIC_DIR when it is set, which is how tests/test_music.sh points it at
+# a scratch directory. Everything else uses the default.
+set -euo pipefail
+
+dir="${MUSIC_DIR:-$HOME/Music}"
+
+loop=inf
+shuffle=no
+listing=no
+for arg in "$@"; do
+    case "$arg" in
+        --shuffle) shuffle=yes ;;
+        --once)    loop=no ;;
+        --list|-l) listing=yes ;;
+        -h|--help) sed -n '2,7p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'; exit 0 ;;
+        *) echo "music: unknown option: $arg" >&2; exit 2 ;;
+    esac
+done
+
+# A missing directory is nothing to report when only the queue was asked for:
+# install.sh calls --list before ~/Music necessarily exists, and an empty
+# answer is the true one.
+if [ ! -d "$dir" ]; then
+    [ "$listing" = yes ] && exit 0
+    echo "music: no directory at $dir" >&2
+    exit 1
+fi
+
+# -print0 and a null-delimited read, because these filenames come from release
+# titles: they carry spaces, quotes, brackets and the odd newline would not be
+# out of character.
+mapfile -t -d '' tracks < <(
+    find "$dir" -maxdepth 1 -type f \( \
+        -iname '*.mp3' -o -iname '*.flac' -o -iname '*.ogg' -o -iname '*.opus' -o \
+        -iname '*.m4a' -o -iname '*.wav' -o -iname '*.aac' -o -iname '*.wma' \
+        \) -print0 | sort -z
+)
+
+if [ "$listing" = yes ]; then
+    # Nothing to list is not a failure here, or install.sh's gate could not
+    # tell an empty directory from a broken script.
+    [ "${#tracks[@]}" -eq 0 ] || printf '%s\n' "${tracks[@]}"
+    exit 0
+fi
+
+if [ "${#tracks[@]}" -eq 0 ]; then
+    echo "music: no audio files in $dir" >&2
+    exit 1
+fi
+
+# Only playing needs mpv, so --list keeps working on a machine without it.
+if ! command -v mpv >/dev/null; then
+    echo "music: mpv is not installed (pacman -S mpv)" >&2
+    exit 1
+fi
+
+echo "${#tracks[@]} tracks. space pauses, > skips, q quits."
+
+# Put a note on the desktop this was started from, so the bar says where the
+# music is coming from and not merely that it is playing.
+#
+# hypr/musicmark.lua works out which desktop the focused window means -- the
+# drop-down terminal needs translating, see the header there. It is handed this
+# script's own pid, which it watches to know the music has stopped: the trap
+# below is the tidy path, and the pid is what covers a SIGKILL, where no trap
+# runs at all.
+#
+# Failure here is ignored on purpose. No Hyprland, another compositor, a config
+# without musicmark: none of that is a reason to refuse to play music, and
+# `hyprctl repl` on a machine with no compositor is an error, not a crash.
+#
+# The HYPRLAND_INSTANCE_SIGNATURE check is not just an optimisation. A bare
+# `hyprctl` talks to whatever session is running, which is the one the user is
+# sitting in -- so without this, tests/test_music.sh driving this script would
+# rename a desktop on the live desktop every time the suite ran. Requiring the
+# variable means a caller that has not been handed a compositor cannot reach
+# one by accident, and the test unsets it for exactly that reason.
+mark() {
+    [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] || return 0
+    command -v hyprctl >/dev/null 2>&1 || return 0
+    hyprctl repl "return require('musicmark').$1" >/dev/null 2>&1 || true
+}
+
+# The clearing hangs off EXIT alone, and the signals only turn themselves into
+# an exit. Trapping all three on the same handler was the first spelling and
+# ran it twice on a Ctrl-C -- the INT trap fired, then EXIT fired on the way
+# out. Harmless, because clear() is idempotent, but it is two round trips to
+# the compositor to do one thing. Routing the signals through `exit` also keeps
+# the conventional 128+signal status, which `trap ... INT` on its own throws
+# away.
+trap 'mark "clear()"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+mark "set_here($$)"
+
+# Not `exec mpv`. exec replaces this shell, which is cheaper by one process and
+# makes the trap above unreachable -- the note would then be cleared only by
+# musicmark noticing the pid had gone, which is the fallback and not the path
+# to rely on. mpv is a foreground child instead, and its exit status is this
+# script's.
+mpv \
+    --no-video \
+    --audio-display=no \
+    --gapless-audio=yes \
+    --prefetch-playlist=yes \
+    --loop-playlist="$loop" \
+    --shuffle="$shuffle" \
+    --term-playing-msg='>>> ${media-title}' \
+    -- "${tracks[@]}"

@@ -12,7 +12,8 @@ desktop-file-utils  # update-desktop-database, run by install.sh after linking
                     # xdg/applications/yazi.desktop
 linux-headers       # required to build out-of-tree / DKMS modules
 lua                 # runs tests/run.sh
-python              # parses hyprctl -j in bin/waybar-main and bin/dotfiles-monitor-order
+python              # parses hyprctl -j in bin/waybar-main and bin/dotfiles-monitor-order;
+                    # bin/music-get is written in it
 wtype               # types into the nested Hyprland in tests/sandbox.sh, the only
                     # way to test a keybind that enters or leaves a mode
 dotnet-sdk
@@ -69,6 +70,13 @@ breeze                        # the Breeze Qt widget style that plugin loads
 # fonts + icons
 ttf-jetbrains-mono-nerd       # icons for waybar / kitty / lspkind
 papirus-icon-theme            # notification icons, referenced by dunst/dunstrc
+
+# media players
+mpv                 # what bin/music plays through; was installed only as
+                    # another package's dependency, so a pacman -Rs could
+                    # have taken it
+mpv-mpris           # mpv speaks no MPRIS without it, which is what waybar's
+                    # mpris module and the playerctl keybinds both read
 
 # media codecs
 ffmpeg              # yazi previews videos with ffmpeg/ffprobe

@@ -379,11 +379,57 @@ install_links() {
     fi
 }
 
+# --- music ------------------------------------------------------------------
+
+# Give a fresh machine something for `music` to play, and only a fresh machine.
+#
+# The rule is that a single audio file in ~/Music stops this dead. Not "top the
+# collection up to an hour", which is what it did first and is wrong: the
+# directory is the user's, a deliberately curated four tracks is a collection
+# and not a shortfall, and anything measuring what is there against a target
+# eventually deletes or duplicates to meet it. Nothing at all is the only state
+# that reads as "nobody has put music here yet" without guessing.
+#
+# The test lives here rather than inside bin/music-get, which always downloads:
+# a downloader that refuses unless the directory is empty is a one-shot seeder
+# and cannot be used to fetch more, which is the job its name promises. The
+# condition is `music --list` printing nothing, so the extension list that
+# decides what counts as music stays in bin/music alone.
+#
+# Silent and never fatal, by instruction, and that is this line's business
+# rather than the downloader's. bin/music-get reports and exits non-zero like
+# any other tool when run by hand; the redirect and `|| true` are what make it
+# quiet here. install.sh runs under `set -e`, so without the `|| true` a failed
+# or interrupted download would abandon the install part way through, after the
+# packages and before the links. Missing music is not worth that.
+#
+# Not backgrounded. It was, and it is worse: setup.sh ends, the terminal looks
+# finished, and 600MB keeps arriving over a connection the user is about to
+# take elsewhere, with nothing on screen to say so and no way to stop it short
+# of finding the pid.
+seed_music() {
+    [ -x "$DOTFILES/bin/music-get" ] || return 0
+
+    # Spelled as an `if` rather than `[ -n ... ] && return 0`. Bash exempts the
+    # left side of an && from `set -e`, so the short form does work, but the
+    # reader has to know that to see it -- and the cost of being wrong here is
+    # an install that stops silently at this line.
+    if [ -n "$("$DOTFILES/bin/music" --list 2>/dev/null)" ]; then
+        return 0
+    fi
+
+    "$DOTFILES/bin/music-get" 60 >/dev/null 2>&1 || true
+}
+
 # install_rider comes last in both modes that install anything, rather than at
 # the end of install_packages where the message used to be: it can open a
 # window, and that belongs after the run rather than in the middle of one.
+#
+# seed_music runs only in `all`. It needs both halves: mpv comes from the
+# packages and ~/Music being worth filling follows from the rest being in
+# place, and neither single-half mode is a fresh machine.
 case "$mode" in
-    all)      install_packages; install_links; install_rider ;;
+    all)      install_packages; install_links; seed_music; install_rider ;;
     packages) install_packages; install_rider ;;
     links)    install_links ;;
 esac

@@ -1,0 +1,249 @@
+#!/usr/bin/env python3
+"""Download Creative Commons techno into ~/Music, for bin/music to play.
+
+    music-get            10 more tracks
+    music-get 60         a specific number
+    music-get --quiet    no output, for a caller that wants none
+    music-get --list     what it would download, without downloading
+
+This always downloads. It used to refuse unless ~/Music was empty, which made
+it a one-shot seeder that could not be used for the thing its name says; the
+caller that wants that rule is install.sh, and it is install.sh that now
+carries it. The whole of that check there is whether `music --list` prints
+anything, so the question "what counts as music" is answered in one place
+rather than in three scripts with three extension lists.
+
+Tracks already in ~/Music are skipped by filename and do not count against the
+quota, so running this repeatedly adds new music instead of re-fetching what is
+there. It will not notice the same recording under a different name.
+
+Output and exit code are an ordinary tool's: progress as it goes, a non-zero
+exit when it got nothing. The silence install.sh needs is install.sh's to
+impose, with a redirect and `|| true` it already has -- a script that hides its
+own failures is the wrong default for something run by hand, which is what the
+rename is for. --quiet is here for any other caller that wants it.
+
+The source is the Internet Archive's netlabels collection, through its open
+advancedsearch API. Pixabay was the obvious first try and cannot be scripted at
+all: every path under pixabay.com answers 403 behind a Cloudflare JS challenge
+-- search pages, the sitemap, the CDN, even the internal endpoints their own
+robots.txt whitelists -- and their public API covers images and video with no
+music endpoint. archive.org needs no key, rate-limits generously and serves
+whole releases with usable ID3 tags, which is also what gives waybar an artist
+and a title rather than a filename.
+
+Only files the API reports as "VBR MP3" are taken. Archive derives several
+encodings of each track and the list holds all of them, so matching anything
+looser downloads the same song three times at three bitrates.
+"""
+import json
+import os
+import random
+import re
+import sys
+import time
+import urllib.parse
+import urllib.request
+
+# Tracks per release. Whole albums would fill the quota from a handful of
+# artists, and techno releases run long.
+PER_RELEASE = 3
+
+# Overall budget. install.sh runs this in the foreground, so a stalled mirror
+# has to end the attempt rather than hold up an install indefinitely.
+DEADLINE_SECONDS = float(os.environ.get("MUSIC_GET_DEADLINE", 900))
+REQUEST_TIMEOUT = 45
+
+QUERY = (
+    'collection:netlabels AND mediatype:audio AND format:"VBR MP3" '
+    "AND licenseurl:[* TO *] "
+    'AND (subject:techno OR subject:"tech house" OR subject:"minimal techno" '
+    'OR subject:"acid techno" OR subject:"detroit techno")'
+)
+
+
+def main(argv):
+    quiet = False
+    listing = False
+    count = 10
+
+    args = list(argv)
+    while args:
+        arg = args.pop(0)
+        if arg in ("-q", "--quiet"):
+            quiet = True
+        elif arg in ("-l", "--list"):
+            listing = True
+        elif arg in ("-h", "--help"):
+            print(__doc__.strip())
+            return 0
+        elif arg.isdigit() and int(arg) > 0:
+            count = int(arg)
+        elif arg == "--count" and args and args[0].isdigit():
+            count = int(args.pop(0))
+        else:
+            print(f"music-get: unknown option: {arg}", file=sys.stderr)
+            print("usage: music-get [N] [--quiet] [--list]", file=sys.stderr)
+            return 2
+
+    # --quiet covers stderr as well as stdout. Silencing only the progress
+    # would leave "cannot reach archive.org" on the terminal, which is exactly
+    # the line a caller asking for quiet does not want. Usage errors above are
+    # deliberately not covered: they mean the command was typed wrong, and
+    # there is nothing to be quiet about yet.
+    out = _nothing if quiet else _say
+    err = _nothing if quiet else _warn
+
+    dest = os.environ.get("MUSIC_DIR") or os.path.expanduser("~/Music")
+
+    # Not a mkdir. A missing ~/Music on a machine where nobody has asked for
+    # music is not this script's to create and then fill.
+    if not os.path.isdir(dest):
+        err(f"music-get: no directory at {dest}")
+        return 1
+
+    deadline = time.monotonic() + DEADLINE_SECONDS
+
+    try:
+        releases = search(deadline)
+    except Exception as e:
+        err(f"music-get: cannot reach archive.org: {e}")
+        return 1
+
+    if not releases:
+        err("music-get: the search returned nothing")
+        return 1
+
+    # Left unseeded, so two machines do not end up with an identical library,
+    # but shuffled at all so the quota is not the same releases the API happens
+    # to rank first -- and so a second run finds different ones.
+    random.shuffle(releases)
+    out(f"{len(releases)} releases matched, want {count} track(s)")
+
+    got = 0
+    skipped = 0
+    for release in releases:
+        if got >= count or time.monotonic() > deadline:
+            break
+        try:
+            tracks = pick_tracks(release, deadline)
+        except Exception as e:
+            out(f"  ! {release}: {e}")
+            continue
+        for track in tracks:
+            if got >= count or time.monotonic() > deadline:
+                break
+            path = os.path.join(dest, track["name"])
+            if os.path.exists(path):
+                skipped += 1
+                continue
+            if listing:
+                out(track["name"])
+                got += 1
+                continue
+            if download(track, path, deadline, out):
+                got += 1
+
+    tail = f", {skipped} already here" if skipped else ""
+    verb = "would download" if listing else "downloaded"
+    out(f"{verb} {got} track(s) into {dest}{tail}")
+
+    if got == 0:
+        err("music-get: got nothing")
+        return 1
+    return 0
+
+
+def _say(message):
+    print(message, flush=True)
+
+
+def _warn(message):
+    print(message, file=sys.stderr, flush=True)
+
+
+def _nothing(_message):
+    pass
+
+
+def fetch(url, deadline):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("out of time")
+    request = urllib.request.Request(url, headers={"User-Agent": "dotfiles music-get"})
+    with urllib.request.urlopen(request, timeout=min(REQUEST_TIMEOUT, remaining)) as r:
+        return r.read()
+
+
+def search(deadline):
+    params = [
+        ("q", QUERY),
+        ("rows", "300"),
+        ("output", "json"),
+        ("fl[]", "identifier"),
+    ]
+    url = "https://archive.org/advancedsearch.php?" + urllib.parse.urlencode(params)
+    payload = json.loads(fetch(url, deadline))
+    return [d["identifier"] for d in payload["response"]["docs"] if d.get("identifier")]
+
+
+def clean(text, limit=70):
+    text = re.sub(r"\s+", " ", str(text or "")).strip()
+    text = re.sub(r'[/\\:*?"<>|\x00-\x1f]', "-", text)
+    return text.strip(" .-")
+
+
+def pick_tracks(identifier, deadline):
+    meta = json.loads(fetch(f"https://archive.org/metadata/{identifier}", deadline))
+    artist = clean(meta.get("metadata", {}).get("creator", "")) or "Unknown Artist"
+    out = []
+    for f in meta.get("files", []):
+        if f.get("format") != "VBR MP3":
+            continue
+        try:
+            seconds = float(f.get("length", 0))
+        except (TypeError, ValueError):
+            continue
+        # Netlabel releases carry hour-long DJ sets and 20-second idents, and
+        # neither belongs in a shuffle.
+        if not 60 <= seconds <= 900:
+            continue
+        title = clean(f.get("title") or os.path.splitext(f["name"])[0])[:70]
+        out.append({
+            "url": f"https://archive.org/download/{identifier}/{urllib.parse.quote(f['name'])}",
+            "name": f"{clean(artist)[:60]} - {title}.mp3",
+        })
+        if len(out) >= PER_RELEASE:
+            break
+    return out
+
+
+def download(track, path, deadline, out):
+    partial = path + ".part"
+    try:
+        data = fetch(track["url"], deadline)
+        # Archive answers some requests with an HTML error page and a 200, so
+        # the frame header is checked rather than the status code.
+        if not (data[:3] == b"ID3" or data[:1] == b"\xff"):
+            raise ValueError("not an mp3")
+        with open(partial, "wb") as fh:
+            fh.write(data)
+        os.replace(partial, path)
+        out(f"  {track['name']} ({len(data) // 1024} KiB)")
+        return True
+    except Exception as e:
+        # A half-written file would be picked up by `music` as a track, and by
+        # install.sh's gate as proof the directory has music in it.
+        try:
+            os.remove(partial)
+        except OSError:
+            pass
+        out(f"  ! {track['name']}: {e}")
+        return False
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except KeyboardInterrupt:
+        sys.exit(130)
