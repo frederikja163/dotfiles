@@ -18,6 +18,12 @@
 # behind goes on saying so, one notice, until the pull happens and it is taken
 # down.
 #
+# Taken down at once, not on the next minute: bin/dotfiles-update wakes this
+# loop when it finishes, and while offline the fetch is retried every few
+# seconds so the offline notice goes as soon as the network is back. Waiting
+# for the next check left each notice up long enough to look as if nothing
+# would ever clear it.
+#
 # Run by hand it does a single check and exits, because a person is watching
 # output they can read at once; the loop is for a process nobody is watching.
 # That is decided from stdout being a terminal, not stdin: anything Hyprland
@@ -81,6 +87,19 @@ REPO="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)" || exit 1
 # override name is a mouthful inside an expression and the environment is only
 # how a test reaches in.
 interval="${DOTFILES_CHECK_UPDATES_INTERVAL:-60}"
+
+# While the fetch is failing it is retried far more often than that, so the
+# offline notice comes down within seconds of getting back online rather than
+# up to two minutes later -- a whole interval of sleep, plus the fetch timing
+# out. That was the old behaviour, and the notice looked as if it never went
+# away. Retrying this often is cheap for the ordinary kind of offline: with no
+# route or no DNS the fetch fails at once. A captive portal that swallows the
+# connection still costs the full fetch timeout per attempt, as before.
+#
+# Retrying faster must not mean complaining sooner, so the notice waits for
+# failures to have lasted a whole interval rather than for a count of them.
+retry="${DOTFILES_CHECK_UPDATES_RETRY:-5}"
+grace="${DOTFILES_CHECK_UPDATES_GRACE:-$interval}"
 
 # One pass when a terminal is watching, or when a test says so. See the header
 # for why stdout, not stdin, is what tells us.
@@ -261,9 +280,44 @@ behind_from_local() {
     printf '%s\n' "$best"
 }
 
+# bin/dotfiles-update wakes the loop with SIGUSR1 when it is done (see
+# dotfiles_wake_watcher in dotfiles-lib.sh), so an answered reminder comes down
+# at once instead of on the next check. The sleep runs in the background and is
+# waited on because a trap only runs between commands: a foreground sleep would
+# hold the signal until it finished on its own. A signal that lands while a
+# check is running sets the flag, and the loop then goes round again without
+# sleeping, so a wake is never lost.
+#
+# The pidfile is only written by the loop, since a one-off run has nothing to
+# wake, and removed on exit only while it still names this process -- a newer
+# login's watcher may have taken it over.
+woken=0
+nap_pid=""
+nap() {
+    if [ "$woken" -eq 1 ]; then
+        woken=0
+        return 0
+    fi
+    sleep "$1" &
+    nap_pid=$!
+    wait "$nap_pid"
+    kill "$nap_pid" 2>/dev/null
+    nap_pid=""
+    woken=0
+}
+
+if [ "$once" -eq 0 ]; then
+    pidfile="$(dotfiles_watcher_pidfile)"
+    printf '%s\n' "$$" > "$pidfile"
+    trap 'woken=1' USR1
+    trap '[ -n "$nap_pid" ] && kill "$nap_pid" 2>/dev/null
+          [ "$(cat "$pidfile" 2>/dev/null)" = "$$" ] && rm -f "$pidfile"' EXIT
+    trap 'exit 0' TERM INT HUP
+fi
+
 # There is no deadline. The loop runs until the session ends, because a reminder
 # that stops watching while you are still logged in is not one.
-failures=0
+failing_since=""
 
 while :; do
     # The compositor is gone, so this process has outlived its session. See the
@@ -271,7 +325,7 @@ while :; do
     [ "$(parent_pid)" = "$compositor" ] || exit 0
 
     if timeout 60 git fetch --quiet "$url" "$merge" 2>/dev/null; then
-        failures=0
+        failing_since=""
         behind="$(git rev-list --count "HEAD..FETCH_HEAD" 2>/dev/null)" || behind=0
 
         if [ "${behind:-0}" -le 0 ]; then
@@ -280,13 +334,14 @@ while :; do
             announce_behind "$behind"
         fi
     else
-        failures=$((failures + 1))
+        [ -n "$failing_since" ] || failing_since="$SECONDS"
 
-        # Said from the second failure on, not the first: one failed fetch at
-        # login is the ordinary case, because the session really is up before
-        # the network. A second one a minute later is what distinguishes "still
-        # connecting" from "not going to connect on its own". A one-off run has
-        # no later to wait for, so it says it the first time.
+        # Said once failures have lasted a whole interval, not on the first:
+        # one failed fetch at login is the ordinary case, because the session
+        # really is up before the network. Still failing a minute later is what
+        # distinguishes "still connecting" from "not going to connect on its
+        # own". A one-off run has no later to wait for, so it says it the first
+        # time.
         #
         # Re-checked on every attempt after that, but only spoken when the
         # answer changes. The cause is not fixed for the run: the usual recovery
@@ -294,7 +349,7 @@ while :; do
         # come back and reveal that the url is wrong, and then the notice should
         # stop telling you to get online. One notification, kept current, rather
         # than one per attempt or one stale one.
-        if [ "$failures" -ge 2 ] || [ "$once" -eq 1 ]; then
+        if [ $((SECONDS - failing_since)) -ge "$grace" ] || [ "$once" -eq 1 ]; then
             # -f: a failed fetch need not mean nothing to report, if the repo
             # already holds the commits. Asked for, not guessed, because the ref
             # it reads can itself be old -- see the header.
@@ -316,7 +371,7 @@ while :; do
                     body="The network is fine, so this is the remote:"
                     body="$body check its url, or whether the repo is still there."
                 fi
-                body="$body Still checking every ${interval}s."
+                body="$body Still checking every ${retry}s."
 
                 show "offline:$cause" "$summary" "$body"
             fi
@@ -324,5 +379,9 @@ while :; do
     fi
 
     [ "$once" -eq 1 ] && exit 0
-    sleep "$interval"
+    if [ -n "$failing_since" ]; then
+        nap "$retry"
+    else
+        nap "$interval"
+    fi
 done

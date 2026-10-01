@@ -135,6 +135,7 @@ if [ "$before" = "$target" ]; then
     echo
     echo "    Running install.sh anyway (safe to re-run, skips what is done)."
     dotfiles_apply all || exit 1
+    dotfiles_wake_watcher
     echo
     echo "done"
     exit 0
@@ -153,6 +154,7 @@ if ! git merge-base --is-ancestor HEAD "$target"; then
 
     if git merge-base --is-ancestor "$target" HEAD; then
         echo "    nothing to pull; $ahead local commit(s) not pushed yet"
+        dotfiles_wake_watcher
         exit 0
     fi
 
@@ -278,6 +280,10 @@ if [ ${#modes[@]} -gt 0 ]; then
     echo
     dotfiles_apply "${modes[@]}" || exit 1
 fi
+
+# The pull is what the watcher's notice asked for, so have it look again now
+# and take the notice down, rather than leave it up for another minute.
+dotfiles_wake_watcher
 
 echo
 echo "done"

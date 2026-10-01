@@ -84,12 +84,18 @@ cat > "$TMP/bin/curl" <<'STUB'
 exit "$(cat "$STATE/curl_exit" 2>/dev/null || echo 0)"
 STUB
 
-# sleep: the loop's only clock. Count calls and stop the script after the plan
-# has been walked, so a loop test ends on its own.
+# sleep: the loop's only clock. Count calls, record how long each was asked
+# for, and stop the script after the plan has been walked, so a loop test ends
+# on its own. With real_sleep set it really sleeps instead, for the scenario
+# that needs something to wake the loop out of.
 cat > "$TMP/bin/sleep" <<'STUB'
 #!/usr/bin/env bash
+if [ -e "$STATE/real_sleep" ]; then
+    exec /usr/bin/sleep "$@"
+fi
 n=$(( $(cat "$STATE/sleeps" 2>/dev/null || echo 0) + 1 ))
 printf '%s\n' "$n" > "$STATE/sleeps"
+printf '%s\n' "$1" >> "$STATE/sleep_args"
 if [ "$n" -ge "$(cat "$STATE/sleep_limit")" ]; then
     kill -TERM "$PPID" 2>/dev/null
 fi
@@ -127,6 +133,8 @@ scenario() {
     echo 0 > "$STATE/behind"
     : > "$STATE/notify"
     : > "$STATE/closed"
+    : > "$STATE/sleep_args"
+    rm -f "$STATE/real_sleep" "$TMP/watcher.pid"
     echo "${CURL_EXIT:-0}" > "$STATE/curl_exit"
     echo "${LOCAL_EXISTS:-0}" > "$STATE/local_exists"
     echo "${LOCAL_BEHIND:-0}" > "$STATE/local_behind"
@@ -136,7 +144,10 @@ scenario() {
     (
         PATH="$TMP/bin:$PATH" \
         STATE="$STATE" \
-        DOTFILES_CHECK_UPDATES_INTERVAL=0 \
+        DOTFILES_CHECK_UPDATES_INTERVAL="${INTERVAL:-0}" \
+        DOTFILES_CHECK_UPDATES_RETRY="${RETRY:-0}" \
+        DOTFILES_CHECK_UPDATES_GRACE="${GRACE:-0}" \
+        DOTFILES_CHECK_UPDATES_PIDFILE="$TMP/watcher.pid" \
         DOTFILES_CHECK_UPDATES_ONCE="$once" \
         DOTFILES_CHECK_UPDATES_PROBE_TIMEOUT=2 \
             "$SCRIPT" "$@" || :
@@ -217,6 +228,78 @@ PLAN
 check "the local ref is ignored" \
       "$(sed -n '1p' "$STATE/notify" | cut -d'|' -f2)" \
       "dotfiles: no network"
+
+echo "scenario: a failing fetch is retried sooner than the interval"
+CURL_EXIT=1 INTERVAL=60 RETRY=5 scenario loop 3 <<'PLAN'
+fail
+fail
+ok 0
+PLAN
+check "retries while failing, then back to the interval" \
+      "$(tr '\n' ' ' < "$STATE/sleep_args")" "5 5 60 "
+
+echo "scenario: fast retries do not bring the offline notice forward"
+CURL_EXIT=1 INTERVAL=60 RETRY=5 GRACE=3600 scenario loop 3 <<'PLAN'
+fail
+fail
+fail
+PLAN
+check "nothing said inside the grace period" "$(posted)" ""
+
+echo "scenario: coming back online takes the offline notice down"
+CURL_EXIT=1 scenario loop 2 <<'PLAN'
+fail
+ok 0
+PLAN
+check "the offline notice was posted" "$(sed -n '1p' "$STATE/notify" | cut -d'|' -f2)" \
+      "dotfiles: no network"
+check "and then closed" "$(cat "$STATE/closed")" "1"
+
+echo "scenario: dotfiles-update wakes the watcher out of its sleep"
+# A real sleep this time, an hour of it, so only the wake can explain the
+# notice coming down within the few seconds this waits.
+printf '%s\n' "ok 1" "ok 0" > "$STATE/plan"
+echo 0 > "$STATE/nextid"; echo 0 > "$STATE/call"; echo 0 > "$STATE/behind"
+: > "$STATE/notify"; : > "$STATE/closed"; rm -f "$TMP/watcher.pid"
+touch "$STATE/real_sleep"
+PATH="$TMP/bin:$PATH" STATE="$STATE" \
+    DOTFILES_CHECK_UPDATES_INTERVAL=3600 \
+    DOTFILES_CHECK_UPDATES_PIDFILE="$TMP/watcher.pid" \
+    DOTFILES_CHECK_UPDATES_ONCE=0 \
+    "$SCRIPT" >/dev/null 2>&1 &
+watcher=$!
+for _ in $(seq 50); do
+    [ -s "$TMP/watcher.pid" ] && [ -s "$STATE/notify" ] && break
+    /usr/bin/sleep 0.1
+done
+check "the watcher wrote its own pid" "$(cat "$TMP/watcher.pid" 2>/dev/null)" "$watcher"
+( DOTFILES_CHECK_UPDATES_PIDFILE="$TMP/watcher.pid"
+  . lib/dotfiles-lib.sh
+  dotfiles_wake_watcher )
+for _ in $(seq 50); do
+    [ -s "$STATE/closed" ] && break
+    /usr/bin/sleep 0.1
+done
+check "woken, it looked again and closed the notice" "$(cat "$STATE/closed")" "1"
+check "and it is still running" "$(kill -0 "$watcher" 2>/dev/null && echo yes)" "yes"
+kill "$watcher" 2>/dev/null
+wait "$watcher" 2>/dev/null
+check "it removed its pidfile on exit" "$([ -e "$TMP/watcher.pid" ] && echo left)" ""
+rm -f "$STATE/real_sleep"
+
+echo "scenario: a stale pidfile is not signalled"
+# SIGUSR1 terminates a process that does not trap it, so a pid reused by some
+# other program must be left alone.
+/usr/bin/sleep 30 &
+bystander=$!
+printf '%s\n' "$bystander" > "$TMP/watcher.pid"
+( DOTFILES_CHECK_UPDATES_PIDFILE="$TMP/watcher.pid"
+  . lib/dotfiles-lib.sh
+  dotfiles_wake_watcher )
+/usr/bin/sleep 0.2
+check "the unrelated process survives" "$(kill -0 "$bystander" 2>/dev/null && echo yes)" "yes"
+kill "$bystander" 2>/dev/null
+wait "$bystander" 2>/dev/null
 
 echo
 printf '%d passed, %d failed\n' "$pass" "$fail"

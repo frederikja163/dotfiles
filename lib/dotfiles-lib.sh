@@ -75,3 +75,28 @@ dotfiles_apply() {
     fi
     return 0
 }
+
+# Where the running bin/dotfiles-check-updates watcher leaves its pid, so
+# bin/dotfiles-update can tell it to look again. In the runtime dir because the
+# watcher belongs to one login and that dir goes with it. Overridable so its
+# test does not overwrite the live session's file.
+dotfiles_watcher_pidfile() {
+    printf '%s\n' "${DOTFILES_CHECK_UPDATES_PIDFILE:-${XDG_RUNTIME_DIR:-/tmp}/dotfiles-check-updates.pid}"
+}
+
+# Ask the watcher to check now rather than on its next minute, so the
+# notification it keeps up is taken down as soon as an update has answered it.
+#
+# The pid is checked against /proc before it is signalled. A pidfile outlives a
+# crash, the pid gets reused, and SIGUSR1's default action is to terminate, so
+# signalling a stale pid would kill whatever unrelated process now holds it.
+# Quiet when there is no watcher: an update run over ssh, or before the next
+# login has started one, simply has nobody to tell.
+dotfiles_wake_watcher() {
+    local pid
+    pid="$(cat "$(dotfiles_watcher_pidfile)" 2>/dev/null)" || return 0
+    case "$pid" in ''|*[!0-9]*) return 0 ;; esac
+    tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q 'dotfiles-check-updates' \
+        || return 0
+    kill -USR1 "$pid" 2>/dev/null || :
+}
