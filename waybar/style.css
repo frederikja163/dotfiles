@@ -90,6 +90,24 @@ window#waybar {
   font-weight: bold;
 }
 
+/* Now playing. A pill like the rest, in green while it runs and dimmed to
+   subtext0 when paused, so a glance tells the two apart without reading the
+   icon. No max-width: config.jsonc truncates the text with dynamic-len
+   instead, which cuts on a character boundary rather than clipping a glyph
+   in half. */
+#mpris {
+  padding: 0 10px;
+  margin: 4px 2px;
+  background: @surface0;
+  color: @green;
+  border-radius: 8px;
+}
+
+#mpris.paused {
+  color: @subtext0;
+  font-style: italic;
+}
+
 /* The active keybind mode. Coloured rather than grey like the other modules:
    it appears only while a mode is on, and it is there to be noticed. */
 #submap {

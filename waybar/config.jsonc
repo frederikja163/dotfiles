@@ -52,6 +52,7 @@
     "clock"
   ],
   "modules-right": [
+    "mpris",
     "privacy",
     "idle_inhibitor",
     "tray",
@@ -135,6 +136,55 @@
       "mode": "month",
       "on-scroll": 1
     }
+  },
+  // What is playing, first in the right-hand group so it reads as the leftmost
+  // of the status pills. There is no text when nothing is playing and Waybar
+  // hides a module with no text, so the bar is unchanged until a player
+  // appears, the same way the submap on the left stays invisible.
+  //
+  // It sat on the left, after the desktops, and moved here: a title changing
+  // length every few minutes was shoving the workspace pills sideways, because
+  // the left group grows rightwards from a fixed edge. In the right-hand group
+  // the growth is absorbed at the group's own left edge, so the icons at the
+  // far end -- the ones read by position rather than by looking -- hold still.
+  //
+  // This is the built-in mpris module rather than a custom module polling mpv's
+  // --input-ipc-server socket. mpv speaks no MPRIS by itself: it sits on the
+  // session bus, put there by its audio backend, and never claims an
+  // org.mpris.MediaPlayer2 name, which is why playerctl listed firefox and not
+  // a running, audible mpv. mpv-mpris is what gives it the name, and that one
+  // package buys more than a script would -- the XF86Audio binds in
+  // hypr/keybinds.lua already drive playerctl, so they started controlling mpv
+  // the moment it was installed. The IPC script was rejected twice over: it
+  // would read mpv and nothing else, and it would leave those four binds dead.
+  //
+  // No "player" key, so this follows whatever is playing -- mpv, a browser tab,
+  // anything that registers. Pinning it to mpv was considered and is the
+  // smaller feature for the same work.
+  //
+  // dynamic-len truncates on a character boundary, which is why style.css sets
+  // no max-width on the pill: clipping it in CSS cuts a glyph in half instead.
+  // The untruncated text is in the tooltip. Titles come from the file's tags
+  // when it has them and the filename when it does not, which is why the
+  // Pixabay downloads show as their slug while bin/music-get's show as artist
+  // and title.
+  "mpris": {
+    "format": "{status_icon} {dynamic}",
+    "format-stopped": "",
+    "dynamic-order": [
+      "title",
+      "artist"
+    ],
+    "dynamic-separator": "  ·  ",
+    "dynamic-len": 40,
+    "status-icons": {
+      "playing": "",
+      "paused": ""
+    },
+    "tooltip-format": "{status_icon}  {title}\n{artist}\n{album}\n\n{player}  {position}/{length}",
+    "on-click": "playerctl play-pause",
+    "on-scroll-up": "playerctl next",
+    "on-scroll-down": "playerctl previous"
   },
   "privacy": {
     "icon-size": 14,
