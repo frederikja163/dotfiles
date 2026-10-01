@@ -47,13 +47,18 @@
   // No mode may touch git history without a decision from you.
   //
   // Commits belong to the `commit` agent: it plans the split, shows it as a
-  // table and commits only once you agree. build and plan therefore *deny*
-  // `git commit` rather than ask -- the answer to "commit this" is to switch
-  // agent, not to approve a prompt at the last moment. The commit agent
-  // allows it outright, because that table is the approval, and it does not
-  // carry the list below at all: it has an open shell with only push
-  // refused. A per-command guard kept tripping on its own commit messages;
-  // agent/commit.md has the details.
+  // table and commits only once you agree, so it is the one mode where
+  // `git commit` is allowed outright -- the table is the approval. It carries
+  // the rest of the list below rather than the open shell it used to have. An
+  // earlier copy of the list got in its way because a rule matches the whole
+  // command line, commit message and all; agent/commit.md has the ordering
+  // that fixes that.
+  //
+  // build asks on `git commit` like everything else, so a commit you ask for
+  // costs one confirmation. Switching to the commit agent is still the better
+  // answer for real work -- you get the split and the table -- but build is no
+  // longer refused outright. plan keeps the deny: a mode that will not edit a
+  // file has no commit of its own to record.
   //
   // Everything else that moves a ref, rewrites what is already recorded, or
   // publishes it is gated below. Reading history is untouched: log, show,
@@ -61,11 +66,18 @@
   // agent can still orient itself without asking.
   //
   // For those, "ask" rather than "deny", because the point is that *you*
-  // decide, not that it becomes impossible. An explicit "push this" then
-  // costs one confirmation, while an agent that decided to tidy up after
-  // itself gets stopped. (agent/review.md denies the whole list, because that
-  // agent is read-only by construction and has no business committing or
-  // pushing even when asked.)
+  // decide, not that it becomes impossible. An agent that decided to tidy up
+  // after itself gets stopped, while something you asked for costs one
+  // confirmation.
+  //
+  // Push is the exception, and is denied in every mode including `commit`.
+  // Not because a push is dangerous -- it is because of the credential. A
+  // push needs either an HTTPS token or your SSH key, and the way to let an
+  // agent push is to put one within its reach; there is no "ask" that avoids
+  // that, since approving the prompt is what hands the key over. So no agent
+  // pushes, ever. An agent that thinks the work should be published says so
+  // and stops; you push, and tell it to carry on. (agent/review.md denies the
+  // whole list, not just push -- that agent is read-only by construction.)
   //
   // Patterns lead with "*" because a bash rule is matched against the whole
   // command line: a bare "git commit -m x" and a chained
@@ -94,12 +106,14 @@
     "build": {
       "permission": {
         "bash": {
-          // Commits are the `commit` agent's job, refused here rather than
-          // asked so build cannot commit by approving a prompt.
-          "*git commit*": "deny",
+          // Records a commit. The `commit` agent is the mode built for this
+          // and shows a split first; build can still make one you asked for.
+          "*git commit*": "ask",
 
-          // Publishes a commit.
-          "*git push*": "ask",
+          // Needs your push credential, so no agent gets to run it.
+          "*git push*": "deny",
+
+          // Publishes a commit, or brings someone else's in.
           "*git pull*": "ask",
           "*git merge*": "ask",
           "*git am*": "ask",
@@ -130,16 +144,18 @@
       }
     },
 
-    // Identical to build. Plan mode already refuses to edit files, but bash
-    // is open to it, so without this it could commit what build had just been
-    // stopped from committing -- the guard has to be on every mode that can
-    // reach a shell or it is only a speed bump.
+    // As build, except that `git commit` is denied rather than asked. Plan
+    // mode already refuses to edit files, so every commit it could make would
+    // be of someone else's work; bash is open to it otherwise, and the guard
+    // has to be on every mode that can reach a shell or it is only a speed
+    // bump.
     "plan": {
       "permission": {
         "bash": {
-          // As build: commits go through the `commit` agent.
+          // The one place this list differs from build's.
           "*git commit*": "deny",
-          "*git push*": "ask",
+
+          "*git push*": "deny",
           "*git pull*": "ask",
           "*git merge*": "ask",
           "*git am*": "ask",

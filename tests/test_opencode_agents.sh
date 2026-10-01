@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 # Harness for opencode/: that every mode which can reach a shell gates the
-# shared set of git commands with the action it is meant to, that the commit
-# agent has an open shell with only push refused, and that nobody else
-# re-opens what a project has closed.
+# shared set of git commands with the action it is meant to, that no mode can
+# push at all, that the commit agent's `git commit` allow stays last in its
+# list, and that nobody re-opens what a project has closed.
 #
-# This exists because the guard is written out three times -- build, plan and
-# review share one list -- and the config format has no way to share a list. A plugin could
+# This exists because the guard is written out four times -- build, plan,
+# review and commit each carry the same list -- and the config format has no way
+# to share a list. A plugin could
 # have injected it from one place and was rejected: a plugin that fails to load
 # takes the guard with it silently, which is the exact failure being guarded
 # against. Copies are safer and drift is the price, so the drift is what gets
-# tested. Why the commit agent's patterns differ is set out in agent/commit.md.
+# tested. Why the commit agent's action for each differs is set out in
+# agent/commit.md.
 #
 # Asserted against `opencode api get /api/agent`, which returns each agent's
 # fully resolved permission rules -- the merge of opencode's defaults, this
@@ -91,21 +93,28 @@ CMDS
 
 # Per agent and command, because the modes do not share one action:
 #
+# - push is denied in every mode, with no exception: it needs the user's SSH
+#   key or an HTTPS token, and "ask" would not avoid that -- approving the
+#   prompt is what puts the credential in reach. Agents hand the push back.
 # - review denies everything: read-only by construction.
-# - build and plan deny commit, which is the commit agent's job, and ask on the
-#   rest so the user decides.
-# - commit is checked separately: it has an open shell and refuses only push.
+# - commit allows `git commit`, because the split table it shows first is the
+#   approval, and asks on the rest.
+# - plan denies commit: it will not edit a file, so any commit it made would be
+#   of someone else's work.
+# - build asks on everything else, commit included -- switching to the commit
+#   agent is the better answer, not the only one.
 expected_action() {
     case "$1:$2" in
+        *:push)        printf 'deny' ;;
         review:*)      printf 'deny' ;;
-        build:commit)  printf 'deny' ;;
+        commit:commit) printf 'allow' ;;
         plan:commit)   printf 'deny' ;;
         *)             printf 'ask' ;;
     esac
 }
 
-echo "scenario: build, plan and review gate the shared git commands"
-for agent in build plan review; do
+echo "scenario: every shell-capable mode gates the shared git commands"
+for agent in build plan review commit; do
     missing=""; wrongaction=""
 
     while IFS= read -r cmd; do
@@ -126,22 +135,37 @@ for agent in build plan review; do
     check "$agent uses the action each command should have" "${wrongaction:-none}" none
 done
 
-echo "scenario: commit has the whole shell and refuses only push"
-# The commit agent's whole job is git, and a per-command guard kept tripping on
-# its own commit messages, so it gets an open shell with push as the one
-# refusal. The allow-all must come before the push deny, or it would win.
-allow_line="$(grep -nF -- "commit shell allow *" "$TMP/flat" | grep -E 'allow \*$' | tail -1 | cut -d: -f1)"
-push_line="$(grep -nF -- "commit shell deny git push*" "$TMP/flat" | tail -1 | cut -d: -f1)"
-check "commit: shell is allowed outright" "${allow_line:+yes}" yes
-check "commit: push is denied" "${push_line:+yes}" yes
+echo "scenario: no mode may push, whatever it is told"
+# Not a safety rule about the push itself: it needs the user's SSH key or an
+# HTTPS token, and the only way an agent could run one is if the credential
+# were within its reach. "deny" rather than "ask" because approving the prompt
+# is exactly the thing being avoided. Checked on its own as well as through the
+# shared list, because this is the one entry that must never be relaxed to ask.
+for agent in build plan review commit; do
+    # Any rule whose resource mentions the command, anchored or not, so a
+    # pattern rewritten to "git push*" is still caught.
+    got="$(grep -F -- "$agent shell " "$TMP/flat" | grep -E 'git push' | tail -1 | awk '{print $3}')"
+    check "$agent refuses to push" "${got:-missing}" deny
+done
+
+echo "scenario: commit's git commit allow stays last in its list"
+# A rule is matched against the whole command line, heredoc body included, so a
+# commit whose message mentions rebasing or pushing matches those rules too.
+# Last match wins, so the `*git commit*` allow has to sit after every other
+# rule or this agent trips over its own commit messages -- which is exactly
+# what sank the earlier version of this list. A real `git push` carries no
+# "git commit" anywhere in it, so the deny above still stands.
+commit_allow="$(grep -nF -- "commit shell allow *git commit*" "$TMP/flat" | tail -1 | cut -d: -f1)"
+last_other="$(grep -nE "^commit shell (ask|deny) " "$TMP/flat" | tail -1 | cut -d: -f1)"
+check "commit: git commit is allowed" "${commit_allow:+yes}" yes
 order=no
-[ -n "$allow_line" ] && [ -n "$push_line" ] && [ "$push_line" -gt "$allow_line" ] && order=yes
-check "commit: the push deny comes after the allow-all" "$order" yes
-others="$(grep -F -- "commit shell " "$TMP/flat" | grep -vE 'allow \*$| deny git push\*$' | wc -l)"
-check "commit carries no other shell rule" "$others" 0
-# Anchored, so a commit message that mentions "git push" cannot trip it.
-wild="$(grep -cF -- "commit shell deny *git push" "$TMP/flat" || true)"
-check "commit's push deny is anchored" "${wild:-0}" 0
+[ -n "$commit_allow" ] && [ -n "$last_other" ] && [ "$commit_allow" -gt "$last_other" ] && order=yes
+check "commit: the git commit allow comes after every other rule" "$order" yes
+# The flattening step of its own documented workflow, which would prompt on
+# every run if the list reached it. agent/commit.md says why it is restore and
+# not `git reset --mixed HEAD`.
+restore="$(grep -F -- "commit shell " "$TMP/flat" | grep -cF -- "git restore" || true)"
+check "commit leaves git restore ungated" "${restore:-0}" 0
 
 echo "scenario: no agent re-opens what a project has closed"
 # An agent's rules are appended after the project's and the last match wins, so
@@ -150,8 +174,10 @@ echo "scenario: no agent re-opens what a project has closed"
 # wildcard allow, or a shell-scoped one, means an agent carries its own. (V1
 # spelled the same guard as `bash allow *`; V2 renamed the action to shell and
 # moved the base policy from the tool to `*`.)
-# The commit agent is exempt: an open shell is deliberately its setting.
-for agent in build plan review; do
+# The commit agent used to be exempt, when it had an open shell. It no longer
+# has one -- its only allow is the narrow `*git commit*` -- so it is checked
+# with the rest.
+for agent in build plan review commit; do
     broad="$(grep -cE "^$agent (\*|shell) allow \*$" "$TMP/flat" || true)"
     shell="$(grep -cE "^$agent shell allow \*$" "$TMP/flat" || true)"
     verdict=ok
@@ -179,13 +205,14 @@ for agent in build plan review commit; do
     check "$agent leaves read-only git alone" "${gated:-none}" none
 done
 
-echo "scenario: no other mode may flatten the index"
-# Flattening the user's scratch staging is the commit agent's own job, covered
-# by its open shell; no other mode may carry an allow that gets around its
-# reset ask.
-for agent in build plan review; do
-    allow_line="$(grep -nF -- "$agent shell allow *git reset --mixed HEAD*" "$TMP/flat" | tail -1 | cut -d: -f1)"
-    check "$agent does not allow flattening the index" "${allow_line:+yes}" ""
+echo "scenario: no mode carves an allow out of the git list"
+# The list is only worth having if nothing sits after it re-permitting a
+# member. `*git commit*` on the commit agent is the single deliberate
+# exception, checked for its position above.
+for agent in build plan review commit; do
+    carve="$(grep -E "^$agent shell allow .*git " "$TMP/flat" \
+             | grep -vF -- "commit shell allow *git commit*" | awk '{print $4}' | tr '\n' ' ')"
+    check "$agent carves no allow out of the git list" "${carve:-none}" none
 done
 
 echo
