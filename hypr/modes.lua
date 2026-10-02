@@ -45,9 +45,10 @@
 --
 -- Modifiers therefore carry almost nothing. SHIFT reverses a motion (Tab),
 -- widens a verb's scope (M), or marks the other variant of a letter
--- (keybinds.lua's SUPER+SHIFT+C for a force kill, SUPER+SHIFT+F for floating
--- beside fullscreen). CTRL appears twice: on M, and on a screen number, where
--- it means "a new desktop there" rather than "there". ALT is unused.
+-- (keybinds.lua's SUPER+SHIFT+C for a force kill, SUPER+SHIFT+F for true
+-- fullscreen beside maximized). CTRL appears on M, and on a screen number,
+-- where it means "a new desktop there" rather than "there" -- and on F, for
+-- floating, as the third shape of a window. ALT is unused.
 --
 --
 -- Things that cost an afternoon each, all verified against Hyprland 0.56.2:
@@ -609,7 +610,7 @@ define_mode(SUBMAP_SIZE, mainMod .. " + S", function()
     -- is a shape change like the rest -- but nothing in this mode changes a
     -- window's size by degrees except the four motions, and floating takes the
     -- window out of the layout rather than resizing it. It sits next to
-    -- fullscreen on SUPER+SHIFT+F now; see keybinds.lua.
+    -- maximized and fullscreen on SUPER+CTRL+F now; see keybinds.lua.
 
     -- Promote is the one one-shot key in here, which is not an inconsistency:
     -- h/j/k/l and f are nudges you repeat until the shape is right, and moving

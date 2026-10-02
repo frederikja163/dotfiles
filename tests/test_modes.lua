@@ -555,7 +555,7 @@ check("h keeps the mode", ends_in_submap(size["h"]), nil)
 check("j keeps it", ends_in_submap(size["j"]), nil)
 check("k keeps it", ends_in_submap(size["k"]), nil)
 check("l keeps it", ends_in_submap(size["l"]), nil)
--- Floating moved out to SUPER+SHIFT+F in keybinds.lua, which this harness does
+-- Floating moved out to SUPER+CTRL+F in keybinds.lua, which this harness does
 -- not load. Asserted as an absence so it cannot quietly come back: the mode is
 -- for changing a window's size by degrees, and floating is not that.
 check("float does not live here", size["f"], nil)

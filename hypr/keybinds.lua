@@ -90,19 +90,41 @@ hl.bind(mainMod .. " + O", function()
     hl.dispatch(hl.dsp.exec_cmd(
         ("%s --directory '%s' opencode"):format(terminal, directory:gsub("'", "'\\''"))))
 end, { description = "App: opencode (where this desktop is)" })
--- The two whole-window shapes, on the same letter.
+-- The three whole-window shapes, on the same letter.
 --
--- Floating used to live in the size mode, on `f`, as the rarer of the two. It
--- reads better here: size mode is for the keys that make a window bigger or
--- smaller by degrees, and floating does not resize anything -- it takes the
--- window out of the layout altogether, which is the same kind of change as
--- fullscreen and belongs next to it.
+--   SUPER+F         maximized: the screen minus the bar, above everything else
+--   SUPER+SHIFT+F   true fullscreen: the whole screen, bar included
+--   SUPER+CTRL+F    floating
 --
--- SHIFT for the floating one, following the rest of the config: on a letter
--- SHIFT marks the wider or harsher variant of the verb (SUPER+SHIFT+M for the
--- column rather than the window, SUPER+SHIFT+C for a force kill).
-hl.bind(mainMod .. " + F", hl.dsp.window.fullscreen({ action = "toggle" }), { description = "Window: toggle fullscreen" })
-hl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.float({ action = "toggle" }), { description = "Window: toggle floating" })
+-- Maximized is the plain key because it is the one wanted nearly every time:
+-- as big as a window goes without losing the bar. Hyprland sizes it to the
+-- monitor minus the reserved zone, which is the bar's 40px, so the bar stays;
+-- true fullscreen covers those 40px too, and waybar is on the "bottom" layer
+-- (waybar/config.jsonc), so it disappears under it.
+--
+-- Both are fullscreen states to Hyprland, which is what draws a maximized
+-- window above the rest of the desktop instead of tiling it among them. The
+-- other windows are not re-tiled; they stay where they were, underneath.
+-- windowrules.lua drops the border and the gaps while either is on.
+--
+-- SHIFT marks the harsher variant of a letter, as elsewhere (SUPER+SHIFT+C for
+-- a force kill): fullscreen is maximized without the bar. CTRL is just the
+-- third variant of "change this window's whole shape".
+--
+-- Floating used to live in the size mode, on `f`. It reads better here: size
+-- mode is for making a window bigger or smaller by degrees, and floating takes
+-- the window out of the layout altogether, the same kind of change as the
+-- other two.
+--
+-- `mode` takes "maximized" or "fullscreen" and nothing else ("maximize" fails
+-- validation), but an unknown *field* is accepted in silence -- a misspelled
+-- one leaves a plain fullscreen toggle and says nothing.
+hl.bind(mainMod .. " + F", hl.dsp.window.fullscreen({ action = "toggle", mode = "maximized" }),
+        { description = "Window: toggle maximized (the bar stays)" })
+hl.bind(mainMod .. " + SHIFT + F", hl.dsp.window.fullscreen({ action = "toggle", mode = "fullscreen" }),
+        { description = "Window: toggle true fullscreen" })
+hl.bind(mainMod .. " + CTRL + F", hl.dsp.window.float({ action = "toggle" }),
+        { description = "Window: toggle floating" })
 hl.bind(mainMod .. " + R", hl.dsp.exec_cmd(menu), { description = "App: launcher" })
 
 -- Screenshot of a mouse-selected region, onto the clipboard. In bin/ rather
