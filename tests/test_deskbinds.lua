@@ -1030,10 +1030,11 @@ mod.set_labeller(function() return "~" end)
 dispatched, renames = {}, {}
 mod.new_desktop_here()
 check("created by id", last_of("focus").arg.workspace, 4)
--- Third desktop on this screen, so it is born as "3 ~" rather than being
+-- Desktop 1 was in view, so it is born second, as "2 ~", rather than being
 -- numbered a moment later by the renumbering pass.
-check("and named straight away", renames[1] and renames[1].name, "3 ~")
+check("and named straight away", renames[1] and renames[1].name, "2 ~")
 check("the same desktop that was created", renames[1] and renames[1].workspace, 4)
+check("...pushing the old second desktop up one", n.workspaces[2].name, "3 ~")
 
 print("scenario: a new desktop among unlabelled ones")
 local m = two_monitors(0)
@@ -1044,17 +1045,55 @@ m.workspaces[3].name = "1.2"
 mod.set_labeller(function() return "~" end)
 dispatched, renames = {}, {}
 mod.new_desktop_here()
-check("still numbered, since the number is the point", renames[1] and renames[1].name, "3 ~")
+check("still numbered, since the number is the point", m.workspaces[5].name, "2 ~")
 
 print("scenario: no labeller, so it is born with its number")
-reset(two_monitors(0))
+local nl = two_monitors(0)
+reset(nl)
 dispatched, renames = {}, {}
 mod.new_desktop_here()
 check("created by id", last_of("focus").arg.workspace, 4)
 -- Named on the way in rather than left to the deferred pass: without this the
 -- bar shows the raw workspace id ("4") for the ~80ms until that runs.
-check("named as it was created", renames[1] and renames[1].workspace, 4)
-check("...with its position and screen", renames[1] and renames[1].name, "3.1")
+check("named as it was created", nl.workspaces[5].name, "2.1")
+check("...and the one it pushed along renamed too", nl.workspaces[2].name, "3.1")
+
+print("scenario: a new desktop goes straight after the one in view")
+-- Five desktops, the third in view: the new one becomes 4 and the old 4 and 5
+-- move up to 5 and 6.
+local function five_desktops(in_view)
+    local m = { id = 0, name = "eDP-1", description = "BOE 0x0DBB" }
+    local w = { monitors = { m }, workspaces = {}, focused_monitor_id = 0 }
+    for id = 1, 5 do
+        table.insert(w.workspaces, { id = id, special = false, monitor = m })
+    end
+    m.active_workspace = w.workspaces[in_view]
+    return w, m
+end
+local row, row_mon = five_desktops(3)
+reset(row)
+mod.new_desktop_here()
+local order = {}
+for _, ws in ipairs(mod.desktops_on(row_mon)) do
+    table.insert(order, ws.id)
+end
+check("inserted between 3 and 4", table.concat(order, " "), "1 2 3 6 4 5")
+check("the new desktop is called 4", row.workspaces[6].name, "4.1")
+check("the old 4 is now 5", row.workspaces[4].name, "5.1")
+check("the old 5 is now 6", row.workspaces[5].name, "6.1")
+
+-- The bug that made new desktops appear first: a desktop moved along the row
+-- remembers a position, and those could sort above a fresh id.
+row, row_mon = five_desktops(5)
+reset(row)
+mod.move_desktop_in_row(-1) -- 5 and 4 swap keys
+mod.focus_desktop_index(5)  -- ws4, now last
+mod.new_desktop_here()
+order = {}
+for _, ws in ipairs(mod.desktops_on(row_mon)) do
+    table.insert(order, ws.id)
+end
+check("after the last desktop, it is last", order[#order], 6)
 
 print("scenario: a desktop asked for outright survives being left empty")
 -- The new-desktop key. Asking for a desktop and passing through one are

@@ -407,6 +407,35 @@ local function place_at_end_of(mon, ws)
     end
 end
 
+-- Put a desktop straight after another in a monitor's row, pushing the ones
+-- after it one place along: [1 2 3 4 5] with 3 in view becomes [1 2 3 new 4 5].
+--
+-- The whole row is given explicit keys 1..n rather than one key squeezed in
+-- between two others, because the keys in a row are a mix of ids and remembered
+-- positions and there is not always a gap. An `after` that is not in the row
+-- (nothing in view) puts it at the end.
+local function place_after(mon, ws_id, after_id)
+    local row = {}
+    for _, other in ipairs(desktops_on(mon)) do
+        if other.id ~= ws_id then
+            table.insert(row, other.id)
+        end
+    end
+
+    local at = #row + 1
+    for i, id in ipairs(row) do
+        if id == after_id then
+            at = i + 1
+            break
+        end
+    end
+    table.insert(row, at, ws_id)
+
+    for i, id in ipairs(row) do
+        position[id] = i
+    end
+end
+
 -- The desktop `step` places along from the one in view, wrapping both ways.
 -- step = 1 is the next one, -1 the previous; SUPER+Tab and SUPER+SHIFT+Tab.
 local function neighbour_desktop(mon, step)
@@ -460,10 +489,11 @@ local function desktop_after_closing(mon, ws)
 end
 
 -- An unused workspace id for a new desktop on `mon`, chosen so the desktop
--- lands at the end of that monitor's row.
+-- would sort at the end of that monitor's row by id alone.
 --
--- Everything here orders desktops by id (desktops_on sorts by it), so the id is
--- what decides where a new one appears. Taking the lowest free id globally put
+-- A new desktop is placed beside the one in view by place_after now, so the id
+-- no longer decides where it appears -- but a desktop without a remembered
+-- position still sorts by id, so it is kept above the row's own. Taking the lowest free id globally put
 -- it *first* whenever a lower id had been freed elsewhere: with the laptop
 -- holding id 1 and the other screen holding 3 and 4, a new desktop on the
 -- second screen took the free id 2 and arrived ahead of both, renumbering them
@@ -668,55 +698,6 @@ local function schedule_renumber()
         renumber_pending = false
         renumber_desktops()
     end, { timeout = 50, type = "oneshot" })
-end
-
--- The name a brand-new desktop on this monitor should be born with.
---
--- The name has to be settled before the desktop exists, so the labeller is
--- called with a desktop that has no id yet and is expected to answer with
--- whatever it calls one it knows nothing about. A title cannot apply: the id
--- has only just been minted, and forget_desktop dropped whatever the last
--- desktop to hold it was called.
---
--- Unique, because two desktops sharing a name light up each other's buttons on
--- the bar, and because the renaming pass would only have to undo it.
-local function name_for_new_desktop(mon)
-    local label = labeller and labeller({})
-
-    local used = {}
-    for _, ws in ipairs(hl.get_workspaces() or {}) do
-        if ws.name then
-            used[ws.name] = true
-        end
-    end
-
-    for mon_index, slot in ipairs(monitor_slots()) do
-        if slot.monitor and mon and slot.monitor.id == mon.id then
-            -- Not +1: this runs after the desktop has been created, so it is
-            -- already in the count, and it sorts last because its id is the
-            -- highest. Adding one named it "3" for the ~100ms until the
-            -- renumbering pass corrected it to "2".
-            local index = #desktops_on(mon)
-
-            -- Same shape as the renumbering pass settles on, so the name does
-            -- not visibly change a moment after the desktop appears. An
-            -- unlabelled desktop still gets its number here rather than being
-            -- left nil: without it the bar shows the raw workspace id for the
-            -- ~80ms until the deferred pass runs.
-            local candidate
-            if label and label ~= "" then
-                candidate = ("%d %s"):format(index, label)
-                if used[candidate] then
-                    candidate = ("%d %s (%d)"):format(index, label, mon_index)
-                end
-            else
-                candidate = ("%d.%d"):format(index, mon_index)
-            end
-
-            return not used[candidate] and candidate or nil
-        end
-    end
-    return nil
 end
 
 local function focus_workspace(ws)
@@ -962,10 +943,17 @@ end
 -- effect to be apologised for: asking for a desktop on screen 2 is asking to be
 -- on screen 2.
 --
--- Created by id and renamed in the same breath, rather than left to the
--- deferred pass, which would show the bare id on the bar for the ~80ms until it
--- ran. The desktop exists by the time the focus dispatch returns, so there is
--- nothing to wait for.
+-- It goes straight after the desktop in view on that screen, not at the end of
+-- the row: with 3 of 5 in view it becomes the new 4 and the old 4 and 5 move up
+-- one. Left to its id it landed at the end at best, and anywhere at all once
+-- desktops had been moved along the row or across screens -- their remembered
+-- positions can sort above any fresh id, which put new desktops first.
+--
+-- Created by id and the row renamed in the same breath, rather than left to
+-- the deferred pass, which would show the bare id on the bar -- and the
+-- desktops after it under their old numbers -- for the ~80ms until it ran. The
+-- desktop exists by the time the focus dispatch returns, so there is nothing
+-- to wait for.
 --
 -- Asking for the name directly -- "name:~" -- looks tidier and is a trap.
 -- Hyprland numbers named workspaces from -1337 downwards, and those negative
@@ -987,15 +975,19 @@ local function create_new_desktop_on(mon, persistent)
         return nil
     end
 
+    -- Read before anything is focused: afterwards the desktop in view on this
+    -- screen is the new one.
+    local beside = mon.active_workspace
+
     local active = hl.get_active_monitor()
     if not (active and active.id == mon.id) then
-        focus_workspace(mon.active_workspace)
+        focus_workspace(beside)
     end
 
-    -- `mon` is the row the desktop has to land at the end of, and it is used
-    -- rather than re-reading the focused monitor so that every decision here
-    -- names the screen that was asked for, not the one Hyprland happens to
-    -- report a dispatch later.
+    -- `mon` is the row the desktop joins, and it is used rather than
+    -- re-reading the focused monitor so that every decision here names the
+    -- screen that was asked for, not the one Hyprland happens to report a
+    -- dispatch later.
     local id = unused_desktop_id(mon)
     hl.dispatch(hl.dsp.focus({ workspace = id }))
 
@@ -1003,11 +995,9 @@ local function create_new_desktop_on(mon, persistent)
         set_persistent(id, true, mon.name)
     end
 
-    local name = name_for_new_desktop(mon)
-    if name then
-        hl.dispatch(hl.dsp.workspace.rename({ workspace = id, name = name }))
-    end
+    place_after(mon, id, beside and not beside.special and beside.id)
 
+    renumber_desktops()
     schedule_renumber()
     return id
 end
