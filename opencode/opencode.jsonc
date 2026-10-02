@@ -1,6 +1,10 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "anthropic/claude-opus-5",
+
+  // No "model" here: the default differs per machine, so it lives in the
+  // untracked opencode.json beside this file, which opencode merges in. Keep it
+  // out of this file too -- opencode.jsonc loads second and would win. Without
+  // one, opencode falls back to the newest available model, not the last used.
 
   // Restores the todo tool OpenCode V2 removed.
   //

@@ -1,0 +1,3 @@
+# Machine-local opencode settings, such as the default model. Kept out of
+# opencode/.gitignore because opencode generates that file itself.
+/opencode/opencode.json
