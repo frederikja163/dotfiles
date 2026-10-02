@@ -601,6 +601,35 @@ _G.__provider.layout_msg(ctx, "focus r")
 check("one screen: the focus stays put", #_G.__dispatched, 0)
 C.set_screen_focus(function(ws, dir) crossed_to = { ws = ws, dir = dir } return 77 end)
 
+-- A maximized or fullscreen window hides the rest of the desktop, so focus
+-- leaves for the screen beside rather than stepping to a window behind it --
+-- which also un-maximized it, as a side effect of Hyprland's.
+print("scenario: from a maximized window, focus goes to the screen beside")
+for _, mode in ipairs({ 1, 2 }) do
+    local label = mode == 1 and "maximized" or "fullscreen"
+    _G.__dispatched = {}
+    crossed_to = nil
+    -- Window 1 is focused, with window 2 to its right behind it.
+    ctx = laid_out(106, 1, { { id = 1, fullscreen = mode }, { id = 2 } })
+    check(label .. ": focus right is handled", _G.__provider.layout_msg(ctx, "focus r"), true)
+    check("...crosses rather than going to the window behind", crossed_to and crossed_to.dir, "next")
+    check("...focusing the screen's desktop, not a window",
+          _G.__dispatched[1] and _G.__dispatched[1].arg.workspace, 77)
+
+    crossed_to, _G.__dispatched = nil, {}
+    _G.__provider.layout_msg(ctx, "focus d")
+    check("...and up or down goes nowhere", #_G.__dispatched, 0)
+end
+
+-- With one screen the screen beside is this one: nothing to do, and the
+-- window stays maximized rather than being focused onto itself.
+_G.__dispatched = {}
+C.set_screen_focus(function() return 106 end)
+ctx = laid_out(106, 1, { { id = 1, fullscreen = 1 }, { id = 2 } })
+_G.__provider.layout_msg(ctx, "focus r")
+check("one screen: nothing dispatched", #_G.__dispatched, 0)
+C.set_screen_focus(function(ws, dir) crossed_to = { ws = ws, dir = dir } return 77 end)
+
 print("scenario: a window alone at the edge moves to the screen beside")
 _G.__dispatched = {}
 crossed_to = nil

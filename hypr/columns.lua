@@ -994,6 +994,26 @@ hl.layout.register("columns", {
                 return "columns: focus expects l, r, u or d"
             end
 
+            -- A maximized or fullscreen window covers the desktop, so the
+            -- windows beside it in the layout are out of sight, and stepping
+            -- to one used to drop the window out of maximized as well: Hyprland
+            -- undoes a fullscreen state when focus moves to a window beneath
+            -- it. Left and right go to the screen beside instead, as they do
+            -- from the edge of the desktop; up and down have nowhere to go.
+            --
+            -- `fullscreen` is a number -- 0 none, 1 maximized, 2 fullscreen --
+            -- and 0 is true in Lua, so it is compared rather than tested.
+            local current = windows[id]
+            if current and (current.fullscreen or 0) > 0 then
+                if (dir == "prev" or dir == "next") and screen_focus then
+                    local target_ws = screen_focus(ws, dir)
+                    if target_ws and target_ws ~= ws then
+                        focus_across(target_ws, dir, select(2, locate(st, id)))
+                    end
+                end
+                return true
+            end
+
             local to = neighbour(st, id, dir)
             if to then
                 local win = windows[to]
@@ -1067,6 +1087,8 @@ hl.layout.register("columns", {
 -- A focus or a move that runs out of room left or right crosses to the screen
 -- beside, through the screen_step hook deskbinds sets at load. Up and down
 -- still wrap inside the column, and the other messages are desktop-local.
+-- From a maximized or fullscreen window a left or right focus crosses at once,
+-- since the rest of the desktop is hidden behind it.
 --
 -- There is no bind for "newcol": moving a window past the last column already
 -- gives it one. The message stays for dispatching by hand.
