@@ -672,6 +672,27 @@ local function neighbour(st, id, dir)
     return col.ids[math.min(wi, #col.ids)]
 end
 
+-- The window a focus lands on when it crosses onto this desktop from the
+-- screen beside: the column at the edge it comes in from -- the leftmost when
+-- stepping right, the rightmost when stepping left -- so the focus carries on
+-- in the direction it was going.
+--
+-- Focusing the desktop instead, which is what crossing did at first, lands on
+-- whichever window last had the focus there. That is right for SUPER+# --
+-- going back to a screen should put you where you were -- and wrong here, where
+-- it could leave the focus anywhere on the far screen, even at its far edge.
+--
+-- `row` keeps roughly the same height, as stepping between columns does; nil
+-- (nothing to go by, coming off an empty desktop) is the top window. Returns
+-- nil for a desktop with no columns.
+local function entry_window(st, dir, row)
+    local col = st.columns[dir == "next" and 1 or #st.columns]
+    if not col or #col.ids == 0 then
+        return nil
+    end
+    return col.ids[math.min(row or 1, #col.ids)]
+end
+
 -- Hand the focused window's whole column over to another workspace.
 --
 -- Windows have to be moved one at a time, so the destination is seeded with the
@@ -824,6 +845,57 @@ local function set_screen_focus(fn)
     screen_focus = fn
 end
 
+-- Move the focus onto `target_ws`, which is on the screen beside, entering at
+-- its near edge (see entry_window).
+--
+-- The whole desktop is focused instead when there is no window to pick: an
+-- empty desktop, or a layout not built yet, or a picked window that is no
+-- longer there. And when a window on it is maximized or fullscreen, since that
+-- one is all you can see; focusing a window behind it would also make
+-- Hyprland drop the maximized state, which is the same trap as stepping
+-- sideways from one (see the focus message below).
+local function focus_across(target_ws, dir, row)
+    local by_id, covered = {}, false
+    for _, win in ipairs(hl.get_windows() or {}) do
+        if win.workspace and win.workspace.id == target_ws then
+            by_id[win.stable_id] = win
+            if (win.fullscreen or 0) > 0 then
+                covered = true
+            end
+        end
+    end
+
+    local st = state[target_ws]
+    local pick = not covered and st and entry_window(st, dir, row)
+    local win = pick and by_id[pick]
+
+    if win and win.address then
+        st.focused = pick
+
+        -- The pointer goes over first, and that is what stops a flash of the
+        -- wrong window. Focusing a window on another screen makes Hyprland
+        -- switch screens first, and switching screens activates whichever
+        -- window last had the focus there -- so the far screen's old window
+        -- lit up for a frame before this one took over. Watched on the event
+        -- socket in a nested instance: activewindow fired for the old window,
+        -- then for this one, in the same tenth of a millisecond.
+        --
+        -- Moving the pointer switches the screen without activating anything,
+        -- so the focus that follows is the only one. Not a visible change:
+        -- Hyprland puts the pointer on a window it focuses anyway, so this
+        -- only does it a moment earlier. Layout coordinates, the space `at`
+        -- and the pointer share.
+        local at, size = win.at, win.size
+        if at and size then
+            hl.dispatch(hl.dsp.cursor.move({ x = at.x + size.x / 2, y = at.y + size.y / 2 }))
+        end
+
+        hl.dispatch(hl.dsp.focus({ window = "address:" .. win.address }))
+    else
+        hl.dispatch(hl.dsp.focus({ workspace = target_ws }))
+    end
+end
+
 hl.layout.register("columns", {
     recalculate = function(ctx)
         if #ctx.targets == 0 then
@@ -903,7 +975,7 @@ hl.layout.register("columns", {
                     -- the screen in front. See edge_workspace in deskbinds.
                     local target_ws = screen_focus(nil, dir)
                     if target_ws then
-                        hl.dispatch(hl.dsp.focus({ workspace = target_ws }))
+                        focus_across(target_ws, dir, nil)
                     end
                 end
             end
@@ -921,6 +993,7 @@ hl.layout.register("columns", {
             if not dir then
                 return "columns: focus expects l, r, u or d"
             end
+
             local to = neighbour(st, id, dir)
             if to then
                 local win = windows[to]
@@ -934,9 +1007,14 @@ hl.layout.register("columns", {
                 -- even when it is empty. The point is to keep moving: the next
                 -- press carries on from there, and the opposite direction
                 -- comes straight back.
+                --
+                -- Not when the screen beside is this one -- a single screen
+                -- -- where entering at the edge would wrap the focus round to
+                -- the far side of the same desktop, which neighbour() refuses
+                -- to do on purpose.
                 local target_ws = screen_focus(ws, dir)
-                if target_ws then
-                    hl.dispatch(hl.dsp.focus({ workspace = target_ws }))
+                if target_ws and target_ws ~= ws then
+                    focus_across(target_ws, dir, select(2, locate(st, id)))
                 end
             end
         elseif command == "newcol" then
@@ -1025,5 +1103,6 @@ return {
     set_screen_step = set_screen_step,
     set_screen_focus = set_screen_focus,
     neighbour = neighbour,
+    entry_window = entry_window,
     MIN = MIN,
 }

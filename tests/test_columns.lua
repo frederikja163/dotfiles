@@ -16,6 +16,7 @@ _G.hl = {
         layout = function(m) return { layout = m } end,
         focus = function(a) return { kind = "focus", arg = a } end,
         window = { move = function(a) return { kind = "move", arg = a } end },
+        cursor = { move = function(a) return { kind = "cursor", arg = a } end },
     },
 }
 
@@ -471,6 +472,8 @@ local function ctx_for(ws_id, active_id, list)
         local win = {
             stable_id = entry.id, address = "0x" .. entry.id,
             active = entry.id == active_id, workspace = { id = ws_id },
+            -- A number, as Hyprland gives it: 0 none, 1 maximized, 2 full.
+            fullscreen = entry.fullscreen or 0,
         }
         _G.__windows[#_G.__windows + 1] = win
         targets[i] = { window = win, place = function() end }
@@ -525,6 +528,78 @@ check("focus left asks the other way", crossed_to and crossed_to.dir, "prev")
 crossed_to = nil
 _G.__provider.layout_msg(ctx, "focus u")
 check("vertical focus does not cross", crossed_to, nil)
+
+-- Crossing lands in the column at the edge it comes in from, not on whichever
+-- window last had the focus over there -- that is SUPER+#'s job.
+print("scenario: entering a desktop from the side")
+local entry = C.new_state()
+entry.columns = {
+    { ids = { 11, 12 }, heights = { 0.5, 0.5 }, width = 0.5 },
+    { ids = { 13 },     heights = { 1.0 },      width = 0.5 },
+}
+check("stepping right enters at the leftmost column", C.entry_window(entry, "next", 1), 11)
+check("stepping left enters at the rightmost", C.entry_window(entry, "prev", 1), 13)
+check("...keeping roughly the same height", C.entry_window(entry, "next", 2), 12)
+check("...clamped to a shorter column", C.entry_window(entry, "prev", 2), 13)
+check("no row to go by is the top", C.entry_window(entry, "next", nil), 11)
+check("an empty desktop has no window", C.entry_window(C.new_state(), "next", 1), nil)
+
+-- Through the layout message. Desktop 77 is the one on the screen beside,
+-- with two columns; the window ids are 21 (left) and 22 (right).
+local function with_neighbour(fullscreen_on_22)
+    laid_out(77, 22, { { id = 21 }, { id = 22, fullscreen = fullscreen_on_22 } })
+    local beside = _G.__windows
+    -- Placed, as real windows are: the pointer is moved to the one picked.
+    for i, win in ipairs(beside) do
+        win.at, win.size = { x = 100 * i, y = 0 }, { x = 100, y = 50 }
+    end
+    local here = laid_out(108, 1, { { id = 1 } })
+    for _, win in ipairs(beside) do
+        table.insert(_G.__windows, win)
+    end
+    _G.__dispatched = {}
+    return here
+end
+
+-- The focus dispatch among what was sent, wherever it came in the order.
+local function focused_window()
+    for _, d in ipairs(_G.__dispatched) do
+        if d.kind == "focus" then return d.arg.window or d.arg.workspace end
+    end
+end
+
+ctx = with_neighbour()
+_G.__provider.layout_msg(ctx, "focus r")
+check("crossing right focuses the near column's window", focused_window(), "address:0x21")
+-- The pointer first: focusing a window on another screen otherwise lights up
+-- that screen's previously focused window for a frame.
+check("...after moving the pointer over", _G.__dispatched[1] and _G.__dispatched[1].kind, "cursor")
+check("...to the middle of that window",
+      _G.__dispatched[1] and _G.__dispatched[1].arg.x == 150 and _G.__dispatched[1].arg.y == 25, true)
+
+ctx = with_neighbour()
+_G.__provider.layout_msg(ctx, "focus l")
+check("crossing left focuses the other edge", focused_window(), "address:0x22")
+
+-- A maximized window over there is all that can be seen, and focusing one
+-- behind it would un-maximize it.
+ctx = with_neighbour(1)
+_G.__provider.layout_msg(ctx, "focus r")
+check("a maximized window there: focus the desktop instead",
+      _G.__dispatched[1] and _G.__dispatched[1].arg.workspace, 77)
+
+-- Coming off an empty desktop there is no row, so the top window it is.
+ctx = with_neighbour()
+_G.__provider.layout_msg({ targets = {}, area = ctx.area }, "focus r")
+check("from an empty desktop: still the near column", focused_window(), "address:0x21")
+
+-- One screen: the screen beside is this desktop, and entering it at the edge
+-- would wrap the focus round to the far side, which left/right never do.
+C.set_screen_focus(function() return 108 end)
+ctx = with_neighbour()
+_G.__provider.layout_msg(ctx, "focus r")
+check("one screen: the focus stays put", #_G.__dispatched, 0)
+C.set_screen_focus(function(ws, dir) crossed_to = { ws = ws, dir = dir } return 77 end)
 
 print("scenario: a window alone at the edge moves to the screen beside")
 _G.__dispatched = {}
