@@ -29,3 +29,19 @@
 	algorithm = histogram
 [pull]
 	rebase = false
+
+[credential "https://github.com"]
+	# gh is the credential helper for GitHub, so https remotes authenticate with
+	# the token setup.sh signs in for. This replaces the ssh key the old setup
+	# generated and had the user paste into the account.
+	#
+	# Written here rather than left to `gh auth setup-git`, which configures the
+	# same helper through `git config --global` -- and that writes ~/.gitconfig,
+	# the file the header above says must not exist, read last and so winning
+	# over this one.
+	#
+	# The empty value first clears the helper list for this host, which is what
+	# setup-git writes: without it a system-level helper (libsecret, store) is
+	# consulted first and a stale credential there would win over gh's.
+	helper =
+	helper = !gh auth git-credential

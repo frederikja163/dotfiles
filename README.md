@@ -9,8 +9,8 @@ each one.
 
 ## Quick start
 
-On a fresh EndeavourOS install, paste this into a terminal. It will generate an
-SSH key, open GitHub so you can add it, clone the repo, and install everything:
+On a fresh EndeavourOS install, paste this into a terminal. It installs the
+GitHub CLI, clones the repo, signs you in to GitHub, and installs everything:
 
 ```sh
 bash <(curl -fsSL https://raw.githubusercontent.com/frederikja163/dotfiles/main/setup.sh)

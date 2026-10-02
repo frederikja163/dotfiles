@@ -17,10 +17,12 @@
 # deliberately. There is no ssh-agent in the graphical session and the key has a
 # passphrase, so ssh has nothing to authenticate with: it fails outright where
 # there is no terminal, and asks for the passphrase on every run where there is.
-# This repo is public, so https needs no credentials at all.
+# https authenticates through gh's credential helper instead -- the sign-in
+# setup.sh makes, wired up in git/config -- which works the same from a terminal
+# and from the timer that runs the update check.
 #
-# A private repo would have to go back to ssh, and would then be limited to
-# places a passphrase can be typed.
+# This repo is public, so even that is only exercised by a push; the fetch here
+# needs no credentials at all.
 dotfiles_https_url() {
     local url="$1"
 
