@@ -37,6 +37,12 @@
 --
 --   desktop <id> <0|1 kept open while empty> <screen identity>
 --   title   <id> <name given to it with bin/title>
+--
+-- The desktop lines are in the order you see the desktops -- screen by screen,
+-- along each row -- and that order is the record of it: there is no field for
+-- a desktop's place. A file from before this was in id order, which is what
+-- the order was then, so it reads the same.
+--
 --   quake   <id> <directory>
 --   window  <id> <directory> <argv0> <argv1> ...
 --   focus   <id>
@@ -254,15 +260,22 @@ local function snapshot()
     local lines = {}
     local identity_of = screens()
 
-    -- Desktops, lowest id first, so they are put back in the same order and
-    -- end up numbered the same way on the bar.
-    local desktops = {}
+    -- Desktops in row order, so they are put back in the same order and end up
+    -- numbered the same way on the bar. Id order was used until desktops could
+    -- be inserted and moved along a row, after which it said nothing about
+    -- where any of them were.
+    local by_id = {}
     for _, ws in ipairs(hl.get_workspaces() or {}) do
         if not ws.special then
-            table.insert(desktops, ws)
+            by_id[ws.id] = ws
         end
     end
-    table.sort(desktops, function(a, b) return a.id < b.id end)
+    local desktops = {}
+    for _, id in ipairs(deskbinds.desktop_order()) do
+        if by_id[id] then
+            table.insert(desktops, by_id[id])
+        end
+    end
 
     for _, ws in ipairs(desktops) do
         record(lines, {
@@ -549,6 +562,17 @@ local function restore()
         end
     end
 
+    -- In the order they were written down, which is the order they were in.
+    -- place_desktop has already asked for a renumbering pass, and it runs
+    -- after this.
+    local order = {}
+    for _, desktop in ipairs(saved.desktops) do
+        if restored[desktop.id] then
+            table.insert(order, desktop.id)
+        end
+    end
+    deskbinds.set_order(order)
+
     local steps, windows = {}, 0
 
     -- The quake terminals, before the windows: they are the slowest thing to
@@ -643,11 +667,31 @@ local function reapply_titles()
         end
     end
 
+    return any
+end
+
+-- The row order goes the same way: it lives in deskbinds' memory, which a
+-- reload empties, and every desktop fell back to id order -- undoing every
+-- insertion beside the one in view and every move along a row. The file has
+-- the order from seconds ago. Harmless at the first load for the same reason
+-- titles are: no desktop exists yet for it to apply to.
+local function reapply_order()
+    local ids = {}
+    for _, desktop in ipairs(saved.desktops) do
+        table.insert(ids, desktop.id)
+    end
+    return deskbinds.set_order(ids)
+end
+
+local function reapply_after_reload()
+    local titled = reapply_titles()
+    local ordered = reapply_order()
+
     -- Renamed here rather than left to deskbinds' own pass: this runs during
     -- the reload, and the deferred pass is a timer, which cannot be created
     -- while the config is loading. Directly is also sooner -- the bar never
     -- shows the fallback name.
-    if any then
+    if titled or ordered then
         deskbinds.renumber_desktops()
     end
 end
@@ -659,6 +703,9 @@ end
 -- unwritten until something unrelated happened -- and a reload in that window
 -- would lose it, which is the one thing the file is now relied on for.
 deskbinds.on_title_changed(save)
+
+-- Moving a desktop along its row raises no event either: only names change.
+deskbinds.on_order_changed(save)
 
 for _, event in ipairs({
     "window.open",
@@ -690,7 +737,7 @@ hl.on("config.reloaded", function()
     -- which tells this file a title changed, which would ask for a snapshot
     -- -- and a snapshot means a timer, which is fatal while the config is
     -- loading. Disarmed, save() returns at once and nothing is created.
-    reapply_titles()
+    reapply_after_reload()
 
     armed = true
 end)

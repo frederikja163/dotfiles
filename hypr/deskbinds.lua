@@ -436,6 +436,89 @@ local function place_after(mon, ws_id, after_id)
     end
 end
 
+-- Every desktop, in the order you see them: screen by screen in slot order,
+-- along each row. session.lua writes desktops down in this order, which is how
+-- the order outlives the compositor.
+--
+-- The row order is otherwise only in `position`, which is gone after a restart
+-- and after `hyprctl reload` alike -- reload re-runs this file from nothing --
+-- and without it desktops fall back to id order. Giving them new ids in row
+-- order instead was the obvious fix and is the change_id trap described above
+-- `position`: the quake terminals would be orphaned.
+local function desktop_order()
+    local order, listed = {}, {}
+    for _, slot in ipairs(monitor_slots()) do
+        for _, ws in ipairs(slot.monitor and desktops_on(slot.monitor) or {}) do
+            table.insert(order, ws.id)
+            listed[ws.id] = true
+        end
+    end
+
+    -- Anything not on a screen right now, so it is still written down.
+    local rest = {}
+    for _, ws in ipairs(hl.get_workspaces() or {}) do
+        if not ws.special and not listed[ws.id] then
+            table.insert(rest, ws.id)
+        end
+    end
+    table.sort(rest)
+    for _, id in ipairs(rest) do
+        table.insert(order, id)
+    end
+    return order
+end
+
+-- Put desktops back in an order desktop_order() gave earlier. Desktops it does
+-- not mention -- the one Hyprland makes at login, or one made after the order
+-- was written -- go after the ones it does, in their current order.
+--
+-- The keys are one sequence across every screen rather than one per row. Rows
+-- are only ever compared within themselves, so this keeps each in order without
+-- having to know which screen a desktop is on -- which during a restore it may
+-- not be yet, with its move to the right screen only just dispatched.
+--
+-- Returns whether any desktop it mentions exists. Renames nothing: it is
+-- called while the config is loading, and the caller renumbers.
+local function set_order(ids)
+    local rank = {}
+    for i, id in ipairs(ids) do
+        rank[id] = rank[id] or i
+    end
+
+    local all, any = {}, false
+    for _, ws in ipairs(hl.get_workspaces() or {}) do
+        if not ws.special then
+            table.insert(all, ws)
+            any = any or rank[ws.id] ~= nil
+        end
+    end
+    if not any then
+        return false
+    end
+
+    table.sort(all, function(a, b)
+        local ra, rb = rank[a.id] or math.huge, rank[b.id] or math.huge
+        if ra ~= rb then
+            return ra < rb
+        end
+        return sort_key(a) < sort_key(b)
+    end)
+
+    for i, ws in ipairs(all) do
+        position[ws.id] = i
+    end
+    return true
+end
+
+-- Told when desktops are reordered without a workspace event to say so, which
+-- is moving one along its row: only the names change, and renaming raises no
+-- event. session.lua listens, so the new order is written down at once.
+local order_hooks = {}
+
+local function on_order_changed(fn)
+    table.insert(order_hooks, fn)
+end
+
 -- The desktop `step` places along from the one in view, wrapping both ways.
 -- step = 1 is the next one, -1 the previous; SUPER+Tab and SUPER+SHIFT+Tab.
 local function neighbour_desktop(mon, step)
@@ -1389,6 +1472,10 @@ local function move_desktop_in_row(step)
 
     position[ws.id], position[target.id] = sort_key(target), sort_key(ws)
     schedule_renumber()
+
+    for _, fn in ipairs(order_hooks) do
+        fn()
+    end
 end
 
 -- The desktop axis. step = 1 is the next desktop, -1 the previous; both wrap.
@@ -1541,6 +1628,10 @@ return {
     on_title_changed = on_title_changed,
     keep_open = keep_open,
     on_forget = on_forget,
+    -- The row order, written down and put back by session.lua.
+    desktop_order = desktop_order,
+    set_order = set_order,
+    on_order_changed = on_order_changed,
     new_desktop_here = new_desktop_here,
     close_desktop_here = close_desktop_here,
     is_persistent = is_persistent,

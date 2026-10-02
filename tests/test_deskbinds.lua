@@ -1095,6 +1095,56 @@ for _, ws in ipairs(mod.desktops_on(row_mon)) do
 end
 check("after the last desktop, it is last", order[#order], 6)
 
+print("scenario: the row order outlives a reload")
+-- A reload re-runs deskbinds from nothing, which forgets every position;
+-- session.lua writes desktop_order() down and hands it back to set_order().
+row, row_mon = five_desktops(3)
+reset(row)
+mod.new_desktop_here()
+local written = mod.desktop_order()
+check("written down as seen", table.concat(written, " "), "1 2 3 6 4 5")
+
+local function row_ids()
+    local ids = {}
+    for _, ws in ipairs(mod.desktops_on(row_mon)) do
+        table.insert(ids, ws.id)
+    end
+    return table.concat(ids, " ")
+end
+
+reset(row) -- the reload: same desktops, nothing remembered
+check("forgotten, so back to id order", row_ids(), "1 2 3 4 5 6")
+check("set_order says it applied", mod.set_order(written), true)
+check("...and the row is as it was", row_ids(), "1 2 3 6 4 5")
+
+-- A desktop the written order does not know -- made after it was written, or
+-- the one Hyprland makes at login -- goes after the ones it does.
+reset(row)
+mod.set_order({ 5, 4, 3 })
+check("unknown desktops go last, in their own order", row_ids(), "5 4 3 1 2 6")
+
+reset(row)
+check("an order for desktops that do not exist does nothing",
+      mod.set_order({ 40, 41 }), false)
+check("...and the row is left alone", row_ids(), "1 2 3 4 5 6")
+
+-- Across screens it is one list, screen by screen, and each row keeps to
+-- itself.
+reset(two_monitors(0))
+check("two screens: screen 1's row, then screen 2's",
+      table.concat(mod.desktop_order(), " "), "1 2 3")
+mod.set_order({ 3, 2, 1 })
+local first = mod.desktops_on(world.monitors[1])
+check("each screen's row follows the order", first[1].id .. " " .. first[2].id, "2 1")
+
+-- Moving a desktop along its row raises no event, so whoever writes the order
+-- down has to be told.
+reset(two_monitors(0))
+local told = 0
+mod.on_order_changed(function() told = told + 1 end)
+mod.move_desktop_in_row(1)
+check("a move along the row is reported", told, 1)
+
 print("scenario: a desktop asked for outright survives being left empty")
 -- The new-desktop key. Asking for a desktop and passing through one are
 -- different keys, and only the first gets a persistence rule.

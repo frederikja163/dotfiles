@@ -54,7 +54,7 @@ io.popen = function(command)
 end
 
 local world, execs, dispatched, events, timers, placed, spawned, titled, shell_lookups
-local title_hook, renumbers, kept, mod
+local title_hook, renumbers, kept, mod, ordered, order_hook
 
 -- Timers fire immediately, in order, so a staggered restore runs to completion
 -- inside the call. The real ones are 400ms apart; nothing here depends on the
@@ -72,7 +72,7 @@ local function reset(w)
     world = w or {}
     execs, dispatched, events, timers, placed, spawned, titled, shell_lookups =
         {}, {}, {}, {}, {}, {}, {}, {}
-    title_hook, renumbers, kept = nil, 0, {}
+    title_hook, renumbers, kept, ordered, order_hook = nil, 0, {}, {}, nil
 
     _G.hl = {
         on = function(event, fn) events[event] = fn end,
@@ -106,6 +106,27 @@ local function reset(w)
         on_title_changed = function(fn) title_hook = fn end,
         renumber_desktops = function() renumbers = renumbers + 1 end,
         keep_open = function(id) table.insert(kept, id) return true end,
+        -- The row order, which deskbinds owns: world.order when a test sets
+        -- one, id order otherwise -- which is what it is with nothing moved.
+        desktop_order = function()
+            if world.order then return world.order end
+            local ids = {}
+            for _, ws in ipairs(world.workspaces or {}) do
+                if not ws.special then table.insert(ids, ws.id) end
+            end
+            table.sort(ids)
+            return ids
+        end,
+        set_order = function(ids)
+            table.insert(ordered, ids)
+            local live = {}
+            for _, ws in ipairs(world.workspaces or {}) do live[ws.id] = true end
+            for _, id in ipairs(ids) do
+                if live[id] then return true end
+            end
+            return false
+        end,
+        on_order_changed = function(fn) order_hook = fn end,
     }
     package.loaded.quake = {
         cwd_for = function(id) return (world.quake_cwds or {})[id] end,
@@ -227,6 +248,31 @@ check("anything else keeps its own command line and directory",
 check("the focused desktop is noted", (snap.focus or {})[1], "focus\t1")
 check("an untitled desktop writes no title", snap.title, nil)
 
+-- Desktops are written in the order you see them, not by id: a desktop made
+-- beside the one in view, or moved along the row, has an id that says nothing
+-- about where it is.
+print("scenario: desktops are written down in row order")
+local reordered = two_screens()
+reordered.order = { 2, 1, 3 }
+reset(reordered)
+snap = lines_of(mod.snapshot())
+check("the row's first desktop first", snap.desktop[1], "desktop\t2\t1\tBOE 0x0DBB")
+check("...then the next", snap.desktop[2], "desktop\t1\t0\tBOE 0x0DBB")
+check("...then the other screen's", snap.desktop[3], "desktop\t3\t0\tDell DELL P3424WE DVYH6T3")
+
+-- Moving a desktop along its row only renames things, which raises no event,
+-- so deskbinds says so and the session is written for it.
+print("scenario: a reorder is written down as soon as it happens")
+write_session("")
+reset(two_screens())
+mod.arm()
+run_timers()
+world.order = { 2, 1, 3 }
+order_hook()
+run_timers()
+check("the new order is in the file",
+      (read_session() or ""):match("^desktop\t2\t") ~= nil, true)
+
 -- A title is a decision about what a desktop is for, and nothing can
 -- reconstruct it the way the terminal's directory reconstructs a label.
 print("scenario: a desktop that has been given a name")
@@ -317,6 +363,16 @@ check("and renamed on the spot, not on a timer", renumbers, 1)
 check("kept open again too", #kept, 1)
 check("...the same desktop", kept[1], 1)
 
+-- A reload empties deskbinds' memory of the row order as well, and every
+-- desktop fell back to id order. The file has it.
+print("scenario: the row order survives a reload")
+write_session("desktop\t3\t0\tDell DELL P3424WE DVYH6T3\n"
+    .. "desktop\t2\t0\tBOE 0x0DBB\ndesktop\t1\t0\tBOE 0x0DBB\n")
+reset(two_screens())
+events["config.reloaded"]()
+check("put back in the order it was written", table.concat(ordered[1] or {}, " "), "3 2 1")
+check("...and renamed on the spot", renumbers, 1)
+
 -- Ids are reused. A title from a session that has ended must not land on a
 -- stranger's desktop, so a record with no desktop to go with it is dropped --
 -- which is also what makes this harmless at the first load, where Hyprland
@@ -328,6 +384,7 @@ empty.workspaces = {}
 reset(empty)
 events["config.reloaded"]()
 check("nothing to put a title on, so none is", #titled, 0)
+check("nor renamed for an order with nothing to apply to", renumbers, 0)
 
 -- Writing it down cannot wait for an unrelated event, or a reload in the gap
 -- would lose it.
@@ -370,10 +427,13 @@ local summary = mod.restore()
 -- too. A desktop that was neither kept nor has anything to put on it would be
 -- swept up the moment focus moved, so it is not worth recreating.
 check("desktops placed before anything is launched", #placed, 3)
-check("...in id order", placed[1].id, 1)
+check("...in the order they were written", placed[1].id, 1)
 check("...on the screen they were on", placed[3].identity, "Dell DELL P3424WE DVYH6T3")
 check("...and the kept one is kept again", placed[2].persistent, true)
 check("summary counts them", summary, "3 desktops, 2 windows")
+check("...and put back in the order they were written",
+      table.concat(ordered[1] or {}, " "), "1 2 3")
+
 
 -- Before the terminals are started, or the desktop would come back called
 -- after its directory and be renamed a moment later.
@@ -400,6 +460,18 @@ check("and it says what it did", execs[3]:match("^notify%-send") ~= nil, true)
 
 check("focus goes back where it was, last of all",
       dispatched[#dispatched].arg.workspace, 3)
+
+print("scenario: a session whose rows were not in id order")
+write_session(table.concat({
+    "desktop\t5\t1\tBOE 0x0DBB",
+    "desktop\t2\t1\tBOE 0x0DBB",
+    "desktop\t7\t0\tBOE 0x0DBB",  -- nothing on it and not kept: not restored
+    "desktop\t4\t1\tBOE 0x0DBB",
+}, "\n") .. "\n")
+reset(two_screens())
+mod.restore()
+check("the order comes back, and only for desktops that do",
+      table.concat(ordered[1] or {}, " "), "5 2 4")
 
 -- A desktop whose only content was its terminal is the common case here: a
 -- project you are not editing in a window right now, but which is a desktop
