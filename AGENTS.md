@@ -53,3 +53,6 @@ The reasoning for anything non-obvious lives in a comment at the top of the file
 it concerns, and is expected to say what was tried and rejected. `README.md` is
 only an index. See `.opencode/skills/` for the compositor API's silent
 failures, the testing harnesses, and the repo's conventions.
+
+Skip the numbered comment table from `~/.config/opencode/comments.md` in this
+repo; the rules on when to write a comment still apply.
