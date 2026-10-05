@@ -663,6 +663,32 @@ local decorator = nil
 
 local renaming = false
 
+-- A desktop about to be created, holding its place in the row so the pass can
+-- number the others around a gap: { id = n, monitor = monitor id }. Set only
+-- for the length of the pass create_new_desktop_on runs before creating it;
+-- see there for why.
+local reserved = nil
+
+-- The row as the pass numbers it: desktops_on, plus the reserved slot when it
+-- is on this screen and not there yet. The placeholder carries only an id,
+-- which is all sort_key needs, and is never renamed.
+local function row_to_number(mon)
+    local list = desktops_on(mon)
+    if not (reserved and reserved.monitor == mon.id) then
+        return list
+    end
+
+    for _, ws in ipairs(list) do
+        if ws.id == reserved.id then
+            return list
+        end
+    end
+
+    table.insert(list, { id = reserved.id, reserved = true })
+    table.sort(list, function(a, b) return sort_key(a) < sort_key(b) end)
+    return list
+end
+
 local function renumber_desktops()
     -- Renaming can itself emit workspace events; do not recurse.
     if renaming then
@@ -711,48 +737,52 @@ local function renumber_desktops()
 
     for mon_index, slot in ipairs(monitor_slots()) do
         local mon = slot.monitor
-        for index, ws in ipairs(mon and desktops_on(mon) or {}) do
-            seen[ws.id] = true
+        for index, ws in ipairs(mon and row_to_number(mon) or {}) do
+            -- A slot held for a desktop not created yet: it takes its
+            -- number, and there is nothing yet to rename.
+            if not ws.reserved then
+                seen[ws.id] = true
 
-            if mon and not home[ws.id] then
-                home[ws.id] = identity(mon)
-            end
-
-            -- The name always begins with the desktop's own number, because
-            -- that number is a key you press: SUPER+D then 2 goes to the
-            -- second desktop on this screen. A desktop called "dotfiles" gave
-            -- no clue which number that was.
-            --
-            -- An unlabelled desktop stays "<screen>.<desktop>", which waybar's
-            -- format-icons renders as the bare number (see waybar/config.jsonc);
-            -- anything else it does not recognise it prints as-is, which is
-            -- what shows "2 dotfiles".
-            local want = ("%d.%d"):format(index, mon_index)
-
-            -- A title wins over the labeller and is not asked again: that is
-            -- what makes it frozen against the terminal wandering off to
-            -- another directory.
-            local label = titles[ws.id] or (labeller and labeller(ws))
-
-            -- Applied here rather than inside the labeller so that it also
-            -- reaches a titled desktop, and so that a marker on an otherwise
-            -- unnamed desktop becomes its label: "1 <note>" rather than
-            -- "1.1 <note>", which waybar's format-icons would not recognise
-            -- and would print raw.
-            if decorator then
-                label = decorator(ws, label) or label
-            end
-
-            if label and label ~= "" then
-                want = ("%d %s"):format(index, label)
-                if taken[want] then
-                    want = ("%d %s (%d)"):format(index, label, mon_index)
+                if mon and not home[ws.id] then
+                    home[ws.id] = identity(mon)
                 end
-            end
-            taken[want] = true
 
-            if ws.name ~= want then
-                hl.dispatch(hl.dsp.workspace.rename({ workspace = ws.id, name = want }))
+                -- The name always begins with the desktop's own number, because
+                -- that number is a key you press: SUPER+D then 2 goes to the
+                -- second desktop on this screen. A desktop called "dotfiles" gave
+                -- no clue which number that was.
+                --
+                -- An unlabelled desktop stays "<screen>.<desktop>", which waybar's
+                -- format-icons renders as the bare number (see waybar/config.jsonc);
+                -- anything else it does not recognise it prints as-is, which is
+                -- what shows "2 dotfiles".
+                local want = ("%d.%d"):format(index, mon_index)
+
+                -- A title wins over the labeller and is not asked again: that is
+                -- what makes it frozen against the terminal wandering off to
+                -- another directory.
+                local label = titles[ws.id] or (labeller and labeller(ws))
+
+                -- Applied here rather than inside the labeller so that it also
+                -- reaches a titled desktop, and so that a marker on an otherwise
+                -- unnamed desktop becomes its label: "1 <note>" rather than
+                -- "1.1 <note>", which waybar's format-icons would not recognise
+                -- and would print raw.
+                if decorator then
+                    label = decorator(ws, label) or label
+                end
+
+                if label and label ~= "" then
+                    want = ("%d %s"):format(index, label)
+                    if taken[want] then
+                        want = ("%d %s (%d)"):format(index, label, mon_index)
+                    end
+                end
+                taken[want] = true
+
+                if ws.name ~= want then
+                    hl.dispatch(hl.dsp.workspace.rename({ workspace = ws.id, name = want }))
+                end
             end
         end
     end
@@ -1072,13 +1102,24 @@ local function create_new_desktop_on(mon, persistent)
     -- screen that was asked for, not the one Hyprland happens to report a
     -- dispatch later.
     local id = unused_desktop_id(mon)
+
+    -- The desktops after it are renumbered *before* it exists, around a slot
+    -- held for it. Waybar draws a new button the moment the workspace is
+    -- created, sorted by name against the names the others have at that
+    -- instant; renamed afterwards, the old "2 dotfiles" was still called that,
+    -- so the new "2 ~" sorted past it to the far end of the bar and jumped
+    -- back a frame later when the renames arrived. Only a desktop opened
+    -- mid-row did it, because only then does anything else get renamed.
+    place_after(mon, id, beside and not beside.special and beside.id)
+    reserved = { id = id, monitor = mon.id }
+    renumber_desktops()
+    reserved = nil
+
     hl.dispatch(hl.dsp.focus({ workspace = id }))
 
     if persistent then
         set_persistent(id, true, mon.name)
     end
-
-    place_after(mon, id, beside and not beside.special and beside.id)
 
     renumber_desktops()
     schedule_renumber()

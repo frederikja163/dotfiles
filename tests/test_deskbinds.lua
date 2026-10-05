@@ -1032,9 +1032,32 @@ mod.new_desktop_here()
 check("created by id", last_of("focus").arg.workspace, 4)
 -- Desktop 1 was in view, so it is born second, as "2 ~", rather than being
 -- numbered a moment later by the renumbering pass.
-check("and named straight away", renames[1] and renames[1].name, "2 ~")
-check("the same desktop that was created", renames[1] and renames[1].workspace, 4)
+check("and named straight away", n.workspaces[5].name, "2 ~")
 check("...pushing the old second desktop up one", n.workspaces[2].name, "3 ~")
+
+-- The desktop it pushes along is renamed before the new one exists. Waybar
+-- sorts a new button by name against whatever the others are called at that
+-- instant, so renamed afterwards the new "2 ~" sorted past the old "2 ~" to
+-- the end of the bar for a frame.
+local pushed_at, created_at
+for i, d in ipairs(dispatched) do
+    if d.kind == "rename" and d.arg.workspace == 2 and d.arg.name == "3 ~" then
+        pushed_at = pushed_at or i
+    end
+    if d.kind == "focus" and d.arg.workspace == 4 then
+        created_at = created_at or i
+    end
+end
+check("the row is renumbered before the desktop is created",
+      pushed_at ~= nil and created_at ~= nil and pushed_at < created_at, true)
+check("...and nothing is renamed to the new desktop's id before it exists",
+      (function()
+          for i = 1, created_at or 0 do
+              local d = dispatched[i]
+              if d.kind == "rename" and d.arg.workspace == 4 then return false end
+          end
+          return true
+      end)(), true)
 
 print("scenario: a new desktop among unlabelled ones")
 local m = two_monitors(0)
