@@ -1167,6 +1167,13 @@ local function close_desktop_here()
         return false
     end
 
+    -- Read now: `ws` is a live handle, and once the focus leaves an empty
+    -- desktop Hyprland may remove it, after which `ws.id` reads nil.
+    -- forget_desktop(nil) then threw "table index is nil" from the bind --
+    -- caught in a nested instance by spamming SUPER+C on a desktop full of
+    -- windows, intermittent because it depends on when the removal lands.
+    local id = ws.id
+
     -- Out of view first: Hyprland will not remove the workspace it is showing,
     -- so un-persisting it while it is in view leaves it standing.
     focus_workspace(target)
@@ -1176,7 +1183,7 @@ local function close_desktop_here()
     -- which is what un-persists it, so this is not merely tidying and has to
     -- stay after the focus above -- its screen, its place in the row, its
     -- terminal, its layout.
-    forget_desktop(ws.id)
+    forget_desktop(id)
 
     schedule_renumber()
     return true
