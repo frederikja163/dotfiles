@@ -26,12 +26,17 @@ often built across many prompts, and several turns of work belong in one commit
 rather than one each. A dirty working tree is the normal state between them, not
 something to tidy away — finishing a change is not a reason to commit it. Say
 what is left uncommitted and wait. Commits are made by the `commit` agent, which
-plans the split, shows it as a table for approval and only then commits, and is
-the one mode where `git commit` runs without a prompt. plan refuses it outright;
-build asks, so a commit it is told to make costs one confirmation, but switching
-agent is still the better answer because the split and the table come with it.
+plans the split and shows it as a table, and is the one mode where `git commit`
+runs without a prompt. plan refuses it outright; build asks, so a commit it is
+told to make costs one confirmation, but switching agent is still the better
+answer because the split and the table come with it.
 `opencode.json` keeps its commit rule ask as a backstop for any agent that is
 not one of those three.
+
+**In this repo the commit agent does not wait for approval.** Show the table,
+then commit straight away in the same turn. Still stop and ask when the commit
+agent raises a branch warning (wrong branch, detached HEAD), or when the change
+includes a file that looks like a credential.
 
 **No agent pushes, in any mode.** Every mode denies `git push` outright rather
 than asking, because running one needs the user's SSH key or an HTTPS token and
