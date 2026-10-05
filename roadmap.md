@@ -1,8 +1,5 @@
 # Bugs
 New desktop name after first 9
-Sometimes i get an error when i close a desktop environment
-Sometimes closing the last window and then moving to a different desktop will close a desktop
-Ordering when adding a non-leftmost window quickly looks wrong
 
 # Features
 nvim better keyboard keybinds for using as a fully fletched C# ide
@@ -12,6 +9,7 @@ Git prune worktrees command
 Media keys to scroll movies and videos backwards and forwards by a small amount
 Github integration
 nvim/opencode integration to give opencode context about where i am looking.
+Review likely breaking changes
 Machine specific settings
  - Packages
     - Steam
