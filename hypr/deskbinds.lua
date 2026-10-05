@@ -47,8 +47,9 @@
 -- two "only one desktop, so make a second" special cases this file used to
 -- carry are gone with it: creating and going-to are different keys now.
 --
--- "desktop" is a Hyprland workspace. Empty non-persistent workspaces are
--- cleaned up by Hyprland automatically, so nothing here has to remove them.
+-- "desktop" is a Hyprland workspace. Hyprland removes an empty one the moment
+-- it is left; every desktop here is made persistent to stop that, so a
+-- desktop only goes when SUPER+C closes it. See renumber_desktops.
 --
 -- Everything is built on focus({workspace=id}) and window.move({workspace=id}),
 -- which are the primitives already used elsewhere in this config. Focusing a
@@ -110,6 +111,17 @@ local home = {}
 -- persistent, and `hyprctl workspacerules` has no Lua counterpart -- and
 -- session.lua has to write the flag down to put it back after a restart.
 local persisted = {}
+
+-- The screen each persistent desktop's rule names: [id] = monitor name. Kept
+-- beside `persisted` so the renumbering pass can tell when Hyprland has moved
+-- a desktop under its rule -- an unplugged screen's desktops are pushed onto
+-- whatever is left -- and re-pin it where it now is.
+local pinned_to = {}
+
+-- Desktops SUPER+C has closed and Hyprland may not have removed yet: [id] =
+-- true. The pass would otherwise see one still listed and make it persistent
+-- again, which keeps it alive. Cleared once the id is gone.
+local closing = {}
 
 -- Every desktop id this session has ever seen, so the ones that go can be
 -- noticed. Not the same as "desktops that exist": that is what it is compared
@@ -346,6 +358,7 @@ end
 -- persistence goes off in the same breath and nothing else re-reads it.
 local function unbind_desktop(id)
     persisted[id] = nil
+    pinned_to[id] = nil
     hl.workspace_rule({
         workspace = tostring(id),
         persistent = false,
@@ -689,6 +702,9 @@ local function row_to_number(mon)
     return list
 end
 
+-- Defined with the other persistence helpers further down.
+local set_persistent
+
 local function renumber_desktops()
     -- Renaming can itself emit workspace events; do not recurse.
     if renaming then
@@ -723,6 +739,12 @@ local function renumber_desktops()
             end
         end
 
+        for id in pairs(closing) do
+            if not live[id] then
+                closing[id] = nil
+            end
+        end
+
         -- Collected first: forget_desktop writes to `seen`.
         for _, id in ipairs(gone) do
             forget_desktop(id)
@@ -745,6 +767,28 @@ local function renumber_desktops()
 
                 if mon and not home[ws.id] then
                     home[ws.id] = identity(mon)
+                end
+
+                -- Every desktop is kept open while empty: one goes when
+                -- SUPER+C closes it and not otherwise. Hyprland sweeps an empty
+                -- workspace up the moment it is left, has no option to stop
+                -- that, and a persistent rule is the only thing that does.
+                --
+                -- It used to be only the desktops asked for outright
+                -- (new_desktop_on_screen) or named. Everything else lapsed --
+                -- a desktop made by sending a window to it, or by going to an
+                -- unused number -- and so did the kept ones after a reload,
+                -- which rebuilds the rule list from the config and forgets
+                -- them. To the user that read as a desktop vanishing at random
+                -- after its last window closed, quake terminal and all, and
+                -- more often the older it was.
+                --
+                -- Done here because this pass sees every desktop, runs on every
+                -- workspace event and at reload too, which covers both gaps. The
+                -- rule names the screen and is re-issued when that changes, for
+                -- the re-placement reason above set_persistent.
+                if mon and not closing[ws.id] and pinned_to[ws.id] ~= mon.name then
+                    set_persistent(ws.id, true, mon.name)
                 end
 
                 -- The name always begins with the desktop's own number, because
@@ -837,12 +881,12 @@ end
 -- second (through forget_desktop, which is where a rule is dropped), and that
 -- order matters.
 --
--- None of this survives `hyprctl reload`: the rule list is rebuilt from the
--- config, which knows nothing of what has been created since, so an empty
--- desktop does not outlive a dotfiles-reload. Left that way on purpose.
--- Writing the ids to a file and replaying them was the alternative, and it
--- replays at login too, where it would mint phantom desktops from whatever
--- last happened to be open.
+-- None of this survives `hyprctl reload` by itself: the rule list is rebuilt
+-- from the config, which knows nothing of what has been created since. The
+-- renumbering pass runs at reload and makes every desktop that still exists
+-- persistent again, which is all it takes. Writing the ids to a file and
+-- replaying them was the rejected alternative: it replays at login too, where
+-- it would mint phantom desktops from whatever last happened to be open.
 -- The rule has to name the monitor, and leaving it out is the bug this comment
 -- exists for: issuing *any* persistent workspace rule makes Hyprland re-place
 -- every persistent workspace it knows about, and one whose rule names no
@@ -858,8 +902,9 @@ end
 -- which goes has to take its rule with it, because the monitor it names also
 -- decides where the *next* desktop born with that id appears. That is
 -- unbind_desktop's job, up in the forgetting section.
-local function set_persistent(id, persistent, monitor)
+function set_persistent(id, persistent, monitor)
     persisted[id] = persistent or nil
+    pinned_to[id] = persistent and monitor or nil
     hl.workspace_rule({
         workspace = tostring(id),
         persistent = persistent,
@@ -1073,12 +1118,12 @@ end
 -- ids sort ahead of every ordinary desktop, so a new desktop would insert
 -- itself before the ones already there and quietly renumber them.
 --
--- `persistent` asks for a desktop that stays open while empty, which is what
--- the plain new-desktop key makes: asked for one outright, you get to leave it
--- and come back to it before there is anything on it. The paths that put a
--- window on the new desktop do not need it -- a desktop with a window on it is
--- never swept up -- and would leave the empty husk behind after the window
--- closes.
+-- `persistent` asks for the rule straight away, which is what the plain
+-- new-desktop key does: the desktop is empty and in view, and leaving it within
+-- the tick before the renumbering pass would otherwise lose it. Every desktop
+-- is made persistent by that pass anyway (see renumber_desktops); the paths
+-- that put a window on the new desktop leave it to the pass, since a desktop
+-- with a window on it cannot be swept up in the meantime.
 --
 -- The rule goes on after the focus dispatch, not before: it is the focus that
 -- decides which monitor the desktop is born on, and a persistent rule naming
@@ -1177,6 +1222,10 @@ local function close_desktop_here()
     -- Out of view first: Hyprland will not remove the workspace it is showing,
     -- so un-persisting it while it is in view leaves it standing.
     focus_workspace(target)
+
+    -- Marked before the rule is dropped, so a renumbering pass in between
+    -- cannot make it persistent again.
+    closing[id] = true
 
     -- The same cleanup a lapsed desktop gets, just without waiting for the
     -- pass to notice. Everything keyed to this id goes: its workspace rule --

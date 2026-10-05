@@ -159,6 +159,17 @@ local function reset(w)
                 end,
                 move = function(a)
                     table.insert(moves, a)
+                    -- Hyprland moves it there and then, as with rename. The
+                    -- renumbering pass pins every desktop's rule to the screen
+                    -- it is on, so a stub that left it behind would have the
+                    -- pass pin it back to the screen it just left.
+                    for _, ws in ipairs(world.workspaces) do
+                        if ws.id == a.workspace then
+                            for _, m in ipairs(world.monitors) do
+                                if m.name == a.monitor then ws.monitor = m end
+                            end
+                        end
+                    end
                     return { kind = "wsmove", arg = a }
                 end,
             },
@@ -402,7 +413,7 @@ mod.move_window_to_new_desktop_on_screen(1)
 check("a new desktop on the screen you are on", last_of("focus").arg.workspace, 4)
 check("...and the window follows", last_of("move").arg.workspace, 4)
 check("...addressed by window, since focus has moved on", last_of("move").arg.window, "address:0xWIN1")
-check("...with no rule: it has a window on it, so it cannot lapse", #rules, 0)
+check("...and kept open, like every desktop", rules[#rules] and rules[#rules].workspace == "4" and rules[#rules].persistent, true)
 
 reset(two_monitors(0)) -- eDP-1 focused
 mod.move_window_to_new_desktop_on_screen(2)
@@ -1169,15 +1180,54 @@ mod.move_desktop_in_row(1)
 check("a move along the row is reported", told, 1)
 
 print("scenario: a desktop asked for outright survives being left empty")
--- The new-desktop key. Asking for a desktop and passing through one are
--- different keys, and only the first gets a persistence rule.
+-- The new-desktop key.
 local p1 = two_monitors(0)
 reset(p1)
 mod.new_desktop_on_screen(1)
 check("created the desktop", last_of("focus").arg.workspace, 4)
 check("...and asked for it to persist", last_rule_for(4) and last_rule_for(4).persistent, true)
 check("addressed by id as a string", last_rule_for(4) and last_rule_for(4).workspace, "4")
-check("only that one desktop is made persistent", #rules, 1)
+
+print("scenario: every desktop is kept open, each on its own screen")
+-- Hyprland sweeps up an empty desktop the moment it is left, and only some
+-- desktops used to be protected -- so a desktop vanished after its last window
+-- closed, apparently at random. Now none are swept; SUPER+C is the way out.
+reset(two_monitors(0)) -- ws1 and ws2 on eDP-1, ws3 on DP-4
+mod.renumber_desktops()
+for id, screen in pairs({ [1] = "eDP-1", [2] = "eDP-1", [3] = "DP-4" }) do
+    check(("desktop %d is kept"):format(id), last_rule_for(id) and last_rule_for(id).persistent, true)
+    check(("...pinned to %s"):format(screen), last_rule_for(id) and last_rule_for(id).monitor, screen)
+end
+local issued = #rules
+mod.renumber_desktops()
+check("...and not re-issued on every pass", #rules, issued)
+
+print("scenario: a desktop Hyprland moves is re-pinned where it went")
+-- An unplugged screen's desktops are pushed onto whatever is left. A rule
+-- still naming the old screen would make the next re-placement pass fight that.
+local moved = two_monitors(0)
+reset(moved)
+mod.renumber_desktops()
+moved.workspaces[3].monitor = moved.monitors[1] -- ws3, from DP-4 to eDP-1
+mod.renumber_desktops()
+check("re-pinned", last_rule_for(3) and last_rule_for(3).monitor, "eDP-1")
+
+print("scenario: a closed desktop is not made persistent again before it goes")
+-- The rule is dropped after the focus moves, and a pass that ran before
+-- Hyprland removed the desktop would otherwise put the rule straight back.
+local still = two_monitors(0)
+reset(still)
+mod.renumber_desktops()
+mod.close_desktop_here() -- ws1; the stub leaves it listed, as a slow removal would
+mod.renumber_desktops()
+check("its rule stays dropped", last_rule_for(1).persistent, false)
+for i, ws in ipairs(world.workspaces) do
+    if ws.id == 1 then table.remove(world.workspaces, i) break end
+end
+mod.renumber_desktops()
+table.insert(world.workspaces, { id = 1, special = false, monitor = still.monitors[1] })
+mod.renumber_desktops()
+check("...but a new desktop given the id later is kept", last_rule_for(1).persistent, true)
 
 print("scenario: a persistent desktop's rule names the screen it belongs to")
 -- Issuing any persistent workspace rule makes Hyprland re-place every
@@ -1201,12 +1251,13 @@ mod.move_desktop_to_screen(2)
 check("still persistent after the move", last_rule_for(1) and last_rule_for(1).persistent, true)
 check("...and now pinned to the screen it moved to", last_rule_for(1) and last_rule_for(1).monitor, "DP-4")
 
-print("scenario: a desktop made on the way somewhere is not persistent")
+print("scenario: a desktop made on the way somewhere is kept as well")
 local p2 = two_monitors(1) -- DP-4 focused, a single desktop on it
 reset(p2)
 mod.move_window_to_new_desktop_on_screen(2) -- takes the window onto a fresh desktop
 check("created one", last_of("focus").arg.workspace, 4)
-check("...with no rule: it has a window on it, so it cannot lapse", #rules, 0)
+check("...kept open once its window has gone", last_rule_for(4) and last_rule_for(4).persistent, true)
+check("...pinned to the screen it was made on", last_rule_for(4) and last_rule_for(4).monitor, "DP-4")
 
 -- SUPER+C on an empty desktop: leave it, then drop the rule. That order is
 -- Hyprland's, not a preference -- it will not destroy the workspace it shows.
