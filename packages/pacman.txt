@@ -3,6 +3,8 @@
 
 # core
 git
+github-cli          # gh: setup.sh signs in to GitHub with it, and git/config
+                    # uses it as the credential helper in place of an ssh key
 base-devel          # compiler toolchain, needed by treesitter auto_install
 curl
 unzip               # bin/unzip-here, which is what yazi opens a zip with --
