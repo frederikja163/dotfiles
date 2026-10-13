@@ -421,6 +421,27 @@ seed_music() {
     "$DOTFILES/bin/music-get" 60 >/dev/null 2>&1 || true
 }
 
+# --- backgrounds ------------------------------------------------------------
+
+# The folder hypr/hyprpaper.conf makes a slideshow of. Created, never linked:
+# the pictures are each machine's own and this repo is public, so it starts
+# empty and an empty folder means Hyprland's default wallpaper (see the
+# comment in hypr/hyprpaper.conf). Nothing is ever put in it or taken out.
+#
+# In `links` as well as `all` because it belongs with the configs rather than
+# the packages: it is what makes hyprpaper.conf's path real. mkdir -p leaves an
+# existing folder and its contents alone, so re-running is harmless.
+make_backgrounds_dir() {
+    local dir="$HOME/Pictures/backgrounds"
+
+    if [ -d "$dir" ]; then
+        echo "ok      $dir"
+        return
+    fi
+    mkdir -p "$dir"
+    echo "mkdir   $dir"
+}
+
 # install_rider comes last in both modes that install anything, rather than at
 # the end of install_packages where the message used to be: it can open a
 # window, and that belongs after the run rather than in the middle of one.
@@ -429,7 +450,7 @@ seed_music() {
 # packages and ~/Music being worth filling follows from the rest being in
 # place, and neither single-half mode is a fresh machine.
 case "$mode" in
-    all)      install_packages; install_links; seed_music; install_rider ;;
+    all)      install_packages; install_links; make_backgrounds_dir; seed_music; install_rider ;;
     packages) install_packages; install_rider ;;
-    links)    install_links ;;
+    links)    install_links; make_backgrounds_dir ;;
 esac

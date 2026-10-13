@@ -43,7 +43,8 @@ hl.on("hyprland.start", function ()
     -- Status bar on the main monitor (see bin/waybar-main)
     start_waybar()
 
-    -- Wallpaper
+    -- Wallpaper: a slideshow of ~/Pictures/backgrounds, or Hyprland's default
+    -- when that is empty (see hyprpaper.conf)
     hl.exec_cmd("hyprpaper")
 
     -- Idle timeouts: dim, lock, displays off, suspend (see hypridle.conf)

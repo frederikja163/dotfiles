@@ -64,8 +64,10 @@ catppuccin-mocha and JetBrainsMono Nerd Font throughout.
 | `desknames.lua`   | what a desktop is called: its title, its directory or its program |
 | `autostart.lua`   | processes launched with the session                       |
 
-Also `hyprlock.conf` and `hypridle.conf`, which Hyprland does not read — the
-programs of those names do.
+Also `hyprlock.conf`, `hypridle.conf` and `hyprpaper.conf`, which Hyprland
+does not read — the programs of those names do. `hyprpaper.conf` makes a
+slideshow of `~/Pictures/backgrounds`, a per-machine folder `install.sh`
+creates empty and never links.
 
 ## bin/
 
