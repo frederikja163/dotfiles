@@ -273,6 +273,45 @@ vim.keymap.set('n', '<leader>fs', function()
     sessions.select()
 end, { desc = 'Pick a session' })
 
+-- Starting over: `:Forget` quits and `:Fresh` restarts, and both leave this
+-- directory with no session, so the next start opens on an empty layout.
+--
+-- Clearing `session_key` is what stops VimLeavePre writing the layout back
+-- the moment the file is gone. The file is deleted by path rather than with
+-- sessions.delete(), which only knows the sessions it detected at startup
+-- and errors outright when there were none.
+--
+-- `:restart!` rather than `:restart`: without the bang nvim saves and
+-- restores a session of its own, which would bring the layout straight back.
+-- The new instance gets the same argv, so `nvim .` from bin/ide still lands
+-- on this directory and goes on to save a new session when it quits.
+--
+-- If the quit is refused -- an unsaved buffer, a running terminal job --
+-- the key is put back, so quitting normally afterwards saves the layout as
+-- before instead of silently leaving no session. The refusal is not
+-- reported here: vim shows its own E37 even through the pcall.
+local function forget_session(quit)
+    local key = session_key
+    if key then
+        vim.fn.delete(vim.fs.joinpath(sessions.config.directory, key))
+        sessions.detected[key] = nil
+        vim.v.this_session = ''
+        session_key = nil
+    end
+    if not pcall(vim.cmd, quit) then
+        session_key = key
+    end
+end
+
+vim.api.nvim_create_user_command('Forget', function()
+    forget_session('qall')
+end, { desc = "Quit and delete this directory's session" })
+
+vim.api.nvim_create_user_command('Fresh', function()
+    forget_session('restart!')
+end, { desc = "Restart with this directory's session deleted" })
+vim.keymap.set('n', '<leader>wr', '<cmd>Fresh<CR>', { desc = "Restart with this directory's session deleted" })
+
 -- Reviewing a diff
 --
 -- A diff is read here in the file itself, not in a copy of it: the removed
