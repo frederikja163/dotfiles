@@ -31,6 +31,9 @@ vim.opt.expandtab = true
 vim.opt.swapfile = false
 vim.opt.winborder = "rounded"
 vim.opt.signcolumn = "yes"
+vim.opt.autoread = true
+vim.opt.autowriteall = true
+vim.opt.updatetime = 1000
 vim.g.mapleader = " "
 
 -- Keymaps
@@ -180,6 +183,21 @@ vim.api.nvim_create_autocmd("FocusLost", {
 vim.api.nvim_create_autocmd("BufLeave", {
     group = augroup,
     callback = write_if_possible,
+})
+
+-- 'autoread' alone only reloads when something runs :checktime, and nothing
+-- does by itself; these are the moments a file changed elsewhere (an agent,
+-- git checkout) gets picked up. CursorHold is why 'updatetime' is down to
+-- 1000: at the default 4000 a buffer stayed stale long enough to edit it
+-- and collide on save. Not from the command-line window, where
+-- :checktime is an error.
+vim.api.nvim_create_autocmd({ "FocusGained", "BufEnter", "CursorHold" }, {
+    group = augroup,
+    callback = function()
+        if vim.fn.getcmdwintype() == '' then
+            vim.cmd.checktime()
+        end
+    end,
 })
 
 -- Sessions
