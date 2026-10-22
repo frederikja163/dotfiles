@@ -69,6 +69,13 @@ hl.on("hyprland.start", function ()
     -- watching for commits pushed after login, which a single check at start
     -- would never see. Deliberate, and the only entry here that stays.
     hl.exec_cmd("dotfiles-check-updates")
+
+    -- Turn GitHub notifications into dunst ones (see bin/github-notify). A
+    -- second process that stays for the whole session, for the same reason as
+    -- the one above: what it is waiting for arrives after login. It announces
+    -- nothing on its first pass, only what comes later, so it does not matter
+    -- that it may reach the bus a moment before dunst has claimed it.
+    hl.exec_cmd("github-notify")
 end)
 
 -- Which monitor is the main one can change: docking, undocking, a cable moving

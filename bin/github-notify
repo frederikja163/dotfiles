@@ -1,0 +1,259 @@
+#!/usr/bin/env bash
+# Turn GitHub notifications into dunst notifications.
+#
+# Started from hypr/autostart.lua and left running for the session, like
+# bin/dotfiles-check-updates: it asks GitHub for the unread list once a minute
+# and posts one notification for each entry it has not announced before. An
+# entry counts as new when its id or its updated_at changes, so a thread that
+# gets another comment is spoken of again, and the same unread thread sitting
+# there minute after minute is not.
+#
+# Polling rather than anything pushed, because GitHub has no push channel for a
+# personal account: the notifications API is the only source, and it asks to be
+# polled no faster than its X-Poll-Interval, which has always been 60 seconds.
+# That is also why this is not a webhook: nothing here is reachable from the
+# internet.
+#
+# The first successful pass announces nothing, only remembers. Everything
+# already unread at login is old news that the website's own badge says better,
+# and the alternative -- a wall of notifications on every login, for a backlog
+# that was never going to be cleared by reading them in a popup -- teaches you
+# to ignore the whole thing. Only what arrives while you are logged in is said.
+#
+# Credentials are gh's, the sign-in setup.sh makes. The `repo` scope it asks for
+# already covers the notifications API, so nothing new has to be granted.
+#
+# A burst is folded into one notice. dunst shows five at a time and queues the
+# rest (notification_limit in dunst/dunstrc), so thirty at once -- the usual
+# result of coming back from a weekend -- would be a long slow trickle.
+#
+# Offline is the ordinary case and says nothing: the first pass of a session
+# often runs before the network is up, and the loop simply tries again. A
+# failure that is not the network is different -- a token that was revoked will
+# never recover by waiting -- and is said once, as a notification, since stderr
+# from anything started by Hyprland goes nowhere.
+#
+# Each notice opens its thread in the browser when it is clicked or followed
+# (SUPER+CTRL+N, `dunstctl action`). dunst only has something to invoke if the
+# notification carries an action, and one posted without it did nothing: with no
+# default action `dunstctl action` falls back to the context menu, which lists
+# nothing for a notice with no URL in it. So every notice is posted with a
+# "default" action, and notify-send, which blocks until the notice is closed
+# when it has actions, is left running in the background and opens the link
+# if it prints that action. The API's own URLs (api.github.com/repos/...) are
+# not pages, so list_unread turns them into the page, anchored to the latest
+# comment when there is one.
+#
+# Run by hand it does a single pass and exits, since the loop is for a process
+# nobody is watching. That is decided from stdout being a terminal, for the
+# reason given in bin/dotfiles-check-updates. DOTFILES_GITHUB_NOTIFY_ONCE=1
+# forces it for a test. A single pass has nothing to compare against, so it
+# announces everything unread: handy for seeing what a notification looks like.
+set -uo pipefail
+
+interval="${DOTFILES_GITHUB_NOTIFY_INTERVAL:-60}"
+burst="${DOTFILES_GITHUB_NOTIFY_BURST:-5}"
+
+once="${DOTFILES_GITHUB_NOTIFY_ONCE:-0}"
+[ -t 1 ] && once=1
+
+# 1 waits for each notice to close before posting the next, rather than leaving
+# it in the background. For a test, whose stubbed notify-send returns at once
+# and whose record would otherwise be written after the script has gone.
+sync="${DOTFILES_GITHUB_NOTIFY_SYNC:-0}"
+
+# The compositor that started this is its direct parent, and when it goes away
+# the loop must go with it; see the note on parent_pid in
+# bin/dotfiles-check-updates for why this is read from /proc and why logind
+# will not do it.
+parent_pid() {
+    local key value
+    while read -r key value; do
+        if [ "$key" = "PPid:" ]; then
+            printf '%s\n' "$value"
+            return 0
+        fi
+    done < /proc/$$/status
+}
+compositor="$(parent_pid)"
+
+notify() {
+    notify-send --app-name=github --urgency=normal "$@" 2>/dev/null
+}
+
+# notify_link URL SUMMARY BODY: a notice that opens URL when it is invoked.
+notify_link() {
+    local url="$1"
+    shift
+    if [ "$sync" -eq 1 ]; then
+        open_on_action "$url" "$@"
+    else
+        open_on_action "$url" "$@" &
+    fi
+}
+
+open_on_action() {
+    local url="$1" action
+    shift
+    action="$(notify --action=default=Open "$@")"
+    [ "$action" = default ] && xdg-open "$url" >/dev/null 2>&1
+    return 0
+}
+
+if ! command -v gh >/dev/null; then
+    notify "github: gh is not installed" "Notifications cannot be fetched without it."
+    exit 1
+fi
+
+# dunst renders markup (markup = full), and a pull request title is free text:
+# an unescaped "<" in one swallows the rest of the line, or the whole notice.
+#
+# The replacements are quoted through variables because bash 5.2 reads an
+# unquoted "&" in a replacement as "the text that matched", which turned "<"
+# into "<lt;" here.
+escape() {
+    local s="$1" amp='&amp;' lt='&lt;' gt='&gt;'
+    s="${s//&/"$amp"}"
+    s="${s//</"$lt"}"
+    s="${s//>/"$gt"}"
+    printf '%s' "$s"
+}
+
+# One line per unread thread, fields split on the unit separator rather than a
+# tab: read treats a tab as whitespace and would swallow an empty field, and a
+# separator that cannot appear in a title needs no escaping on the way out. The
+# title is last, as the one field that is free text.
+#
+# The URL is the page, not the API's. Issues, pull requests and commits have
+# one that can be worked out; anything else (a release, a check suite, a
+# discussion) goes to the repository, which beats a link that 404s.
+#
+# The event is what happened, which is what the notice should say. GitHub's own
+# `reason` is why you are told -- "author", "subscribed" -- and a notice headed
+# "Author" says nothing about what changed. The list does not name the event, so
+# it is read off what it does carry: the kind of the latest comment's URL, the
+# kind of subject, and the reason only where nothing else is left. A thread
+# whose latest comment is its own subject (a push, a review with no comment, a
+# label) has no more specific word than "Updated".
+#
+# The probe is a URL that would tell more, fetched by event_label once a notice
+# is really going to be posted: who wrote a comment, and whether a state change
+# was a merge or a close. Not fetched here, for threads that are never shown.
+list_unread() {
+    gh api notifications --jq '
+        def number: capture("/(?<n>[0-9]+)$").n;
+        .[] | .subject.type as $type | .subject.url as $api | .reason as $reason
+            | .subject.title as $title
+            | (.subject.latest_comment_url // "") as $comment
+            | (if $api == null then .repository.html_url
+               elif $type == "Issue" or $type == "PullRequest" then
+                   ($api | sub("^https://api.github.com/repos/"; "https://github.com/")
+                         | sub("/pulls/"; "/pull/"))
+                   + (if ($comment | test("/issues/comments/[0-9]+$"))
+                          then "#issuecomment-" + ($comment | number)
+                      elif ($comment | test("/pulls/comments/[0-9]+$"))
+                          then "#discussion_r" + ($comment | number)
+                      else "" end)
+               elif $type == "Commit" then
+                   $api | sub("^https://api.github.com/repos/"; "https://github.com/")
+                        | sub("/commits/"; "/commit/")
+               else .repository.html_url end) as $url
+            | (if ($comment | test("/issues/comments/[0-9]+$")) then ["New comment", $comment]
+               elif ($comment | test("/pulls/comments/[0-9]+$")) then ["New review comment", $comment]
+               elif $type == "CheckSuite" then
+                   [if ($title | test("fail"; "i")) then "CI failed"
+                    elif ($title | test("succe|pass"; "i")) then "CI passed"
+                    elif ($title | test("cancel"; "i")) then "CI cancelled"
+                    else "CI activity" end, ""]
+               elif $type == "Release" then ["New release", ""]
+               elif $type == "RepositoryVulnerabilityAlert" then ["Security alert", ""]
+               elif $type == "Commit" then [if $comment != "" then "Commit comment" else "Commit" end, ""]
+               elif $reason == "state_change" then ["State changed", ($api // "")]
+               elif $reason == "review_requested" then ["Review requested", ""]
+               elif $reason == "assign" then ["Assigned", ""]
+               elif $reason == "mention" or $reason == "team_mention" then ["Mentioned", ""]
+               elif $reason == "approval_requested" then ["Approval requested", ""]
+               else ["Updated", ""] end) as $what
+            | [.id, .updated_at, .repository.full_name, $url, $what[0], $what[1], $title]
+            | join("\u001f")'
+}
+
+# EVENT PROBE -> the event with what the probe adds: "New comment from alice",
+# "Merged". The probe is a different API call from the listing, and when it
+# fails -- offline, rate limited -- the plain event is better than no notice.
+event_label() {
+    local event="$1" probe="$2" found
+    [ -n "$probe" ] || { printf '%s' "$event"; return; }
+    case "$event" in
+        "New comment"|"New review comment")
+            found="$(gh api "$probe" --jq '.user.login' 2>/dev/null)" || found=""
+            [ -n "$found" ] && event="$event from $found"
+            ;;
+        "State changed")
+            found="$(gh api "$probe" --jq \
+                'if .merged then "Merged" elif .state == "closed" then "Closed" else "Reopened" end' \
+                2>/dev/null)" || found=""
+            [ -n "$found" ] && event="$found"
+            ;;
+    esac
+    printf '%s' "$event"
+}
+
+# What has already been announced, keyed id and updated_at together. Rebuilt on
+# every successful pass from what is unread now, so reading a thread on the
+# website drops it, and a later update to it is announced as new.
+declare -A seen=()
+primed=0
+auth_warned=0
+err=""
+trap '[ -n "$err" ] && rm -f "$err"' EXIT
+trap 'exit 0' TERM INT HUP
+
+while :; do
+    [ "$(parent_pid)" = "$compositor" ] || exit 0
+
+    err="$(mktemp)"
+    if listing="$(list_unread 2>"$err")"; then
+        declare -A now=()
+        fresh=()
+
+        while IFS=$'\x1f' read -r id updated repo url event probe title; do
+            [ -n "$id" ] || continue
+            key="$id@$updated"
+            now[$key]=1
+            if [ -z "${seen[$key]:-}" ]; then
+                fresh+=("$repo"$'\x1f'"$url"$'\x1f'"$event"$'\x1f'"$probe"$'\x1f'"$title")
+            fi
+        done <<< "$listing"
+
+        seen=()
+        for key in "${!now[@]}"; do seen[$key]=1; done
+        unset now
+        auth_warned=0
+
+        if [ "$primed" -eq 1 ] || [ "$once" -eq 1 ]; then
+            if [ "${#fresh[@]}" -gt "$burst" ]; then
+                notify_link "https://github.com/notifications" \
+                    "github: ${#fresh[@]} new notifications" \
+                    "Open github.com/notifications to read them."
+            else
+                for entry in "${fresh[@]}"; do
+                    IFS=$'\x1f' read -r repo url event probe title <<< "$entry"
+                    event="$(event_label "$event" "$probe")"
+                    notify_link "$url" "$(escape "$repo"): $(escape "$event")" "$(escape "$title")"
+                done
+            fi
+        fi
+        primed=1
+    elif grep -qiE 'gh auth login|HTTP 401|bad credentials' "$err"; then
+        if [ "$auth_warned" -eq 0 ]; then
+            notify "github: not signed in" \
+                "gh has no working token. Run: gh auth login"
+            auth_warned=1
+        fi
+    fi
+    rm -f "$err"
+
+    [ "$once" -eq 1 ] && exit 0
+    sleep "$interval"
+done

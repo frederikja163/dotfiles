@@ -83,6 +83,7 @@ dotfiles, and is named after whatever it drives instead.
 | `dotfiles-reload`        | apply the dotfiles live: hyprland, waybar, wallpaper, idling, dunst |
 | `dotfiles-monitor-order` | pin which screen is monitor 1, 2, ...; set orientation              |
 | `dotfiles-session-restore` | desktops and windows back after a crash, not after a boot; `--now`, `--off` |
+| `github-notify`          | GitHub notifications as dunst ones, polled every minute; following one opens it |
 | `hypr-keybinds`          | the `SUPER + /` cheatsheet, generated from `hyprctl binds`          |
 | `ide`                    | `SUPER + I`: Rider if the directory holds a solution, else nvim     |
 | `power-menu`             | `SUPER + Escape`: lock, log out, reboot, shut down                  |

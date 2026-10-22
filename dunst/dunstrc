@@ -123,3 +123,12 @@
 [dotfiles-update]
     appname = "dotfiles"
     timeout = 0
+
+# GitHub notifications (bin/github-notify) stay until closed, for the same
+# reason: they arrive while you are looking at something else, and ten seconds
+# is not long enough to see one. Left at urgency normal rather than critical, so
+# they keep the blue frame; a burst is already folded into one notice by the
+# script, which keeps this from piling up.
+[github]
+    appname = "github"
+    timeout = 0
