@@ -44,6 +44,14 @@ not get a shell profile: its `PATH` comes from `hypr/environment.lua`, and
 anything it calls must be listed there. `nvim` (bob) and `rider` (JetBrains
 Toolbox) both live outside the default `PATH` for this reason.
 
+`bin/` is for scripts the user types, because everything in it is a command on
+`PATH`. A helper that only the config starts -- a Hyprland event handler, an
+autostart entry, another script's subprocess -- goes in `lib/`, which is not on
+`PATH`, and is called by its path (`~/dotfiles/lib/<name>`). The test is
+whether the user would ever run it themselves. `lib/dunst-follow` is the worked
+example; `hypr/autostart.lua` names it by path and `tests/test_dunst_follow.sh`
+tests it there.
+
 Keep failures visible. A GUI app launched detached with its output discarded
 turns "command not found" into nothing happening at all — check the command
 exists first and `notify-send`, since stderr from a keybind goes nowhere.

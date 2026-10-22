@@ -94,8 +94,11 @@ dotfiles, and is named after whatever it drives instead.
 | `unzip-here`             | extract zips into the current directory; what yazi's Enter runs     |
 | `waybar-main`            | starts waybar on every monitor, full bar on the largest             |
 
-Shared shell code lives in `lib/`, which is not on `PATH`: see
-`lib/dotfiles-lib.sh`, sourced by `dotfiles-check-updates` and `dotfiles-update`.
+`lib/` is not on `PATH`, and is for what nobody types: shared shell code, and
+helpers that something else starts. See `lib/dotfiles-lib.sh`, sourced by
+`dotfiles-check-updates` and `dotfiles-update`, and `lib/dunst-follow`, which
+`hypr/autostart.lua` runs on every focus change to carry the notifications on
+screen to the focused monitor.
 
 ## Keys
 

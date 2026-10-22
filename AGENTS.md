@@ -46,6 +46,17 @@ you to carry on.
 
 `roadmap.md` is the user's own notes. `opencode.json` denies reading and editing
 it; that is deliberate, not an obstacle to route around.
+**`bin/` is for scripts the user types.** It is on `PATH`, so everything in it is
+a command the user can run, and a helper nobody will ever run by hand does not
+belong there. Anything that only Hyprland, a keybind's own script, a unit or
+another script starts goes in `lib/` instead, which is not on `PATH`, and is
+called by its path (`~/dotfiles/lib/<name>`, the way `environment.lua` already
+names `~/dotfiles/bin`). Ask whether the user would ever run it themselves; if
+the answer is no, it is `lib/`. A script that is started from a keybind and
+also useful from a terminal is still a `bin/` script. Scripts that already sit
+in `bin/` only because the config starts them are not to be moved without being
+asked.
+
 
 Nothing secret belongs in this repo — it is public on GitHub. Credentials stay
 in `~/.local/share/opencode/auth.json`, which is outside the config directory
