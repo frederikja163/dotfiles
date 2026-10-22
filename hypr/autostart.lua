@@ -112,3 +112,23 @@ end
 for _, event in ipairs({ "monitor.added", "monitor.removed" }) do
     hl.on(event, restart_waybar)
 end
+
+-- Notifications on screen follow focus to the other monitor. dunst picks its
+-- output once, when it creates its surface, so one that is already showing
+-- stays where it opened until you look back at that screen. lib/dunst-follow
+-- makes dunst create the surface again, which puts it on the focused monitor.
+-- It does nothing when nothing is displayed, which is nearly always, so a
+-- process per focus change is cheap. See the notes in dunst/dunstrc for why not
+-- pin a monitor.
+--
+-- By its path in lib/ rather than by name, because nobody runs it by hand and
+-- so it is not in bin/, which is what is on PATH. The repo is named as
+-- ~/dotfiles here as in environment.lua.
+--
+-- Not under the sandbox marker, which returns at the top of this file: this
+-- would otherwise drive the host's dunst from a nested compositor.
+local dunst_follow = (os.getenv("HOME") or "") .. "/dotfiles/lib/dunst-follow"
+
+hl.on("monitor.focused", function ()
+    hl.exec_cmd(dunst_follow)
+end)

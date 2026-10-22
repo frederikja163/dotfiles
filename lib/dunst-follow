@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Move the notifications that are on screen to the monitor in use.
+#
+# Run by hypr/autostart.lua whenever the focused monitor changes. It is called
+# by this path, and lives in lib/ rather than bin/, because nobody runs it by
+# hand.
+#
+# dunst has no notion of following you: on Wayland it asks the compositor for a surface with
+# no output named (follow = keyboard in dunst/dunstrc), the compositor picks
+# the focused one, and that choice is made once, when the surface is created.
+# A notification that opens on one screen stays there while you work on the
+# other, and a notice that stays until closed -- every GitHub one -- is
+# forgotten until you happen to look back. dunst only drops the surface when
+# nothing is left to show, so this makes that happen: pause, which moves
+# everything displayed back to the waiting queue and destroys the surface, then
+# restore the pause level, which shows it all again in a fresh surface that the
+# compositor places on the monitor that is focused now.
+#
+# Nothing here names a monitor, which is the point. Pinning one by name
+# (monitor = DP-4) was tried and does not survive a second computer, or a
+# redock that renames the connector; a notification that opens on a screen you
+# never look at is as lost as one that was left behind.
+#
+# Two costs, both accepted. The notifications redraw when focus moves, which is
+# the following being seen. And a notification's timeout starts again when it is
+# shown again, so a ten second one that is carried to the other screen gets
+# its ten seconds there -- no worse than it vanishing before you looked up.
+#
+# The pause level is read and put back rather than set to 0, so a "do not
+# disturb" the user switched on survives. The lock is for the same reason: two
+# runs overlapping would let the second read the first one's temporary level as
+# the user's own, and restore that -- leaving dunst paused, and every later
+# notification silently queued. They run one after the other instead.
+#
+# Putting them back too soon undoes it. dunst only marks the surface for removal
+# when the notifications leave, and destroys it on the compositor's next frame
+# callback (wl_win_hide and send_frame in dunst's wayland/wl.c); a restore that
+# lands first finds the surface still there and reuses it, on the same monitor.
+# So this waits for dunst to report nothing displayed and then a few frames
+# more, rather than for a count that is true before the surface is gone.
+set -uo pipefail
+
+command -v dunstctl >/dev/null || exit 0
+
+exec 9>"${XDG_RUNTIME_DIR:-/tmp}/dunst-follow.lock"
+flock 9
+
+shown="$(dunstctl count displayed 2>/dev/null)" || exit 0
+[ "${shown:-0}" -gt 0 ] || exit 0
+
+level="$(dunstctl get-pause-level 2>/dev/null)" || exit 0
+trap 'dunstctl set-pause-level "$level"' EXIT
+
+dunstctl set-pause-level 100
+for _ in $(seq 20); do
+    [ "$(dunstctl count displayed 2>/dev/null)" = 0 ] && break
+    sleep 0.05
+done
+sleep 0.15

@@ -103,3 +103,24 @@ if fail > 0 then
     os.exit(1)
 end
 print(("%d checks passed"):format(pass))
+print("scenario: focus moving to another monitor")
+-- The notifications on screen have to be carried over, and every focus change
+-- is a chance for that, not only the first. Nothing is asked of dunst from here
+-- directly: the script decides whether anything is showing.
+reset()
+local function follows()
+    -- By path in lib/, not by name: it is not a script anyone runs, so it is
+    -- not on PATH.
+    local want = (os.getenv("HOME") or "") .. "/dotfiles/lib/dunst-follow"
+    local n = 0
+    for _, cmd in ipairs(execs) do
+        if cmd == want then n = n + 1 end
+    end
+    return n
+end
+check("nothing runs before focus moves", follows(), 0)
+events["monitor.focused"]()
+check("a focus change runs dunst-follow", follows(), 1)
+events["monitor.focused"]()
+check("and so does the next", follows(), 2)
+

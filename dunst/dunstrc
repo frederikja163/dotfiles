@@ -2,8 +2,24 @@
 # Reload with:  dunstctl reload
 
 [global]
-    # Dual monitor: put notifications wherever the keyboard focus is, rather
-    # than pinning them to one screen.
+    # Dual monitor: the notifications are on the screen you are using, and
+    # move with you. dunst draws one popup on one output and cannot show it on
+    # all of them, and neither can mako. Mirroring was considered -- a second
+    # dunst on a private D-Bus, fed by a script rule -- and passed over,
+    # because closing, actions and progress bars would not stay in step.
+    #
+    # On Wayland this does not mean what dunst(5) says. There is no keyboard
+    # focus for dunst to look at: with follow set it asks the compositor for a
+    # surface with no output named, and the compositor picks the focused one,
+    # once, when the surface is created. keyboard and mouse are the same thing
+    # here. Left to itself that strands a notification on the screen it opened
+    # on, so lib/dunst-follow, run by hypr/autostart.lua whenever the focused
+    # monitor changes, makes dunst create the surface again.
+    #
+    # A monitor named here was tried instead (monitor = DP-4, follow = none).
+    # It cannot be right on more than one machine, and a connector name does
+    # not survive a redock -- DP-4 came back as DP-5 -- after which dunst logs
+    # "Screen not found" and falls back to the compositor's choice anyway.
     follow = keyboard
     monitor = 0
 
