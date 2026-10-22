@@ -423,6 +423,75 @@ vim.opt.diffopt:append('algorithm:histogram')
 -- `split` is the side-by-side pair: the file window and its revision window.
 local review = { on = false, base = nil, layout = 'unified', split = nil }
 
+-- The list of hunks is the user's to edit while reviewing -- entries removed
+-- as they are done with -- so starting review mode brings back the last
+-- "Hunks" list as it was, wherever it is in the quickfix stack, and builds one
+-- only if there is none. `refresh` throws it away for a new one, which is what
+-- <leader>gq and a base given to :Review are for. A new list is where
+-- reviewing starts, so it ends on the first entry, in the file window.
+--
+-- gitsigns opens its own window on the list it builds; that is left off and
+-- the window opened here, so that focus can be given to the file afterwards.
+local function review_qflist(refresh)
+    if refresh ~= true then
+        local last = vim.fn.getqflist({ nr = '$' }).nr
+        for nr = last, 1, -1 do
+            if vim.fn.getqflist({ nr = nr, title = 0 }).title == 'Hunks' then
+                vim.cmd(nr .. 'chistory')
+                return vim.cmd.copen()
+            end
+        end
+    end
+
+    gitsigns.setqflist('all', { open = false }, vim.schedule_wrap(function()
+        vim.cmd.copen()
+        if #vim.fn.getqflist() > 0 then
+            vim.cmd.cfirst()
+        end
+    end))
+end
+
+-- dd in the quickfix window drops the entry under the cursor (a count or a
+-- visual selection, several), so a list can be worked through. Vim has no
+-- command for it: the list is read, cut and written back, with the cursor
+-- left on the entry that slid up into the gap.
+vim.api.nvim_create_autocmd("FileType", {
+    group = augroup,
+    pattern = "qf",
+    callback = function(args)
+        local function remove(first, last)
+            local loc = vim.fn.getwininfo(vim.api.nvim_get_current_win())[1].loclist == 1
+            local get = loc and function(what) return vim.fn.getloclist(0, what) end
+                or function(what) return vim.fn.getqflist(what) end
+            local items = get({ items = 0 }).items
+            last = math.min(last, #items)
+            for i = last, first, -1 do
+                table.remove(items, i)
+            end
+            local what = { items = items, idx = math.min(first, #items) }
+            if loc then
+                vim.fn.setloclist(0, {}, 'r', what)
+            else
+                vim.fn.setqflist({}, 'r', what)
+            end
+            if #items > 0 then
+                vim.api.nvim_win_set_cursor(0, { math.min(first, #items), 0 })
+            end
+        end
+
+        vim.keymap.set('n', 'dd', function()
+            local row = vim.api.nvim_win_get_cursor(0)[1]
+            remove(row, row + vim.v.count1 - 1)
+        end, { buffer = args.buf, desc = 'Remove this entry from the list' })
+
+        vim.keymap.set('x', 'd', function()
+            local first, last = vim.fn.line('v'), vim.fn.line('.')
+            vim.cmd.normal({ vim.keycode('<Esc>'), bang = true })
+            remove(math.min(first, last), math.max(first, last))
+        end, { buffer = args.buf, desc = 'Remove the selected entries from the list' })
+    end,
+})
+
 local function diff_ready(buf)
     local status = vim.b[buf].gitsigns_status_dict
     return status ~= nil and status.added ~= nil
@@ -571,7 +640,8 @@ end
 -- which would also show main's own later commits as reverted here.
 local function review_start(rev)
     local base = 'HEAD'
-    if rev and rev ~= '' then
+    local refresh = rev ~= nil and rev ~= ''
+    if refresh then
         local result = vim.system({ 'git', 'merge-base', rev, 'HEAD' }, { text = true }):wait()
         base = result.code == 0 and vim.trim(result.stdout) or rev
     end
@@ -596,7 +666,7 @@ local function review_start(rev)
         vim.schedule(function()
             review.on = true
             review_open(vim.api.nvim_get_current_win(), function()
-                gitsigns.setqflist('all')
+                review_qflist(refresh)
             end)
         end)
     end)
@@ -648,8 +718,8 @@ vim.keymap.set('n', '<leader>gs', function()
 end, { desc = 'Review side by side, or back to inline' })
 
 vim.keymap.set('n', '<leader>gq', function()
-    gitsigns.setqflist('all')
-end, { desc = 'Every hunk in the repo to the quickfix list' })
+    review_qflist(true)
+end, { desc = 'Start over: every hunk in the repo to a new list, at the first' })
 
 -- Against the review base when reviewing, HEAD otherwise, and new files too.
 vim.keymap.set('n', '<leader>gf', function()
