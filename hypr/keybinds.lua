@@ -143,6 +143,30 @@ hl.bind("Print", hl.dsp.exec_cmd("screenshot-region"),
 -- collide with.
 hl.bind(mainMod .. " + slash", hl.dsp.exec_cmd("hypr-keybinds"),
         { submap_universal = true, description = "App: this keybind list" })
+-- Notifications, all on N. dunst 1.13 has no keyboard shortcut options of its
+-- own (dunst(5) lists none), so these are dunstctl calls.
+--
+--   SUPER+N         close the topmost notification
+--   SUPER+SHIFT+N   close all of them -- SHIFT widens the scope, as on M
+--   SUPER+CTRL+N    follow the topmost one's action
+--
+-- `dunstctl action` is enough on its own: checked against a notification with a
+-- default action, it invokes it and closes the notice, so a separate close
+-- after it is not needed -- and would be wrong, because on a notification with
+-- no default action dunst opens its context menu instead (the way to reach a
+-- URL or one of several actions), and closing straight after would take the
+-- menu's subject away.
+--
+-- Not submap_universal: a mode is a moment of attention on windows, and in a
+-- one-shot mode any unbound key leaves it, which is what pressing N there
+-- should do rather than quietly dismiss something unseen.
+hl.bind(mainMod .. " + N", hl.dsp.exec_cmd("dunstctl close"),
+        { description = "Notification: close the topmost" })
+hl.bind(mainMod .. " + SHIFT + N", hl.dsp.exec_cmd("dunstctl close-all"),
+        { description = "Notification: close all" })
+hl.bind(mainMod .. " + CTRL + N", hl.dsp.exec_cmd("dunstctl action"),
+        { description = "Notification: follow the topmost one's action" })
+
 
 -- Lock / suspend / log out / reboot / shut down
 --

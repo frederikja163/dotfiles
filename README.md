@@ -114,6 +114,10 @@ A **verb** enters a mode, and inside a mode the motions are bare.
 | `SUPER + D`        | desktop: `1`..`0` go to that desktop on this screen, `Tab` to step |
 | `SUPER+SHIFT + D`  | display: `1`..`0` duplicate a screen, `o` re-pin the order, `h` send desktops home |
 
+Notifications are on `N`: `SUPER + N` closes the topmost, `SUPER+SHIFT + N`
+closes all of them, and `SUPER+CTRL + N` follows the topmost one's action (or
+opens dunst's context menu when it has none).
+
 Inside a mode the motions work **whether or not you keep SUPER held**, so
 `SUPER+S` then `h`, and holding SUPER through `SUPER+S+h`, do the same thing.
 
