@@ -143,14 +143,6 @@ hl.bind(mainMod .. " + R", hl.dsp.exec_cmd(menu), { description = "App: launcher
 hl.bind("Print", hl.dsp.exec_cmd("screenshot-region"),
         { description = "Screenshot: region to clipboard" })
 
--- Keybind cheatsheet (this popup)
---
--- submap_universal, so it works from inside a mode too: being unsure which
--- keys are live is exactly when this is wanted, and the list is grouped by
--- mode. Nothing in modes.lua binds slash, so there is nothing for it to
--- collide with.
-hl.bind(mainMod .. " + slash", hl.dsp.exec_cmd("hypr-keybinds"),
-        { submap_universal = true, description = "App: this keybind list" })
 -- Notifications, all on N. dunst 1.13 has no keyboard shortcut options of its
 -- own (dunst(5) lists none), so these are dunstctl calls.
 --
@@ -175,6 +167,14 @@ hl.bind(mainMod .. " + SHIFT + N", hl.dsp.exec_cmd("dunstctl close-all"),
 hl.bind(mainMod .. " + CTRL + N", hl.dsp.exec_cmd("dunstctl action"),
         { description = "Notification: follow the topmost one's action" })
 
+-- Keybind cheatsheet (this popup)
+--
+-- submap_universal, so it works from inside a mode too: being unsure which
+-- keys are live is exactly when this is wanted, and the list is grouped by
+-- mode. Nothing in modes.lua binds slash, so there is nothing for it to
+-- collide with.
+hl.bind(mainMod .. " + slash", hl.dsp.exec_cmd("hypr-keybinds"),
+        { submap_universal = true, description = "App: this keybind list" })
 
 -- Lock / suspend / log out / reboot / shut down
 --

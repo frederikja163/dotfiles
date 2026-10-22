@@ -113,11 +113,6 @@ events["monitor.added"]()
 flush()
 check("a monitor after a reload still starts the bar", waybar_starts(), 1)
 
-if fail > 0 then
-    print(("%d failed"):format(fail))
-    os.exit(1)
-end
-print(("%d checks passed"):format(pass))
 print("scenario: focus moving to another monitor")
 -- The notifications on screen have to be carried over, and every focus change
 -- is a chance for that, not only the first. Nothing is asked of dunst from here
@@ -139,3 +134,8 @@ check("a focus change runs dunst-follow", follows(), 1)
 events["monitor.focused"]()
 check("and so does the next", follows(), 2)
 
+if fail > 0 then
+    print(("%d failed"):format(fail))
+    os.exit(1)
+end
+print(("%d checks passed"):format(pass))
