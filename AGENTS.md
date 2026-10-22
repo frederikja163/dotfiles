@@ -27,9 +27,8 @@ rather than one each. A dirty working tree is the normal state between them, not
 something to tidy away — finishing a change is not a reason to commit it. Say
 what is left uncommitted and wait. Commits are made by the `commit` agent, which
 plans the split and shows it as a table, and is the one mode where `git commit`
-runs without a prompt. plan refuses it outright; build asks, so a commit it is
-told to make costs one confirmation, but switching agent is still the better
-answer because the split and the table come with it.
+runs without a prompt. build and plan refuse it outright, so a commit means
+switching to the commit agent, which is where the split and the table come from.
 `opencode.json` keeps its commit rule ask as a backstop for any agent that is
 not one of those three.
 
@@ -46,6 +45,7 @@ you to carry on.
 
 `roadmap.md` is the user's own notes. `opencode.json` denies reading and editing
 it; that is deliberate, not an obstacle to route around.
+
 **`bin/` is for scripts the user types.** It is on `PATH`, so everything in it is
 a command the user can run, and a helper nobody will ever run by hand does not
 belong there. Anything that only Hyprland, a keybind's own script, a unit or
@@ -56,7 +56,6 @@ the answer is no, it is `lib/`. A script that is started from a keybind and
 also useful from a terminal is still a `bin/` script. Scripts that already sit
 in `bin/` only because the config starts them are not to be moved without being
 asked.
-
 
 Nothing secret belongs in this repo — it is public on GitHub. Credentials stay
 in `~/.local/share/opencode/auth.json`, which is outside the config directory

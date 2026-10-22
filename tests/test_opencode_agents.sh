@@ -4,9 +4,9 @@
 # push at all, that the commit agent's `git commit` allow stays last in its
 # list, and that nobody re-opens what a project has closed.
 #
-# This exists because the guard is written out four times -- build, plan,
-# review and commit each carry the same list -- and the config format has no way
-# to share a list. A plugin could
+# This exists because the guard is written out three times -- build, plan and
+# commit each carry the same list -- and the config format has no way to share
+# a list. A plugin could
 # have injected it from one place and was rejected: a plugin that fails to load
 # takes the guard with it silently, which is the exact failure being guarded
 # against. Copies are safer and drift is the price, so the drift is what gets
@@ -96,25 +96,24 @@ CMDS
 # - push is denied in every mode, with no exception: it needs the user's SSH
 #   key or an HTTPS token, and "ask" would not avoid that -- approving the
 #   prompt is what puts the credential in reach. Agents hand the push back.
-# - review denies everything: read-only by construction.
 # - commit allows `git commit`, because the split table it shows first is the
 #   approval, and asks on the rest.
-# - plan denies commit: it will not edit a file, so any commit it made would be
-#   of someone else's work.
-# - build asks on everything else, commit included -- switching to the commit
-#   agent is the better answer, not the only one.
+# - build and plan deny commit: build is sent to the commit agent instead, and
+#   plan will not edit a file, so any commit it made would be of someone else's
+#   work.
+# - build and plan ask on everything else.
 expected_action() {
     case "$1:$2" in
         *:push)        printf 'deny' ;;
-        review:*)      printf 'deny' ;;
         commit:commit) printf 'allow' ;;
+        build:commit)  printf 'deny' ;;
         plan:commit)   printf 'deny' ;;
         *)             printf 'ask' ;;
     esac
 }
 
 echo "scenario: every shell-capable mode gates the shared git commands"
-for agent in build plan review commit; do
+for agent in build plan commit; do
     missing=""; wrongaction=""
 
     while IFS= read -r cmd; do
@@ -141,7 +140,7 @@ echo "scenario: no mode may push, whatever it is told"
 # were within its reach. "deny" rather than "ask" because approving the prompt
 # is exactly the thing being avoided. Checked on its own as well as through the
 # shared list, because this is the one entry that must never be relaxed to ask.
-for agent in build plan review commit; do
+for agent in build plan commit; do
     # Any rule whose resource mentions the command, anchored or not, so a
     # pattern rewritten to "git push*" is still caught.
     got="$(grep -F -- "$agent shell " "$TMP/flat" | grep -E 'git push' | tail -1 | awk '{print $3}')"
@@ -177,7 +176,7 @@ echo "scenario: no agent re-opens what a project has closed"
 # The commit agent used to be exempt, when it had an open shell. It no longer
 # has one -- its only allow is the narrow `*git commit*` -- so it is checked
 # with the rest.
-for agent in build plan review commit; do
+for agent in build plan commit; do
     broad="$(grep -cE "^$agent (\*|shell) allow \*$" "$TMP/flat" || true)"
     shell="$(grep -cE "^$agent shell allow \*$" "$TMP/flat" || true)"
     verdict=ok
@@ -186,16 +185,27 @@ for agent in build plan review commit; do
     check "$agent carries no broad allow-all of its own" "$verdict" ok
 done
 
-echo "scenario: review and commit never edit files"
-for agent in review commit; do
-    last_edit="$(grep "^$agent edit " "$TMP/flat" | tail -1 | awk '{print $3}')"
-    check "the last edit rule for $agent denies" "$last_edit" deny
-done
+echo "scenario: commit never edits files"
+last_edit="$(grep "^commit edit " "$TMP/flat" | tail -1 | awk '{print $3}')"
+check "the last edit rule for commit denies" "$last_edit" deny
+
+echo "scenario: /review is ours, and runs in plan"
+# A command of the same name replaces opencode's built-in, so the description
+# is how to tell which one is live. It runs in plan because that mode cannot
+# edit files; a command carries no permissions of its own.
+review_desc="$(opencode api get /api/command 2>/dev/null | python3 -c "
+import sys, json
+doc = json.load(sys.stdin)
+cmds = doc.get('data', doc)
+print(next((c.get('description', '') for c in cmds if c.get('name') == 'review'), 'missing'))")"
+check "the review command is the repo's, not the built-in" \
+    "$(case "$review_desc" in 'Review a change:'*) echo ours ;; *) echo "$review_desc" ;; esac)" ours
+check "and it runs in plan" "$(sed -n '1,/^---$/{/^agent:/p}' opencode/commands/review.md | head -1)" "agent: plan"
 
 echo "scenario: reading history is never gated"
 # The guard is worthless if it also stops an agent orienting itself, which a
 # pattern like "*git *" would do.
-for agent in build plan review commit; do
+for agent in build plan commit; do
     gated=""
     for safe in log show diff status blame rev-parse describe fetch; do
         if grep -F -- "$agent shell " "$TMP/flat" | grep -qF -- " *git $safe*"; then
@@ -209,7 +219,7 @@ echo "scenario: no mode carves an allow out of the git list"
 # The list is only worth having if nothing sits after it re-permitting a
 # member. `*git commit*` on the commit agent is the single deliberate
 # exception, checked for its position above.
-for agent in build plan review commit; do
+for agent in build plan commit; do
     carve="$(grep -E "^$agent shell allow .*git " "$TMP/flat" \
              | grep -vF -- "commit shell allow *git commit*" | awk '{print $4}' | tr '\n' ' ')"
     check "$agent carves no allow out of the git list" "${carve:-none}" none

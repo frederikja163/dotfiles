@@ -35,7 +35,7 @@ curl -fsSL https://raw.githubusercontent.com/frederikja163/dotfiles/main/setup.s
 | `yazi`     | `~/.config/yazi`              | `yazi.toml`, software video previewer |
 | `zsh`      | `~/.zshenv`, `~/.config/zsh/` | oh-my-zsh setup, `PATH`, prompt, `title` |
 | `git`      | `~/.config/git`               | identity and settings                |
-| `opencode` | `~/.config/opencode`          | model, and the `review` agent; no credentials (see `AGENTS.md`) |
+| `opencode` | `~/.config/opencode`          | model, the `commit` agent, `/review`, `/aside`; no credentials (see `AGENTS.md`) |
 | `xdg`      | `~/.config/mimeapps.list`, `~/.local/share/{applications,dbus-1}` | yazi as the file explorer, browser "show in folder" included |
 | `bin`      | — (on `PATH` in place)        | small scripts; not linked, see `install.sh` |
 | `system`   | `/etc`                        | system config (needs root)           |
@@ -119,12 +119,12 @@ A **verb** enters a mode, and inside a mode the motions are bare.
 | `SUPER + D`        | desktop: `1`..`0` go to that desktop on this screen, `Tab` to step |
 | `SUPER+SHIFT + D`  | display: `1`..`0` duplicate a screen, `o` re-pin the order, `h` send desktops home |
 
+Teams starts at login in a hidden special workspace, so its messages notify
+without a window in the way; `SUPER + T` shows and hides it.
+
 Notifications are on `N`: `SUPER + N` closes the topmost, `SUPER+SHIFT + N`
 closes all of them, and `SUPER+CTRL + N` follows the topmost one's action (or
 opens dunst's context menu when it has none).
-
-Teams starts at login in a hidden special workspace, so its messages notify
-without a window in the way; `SUPER + T` shows and hides it.
 
 Inside a mode the motions work **whether or not you keep SUPER held**, so
 `SUPER+S` then `h`, and holding SUPER through `SUPER+S+h`, do the same thing.

@@ -8,7 +8,7 @@
 
   // Restores the todo tool OpenCode V2 removed.
   //
-  // review.md queues requested fixes with `todowrite` so they outlive the user
+  // commands/review.md queues requested fixes with `todowrite` so they outlive the user
   // switching to build mode, but V2 dropped `todowrite` and `todoread` from the
   // runtime: the installed 2.0.12 binary has no such tool, there is no
   // /api/todo endpoint, and the docs list neither the tool nor an action for
@@ -61,11 +61,12 @@
   // command line, commit message and all; agent/commit.md has the ordering
   // that fixes that.
   //
-  // build asks on `git commit` like everything else, so a commit you ask for
-  // costs one confirmation. Switching to the commit agent is still the better
-  // answer for real work -- you get the split and the table -- but build is no
-  // longer refused outright. plan keeps the deny: a mode that will not edit a
-  // file has no commit of its own to record.
+  // build and plan deny `git commit` outright. build used to ask, which made a
+  // commit it was told to make cost one confirmation; that left it able to
+  // commit, and the point is that it cannot -- the answer to "commit this" is
+  // to switch to the commit agent, where the split and the table come with it.
+  // plan denies for its own reason: a mode that will not edit a file has no
+  // commit of its own to record.
   //
   // Everything else that moves a ref, rewrites what is already recorded, or
   // publishes it is gated below. Reading history is untouched: log, show,
@@ -83,8 +84,7 @@
   // agent push is to put one within its reach; there is no "ask" that avoids
   // that, since approving the prompt is what hands the key over. So no agent
   // pushes, ever. An agent that thinks the work should be published says so
-  // and stops; you push, and tell it to carry on. (agent/review.md denies the
-  // whole list, not just push -- that agent is read-only by construction.)
+  // and stops; you push, and tell it to carry on.
   //
   // Patterns lead with "*" because a bash rule is matched against the whole
   // command line: a bare "git commit -m x" and a chained
@@ -113,9 +113,11 @@
     "build": {
       "permission": {
         "bash": {
-          // Records a commit. The `commit` agent is the mode built for this
-          // and shows a split first; build can still make one you asked for.
-          "*git commit*": "ask",
+          // Records a commit. Only the `commit` agent does that, and it shows
+          // a split first; build is told to switch to it. This also overrides
+          // the project-level `git commit` ask in opencode.json, since an
+          // agent's rules land after a project's.
+          "*git commit*": "deny",
 
           // Needs your push credential, so no agent gets to run it.
           "*git push*": "deny",
@@ -151,15 +153,23 @@
       }
     },
 
-    // As build, except that `git commit` is denied rather than asked. Plan
-    // mode already refuses to edit files, so every commit it could make would
-    // be of someone else's work; bash is open to it otherwise, and the guard
-    // has to be on every mode that can reach a shell or it is only a speed
-    // bump.
+    // The same list as build. Plan mode already refuses to edit files, so
+    // every commit it could make would be of someone else's work; bash is open
+    // to it otherwise, and the guard has to be on every mode that can reach a
+    // shell or it is only a speed bump.
+    //
+    // This is also the mode /review runs in (commands/review.md). There used
+    // to be a `review` agent for it, which denied the whole list and also
+    // `git restore` and `git checkout`, and was removed so that the review
+    // prompt lives in one place -- a command -- instead of an agent that /review
+    // did not use. The cost is that those two are no longer blocked for
+    // reviews: plan asks on the history-rewriting ones and leaves restore and
+    // checkout alone. The prompt forbids them in words; nothing enforces it.
+    // A command cannot carry permissions, so enforcing it again would mean
+    // bringing the agent back.
     "plan": {
       "permission": {
         "bash": {
-          // The one place this list differs from build's.
           "*git commit*": "deny",
 
           "*git push*": "deny",
