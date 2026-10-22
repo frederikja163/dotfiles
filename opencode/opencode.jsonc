@@ -46,7 +46,10 @@
   // instruction file is not reported. install.sh links opencode/ to
   // ~/.config/opencode, so this still points at the repo's own copy on any
   // machine.
-  "instructions": ["~/.config/opencode/comments.md"],
+  "instructions": [
+    "~/.config/opencode/comments.md",
+    "~/.config/opencode/pull-requests.md"
+  ],
 
   // No mode may touch git history without a decision from you.
   //

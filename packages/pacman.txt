@@ -15,7 +15,7 @@ desktop-file-utils  # update-desktop-database, run by install.sh after linking
 linux-headers       # required to build out-of-tree / DKMS modules
 lua                 # runs tests/run.sh
 python              # parses hyprctl -j in bin/waybar-main and bin/dotfiles-monitor-order;
-                    # bin/music-get is written in it
+                    # bin/music-get and bin/pr-line-counts are written in it
 wtype               # types into the nested Hyprland in tests/sandbox.sh, the only
                     # way to test a keybind that enters or leaves a mode
 dotnet-sdk

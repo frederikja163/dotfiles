@@ -87,6 +87,7 @@ dotfiles, and is named after whatever it drives instead.
 | `hypr-keybinds`          | the `SUPER + /` cheatsheet, generated from `hyprctl binds`          |
 | `ide`                    | `SUPER + I`: Rider if the directory holds a solution, else nvim     |
 | `power-menu`             | `SUPER + Escape`: lock, log out, reboot, shut down                  |
+| `pr-line-counts`         | lines a branch adds and removes, by kind; for PR bodies |
 | `proc-cwd`               | the working directory of each pid given                             |
 | `screenshot-region`      | `Print`: select a region, onto the clipboard                        |
 | `terminal-cwd`           | the working directory of each terminal's shell, given their pids    |

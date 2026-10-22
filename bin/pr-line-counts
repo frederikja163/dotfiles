@@ -1,0 +1,332 @@
+#!/usr/bin/env python3
+"""Count the lines a branch adds and removes, as code, comments, docs and tests.
+
+    pr-line-counts            this branch against origin's default branch
+    pr-line-counts main       against a branch or commit of your choosing
+    pr-line-counts -u         ... with uncommitted work counted too
+
+Prints the markdown table that opencode/pull-requests.md asks every PR
+description to end with. The comparison is BASE...HEAD, which is what a pull
+request shows: commits only, from the merge base, so uncommitted work is not
+counted until it is committed.
+
+-u (--uncommitted) counts what the branch would show once everything is
+committed: staged and unstaged edits to tracked files, and untracked files that
+are not ignored, each of whose lines counts as added. The comparison is then
+the merge base against the working tree. It is for checking a number before a
+commit; the table for a PR description should be made without it, since it is
+then what the PR will really show.
+
+Each category gets the lines added, the lines removed, and the change between
+the two (added minus removed, so a branch that deletes more than it adds shows
+a negative). Blank lines are not counted, on either side. Where a line goes is
+decided by its file first and its content second: a doc file is all docs, a
+test file is all tests, comments inside it included, and only what is left is
+split into comments and code.
+
+That split is the reason this is a script and not left to the agent. A diff
+cannot say whether a changed line is inside a block comment that opened further
+up, since --unified=0 shows only the lines that changed. So the diff is used
+only to learn which line numbers changed, and each file is classified whole:
+added lines from its content at HEAD (the working tree, with -u), removed lines from its content at the
+merge base, where they still were.
+
+C# is the only language with comment rules so far. Anything else is counted as
+code, and the script says so on stderr, so a number is never quietly wrong
+about a language it does not know. To add one, give LANGUAGES an entry; the
+lexer in classify() is C#'s (strings, verbatim and raw strings, char literals,
+// and /* */), so a language with different quoting needs its own.
+
+Why a lexer and not a regex over lines: `"http://x"` holds a // that is not a
+comment, a verbatim string can span lines and contain anything, and `'"'` is a
+char literal, not the start of a string. A line-by-line match gets all three
+wrong in ordinary C#.
+
+A line that holds both code and a comment counts as code. Doc comments (///)
+are comments.
+"""
+import fnmatch
+import os
+import subprocess
+import sys
+
+DOC_EXTENSIONS = {".md", ".mdx", ".rst", ".adoc", ".txt"}
+DOC_NAMES = ("readme", "changelog", "license", "contributing", "authors")
+DOC_DIRS = {"doc", "docs"}
+
+TEST_DIRS = {"test", "tests", "spec", "specs", "__tests__"}
+TEST_PROJECT_SUFFIXES = (
+    ".tests", ".test", ".unittests", ".integrationtests", ".specs",
+)
+TEST_FILE_PATTERNS = (
+    "*_test.*", "test_*.*", "*.test.*", "*.spec.*", "*tests.cs", "*test.cs",
+)
+
+CATEGORIES = ("Code", "Comments", "Docs", "Tests")
+
+LANGUAGES = {
+    ".cs": "csharp",
+    ".csx": "csharp",
+}
+
+
+def git(*args):
+    result = subprocess.run(
+        ["git", "-c", "core.quotepath=off", *args],
+        capture_output=True, text=True, errors="replace",
+    )
+    if result.returncode != 0:
+        sys.exit(f"pr-line-counts: git {' '.join(args)}: {result.stderr.strip()}")
+    return result.stdout
+
+
+def default_base():
+    for ref in ("refs/remotes/origin/HEAD", "refs/remotes/origin/main",
+                "refs/heads/main", "refs/remotes/origin/master",
+                "refs/heads/master"):
+        found = subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", ref],
+            capture_output=True, text=True,
+        )
+        if found.returncode == 0:
+            return ref
+    sys.exit("pr-line-counts: no origin/HEAD, main or master to compare against; "
+             "name the base: pr-line-counts <branch>")
+
+
+def is_doc(path):
+    parts = path.lower().split("/")
+    name = parts[-1]
+    return (
+        os.path.splitext(name)[1] in DOC_EXTENSIONS
+        or name.startswith(DOC_NAMES)
+        or bool(DOC_DIRS & set(parts[:-1]))
+    )
+
+
+def is_test(path):
+    parts = path.split("/")
+    lowered = [p.lower() for p in parts[:-1]]
+    return (
+        bool(TEST_DIRS & set(lowered))
+        or any(p.endswith(TEST_PROJECT_SUFFIXES) for p in lowered)
+        or any(fnmatch.fnmatch(parts[-1].lower(), pat) for pat in TEST_FILE_PATTERNS)
+    )
+
+
+def changed_lines(*revs):
+    """({path: [line numbers]}, {path: [line numbers]}) for the lines `git diff
+    REVS` adds (numbered in the new file) and removes (numbered at the merge base).
+
+    The ---/+++ headers are read only until a file's first hunk: after that a
+    removed line that begins "-- " would look like one.
+    """
+    diff = git("diff", "--unified=0", "--no-color", "--no-ext-diff", *revs)
+    added, removed = {}, {}
+    old = new = None
+    header = False
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            header = True
+            old = new = None
+        elif header and line.startswith("--- "):
+            target = line[4:].split("\t")[0]
+            old = None if target == "/dev/null" else target.removeprefix("a/")
+        elif header and line.startswith("+++ "):
+            target = line[4:].split("\t")[0]
+            new = None if target == "/dev/null" else target.removeprefix("b/")
+        elif line.startswith("@@"):
+            header = False
+            minus, plus = line.split(" ")[1:3]
+            for sign, path, into in (("-", old, removed), ("+", new, added)):
+                if not path:
+                    continue
+                start, _, count = (minus if sign == "-" else plus)[1:].partition(",")
+                start, count = int(start), int(count) if count else 1
+                into.setdefault(path, []).extend(range(start, start + count))
+    return added, removed
+
+
+def untracked_files(root):
+    """Paths, from the repository root, of files git does not track or ignore.
+
+    Run from the root: ls-files lists only what is under the directory it is in.
+    """
+    out = git("-C", root, "ls-files", "--others", "--exclude-standard", "-z")
+    return [path for path in out.split("\0") if path]
+
+
+def read_worktree(root, path):
+    """A file's text in the working tree, or "" for a directory, binary or gone."""
+    try:
+        with open(os.path.join(root, path), errors="replace") as handle:
+            text = handle.read()
+    except OSError:
+        return ""
+    return "" if "\0" in text else text
+
+
+def count_file(path, numbers, text, unknown):
+    """{category: lines} for the non-blank lines `numbers` of `text`, a file."""
+    lines = text.splitlines()
+    wanted = [n for n in numbers if n <= len(lines) and lines[n - 1].strip()]
+    counts = dict.fromkeys(CATEGORIES, 0)
+
+    if is_doc(path):
+        counts["Docs"] += len(wanted)
+    elif is_test(path):
+        counts["Tests"] += len(wanted)
+    else:
+        ext = os.path.splitext(path)[1].lower()
+        if LANGUAGES.get(ext) == "csharp":
+            kinds = classify(text)
+            for n in wanted:
+                counts["Comments" if kinds.get(n) == "comment" else "Code"] += 1
+        else:
+            counts["Code"] += len(wanted)
+            if wanted and ext:
+                unknown.add(ext)
+    return counts
+
+
+def classify(text):
+    """Return {line number: 'code' | 'comment'} for the non-blank lines of C#."""
+    code, comment = set(), set()
+    line = 1
+    i, n = 0, len(text)
+
+    def mark(kind, end):
+        nonlocal line
+        for ch in text[i:end]:
+            if ch == "\n":
+                line += 1
+            elif not ch.isspace():
+                kind.add(line)
+
+    while i < n:
+        c = text[i]
+        if c == "\n":
+            line += 1
+            i += 1
+        elif c.isspace():
+            i += 1
+        elif text.startswith("//", i):
+            end = text.find("\n", i)
+            end = n if end < 0 else end
+            comment.add(line)
+            i = end
+        elif text.startswith("/*", i):
+            end = text.find("*/", i + 2)
+            end = n if end < 0 else end + 2
+            mark(comment, end)
+            i = end
+        elif c == "'":
+            j = i + 1
+            if j < n and text[j] == "\\":
+                j += 2
+                while j < n and text[j] not in "'\n":
+                    j += 1
+            else:
+                j += 1
+            end = min(j + 1, n) if j < n and text[j] == "'" else min(i + 1, n)
+            mark(code, end)
+            i = end
+        elif c in '$@"':
+            j = i
+            while j < n and text[j] in "$@":
+                j += 1
+            if j >= n or text[j] != '"':
+                code.add(line)
+                i = j if j > i else i + 1
+                continue
+            verbatim = "@" in text[i:j]
+            quotes = 0
+            while j + quotes < n and text[j + quotes] == '"':
+                quotes += 1
+            if quotes >= 3:
+                end = text.find('"' * quotes, j + quotes)
+                end = n if end < 0 else end + quotes
+            elif quotes == 2:
+                end = j + 2
+            else:
+                end = j + 1
+                while end < n:
+                    if text[end] == "\\" and not verbatim:
+                        end += 2
+                    elif text[end] == '"':
+                        if verbatim and text.startswith('""', end):
+                            end += 2
+                            continue
+                        end += 1
+                        break
+                    elif text[end] == "\n" and not verbatim:
+                        break
+                    else:
+                        end += 1
+                end = min(end, n)
+            mark(code, end)
+            i = end
+        else:
+            code.add(line)
+            i += 1
+
+    return {number: "code" for number in code} | {
+        number: "comment" for number in comment - code
+    }
+
+
+def signed(number):
+    return f"+{number}" if number > 0 else str(number)
+
+
+def main():
+    args = sys.argv[1:]
+    if args and args[0] in ("-h", "--help"):
+        print(__doc__)
+        return
+    uncommitted = any(arg in ("-u", "--uncommitted") for arg in args)
+    args = [arg for arg in args if arg not in ("-u", "--uncommitted")]
+    if len(args) > 1 or any(arg.startswith("-") for arg in args):
+        sys.exit("usage: pr-line-counts [-u] [BASE]")
+    base = args[0] if args else default_base()
+    merge_base = git("merge-base", base, "HEAD").strip()
+    root = git("rev-parse", "--show-toplevel").strip()
+
+    added = dict.fromkeys(CATEGORIES, 0)
+    removed = dict.fromkeys(CATEGORIES, 0)
+    unknown = set()
+
+    if uncommitted:
+        new_lines, old_lines = changed_lines(merge_base)
+        new_text = lambda path: read_worktree(root, path)
+        for path in untracked_files(root):
+            text = read_worktree(root, path)
+            new_lines.setdefault(path, []).extend(range(1, len(text.splitlines()) + 1))
+    else:
+        new_lines, old_lines = changed_lines(f"{base}...HEAD")
+        new_text = lambda path: git("show", f"HEAD:{path}")
+
+    sides = ((added, new_lines, new_text),
+             (removed, old_lines, lambda path: git("show", f"{merge_base}:{path}")))
+    for totals, found, text_of in sides:
+        for path, numbers in found.items():
+            counts = count_file(path, numbers, text_of(path), unknown)
+            for name, count in counts.items():
+                totals[name] += count
+
+    rows = [(name, added[name], removed[name]) for name in CATEGORIES]
+    rows.append(("Total", sum(added.values()), sum(removed.values())))
+
+    print("| Category | Added | Removed | Change |")
+    print("|----------|------:|--------:|-------:|")
+    for name, plus, minus in rows:
+        print(f"| {name:<8} | {plus} | {minus} | {signed(plus - minus)} |")
+
+    if unknown:
+        print("pr-line-counts: no comment rules for "
+              + ", ".join(sorted(unknown)) + "; counted as code",
+              file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()
