@@ -1,3 +1,6 @@
+-- A buffer with unsaved edits whose file also changed on disk is flagged
+-- `disk_changed` (see FileChangedShell below), and is not written until the
+-- user has chosen: :e! for the disk's version, :w! for the buffer's.
 local function write_if_possible()
     if not vim.bo.modifiable then
         return
@@ -6,6 +9,10 @@ local function write_if_possible()
     local name = vim.api.nvim_buf_get_name(0)
 
     if name == "" then
+        return
+    end
+
+    if vim.b.disk_changed then
         return
     end
 
@@ -197,6 +204,41 @@ vim.api.nvim_create_autocmd({ "FocusGained", "BufEnter", "CursorHold" }, {
         if vim.fn.getcmdwintype() == '' then
             vim.cmd.checktime()
         end
+    end,
+})
+
+-- Autosaving over a change made elsewhere is how an agent's edit or a git
+-- checkout gets lost. 'autoread' reloads only a buffer without edits of its
+-- own; when the buffer has some, nvim warns (W12) and leaves both versions, and
+-- the next FocusLost or BufLeave write then asks "do you really want to write"
+-- -- a question that comes up while the window is not even in front. Here the
+-- buffer is flagged instead, which write_if_possible honours, and the choice
+-- is said once. Only the conflict is taken over: any other reason is left to
+-- nvim's own handling ('ask' is "as if there were no autocommand").
+--
+-- Closing the choice: :e! reads the disk's version, :w! writes the buffer's.
+-- Both are noticed below (BufReadPost, BufWritePost) and clear the flag.
+vim.api.nvim_create_autocmd("FileChangedShell", {
+    group = augroup,
+    callback = function(args)
+        if vim.v.fcs_reason ~= "conflict" then
+            vim.v.fcs_choice = "ask"
+            return
+        end
+        vim.v.fcs_choice = ""
+        vim.b[args.buf].disk_changed = true
+        local name = vim.fn.fnamemodify(args.file, ":~:.")
+        vim.schedule(function()
+            vim.notify(name .. " changed on disk and in nvim, so it is not autosaved. "
+                .. ":e! takes the disk's version, :w! keeps this one.", vim.log.levels.WARN)
+        end)
+    end,
+})
+
+vim.api.nvim_create_autocmd({ "BufReadPost", "BufWritePost" }, {
+    group = augroup,
+    callback = function(args)
+        vim.b[args.buf].disk_changed = nil
     end,
 })
 
