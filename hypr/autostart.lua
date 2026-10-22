@@ -76,6 +76,24 @@ hl.on("hyprland.start", function ()
     -- nothing on its first pass, only what comes later, so it does not matter
     -- that it may reach the bus a moment before dunst has claimed it.
     hl.exec_cmd("github-notify")
+
+    -- Teams, so its messages notify without anyone having opened it. Its
+    -- notifications are the web ones Chromium raises over dbus, which is dunst,
+    -- and they only exist while the app is running.
+    --
+    -- Started hidden in a special workspace of its own, toggled with SUPER+T
+    -- (keybinds.lua). The app's own `window.minimized` was tried first and does
+    -- nothing here: the window came up mapped and visible on desktop 1, because
+    -- Hyprland has no minimised state to honour. The exec rule is used rather
+    -- than a window rule so that it applies to the first window only -- a call
+    -- or a pop-out opened later is a window you asked for and belongs on the
+    -- desktop you are on. Closing the main window hides it to the tray (the
+    -- default, and waybar has a tray), where it carries on running.
+    --
+    -- The full path and --ozone-platform=x11 are the desktop entry's: the
+    -- package puts nothing on PATH, and x11 is what it ships with.
+    hl.exec_cmd("[workspace special:teams silent] "
+        .. "/opt/teams-for-linux/teams-for-linux --ozone-platform=x11")
 end)
 
 -- Which monitor is the main one can change: docking, undocking, a cable moving

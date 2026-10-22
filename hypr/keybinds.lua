@@ -73,6 +73,14 @@ hl.bind(mainMod .. " + E", function()
 end, { description = "App: file manager (where this desktop is)" })
 hl.bind(mainMod .. " + W", hl.dsp.exec_cmd(browser),      { description = "App: browser" })
 
+-- Teams lives in the special workspace autostart.lua starts it in; this shows
+-- and hides it. A bare name, no "special:" prefix, or it toggles Hyprland's
+-- default special workspace instead. If Teams has been quit there is nothing in
+-- there to show: start it again from the launcher, and it opens on the desktop
+-- you are on, since only the autostart sends it away.
+hl.bind(mainMod .. " + T", hl.dsp.workspace.toggle_special("teams"),
+        { description = "App: Teams, show or hide" })
+
 -- bin/ide: Rider if the directory holds a .NET solution, nvim otherwise. Given
 -- the desktop's directory, so it opens whatever that desktop is for. It brings
 -- up a terminal of its own when it needs one, which a keybind cannot give it.

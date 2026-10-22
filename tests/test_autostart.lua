@@ -73,6 +73,21 @@ check("the bar starts once", waybar_starts(), 1)
 flush()
 check("the boot monitor events add no second bar", waybar_starts(), 1)
 
+print("scenario: Teams starts hidden, once")
+-- The special workspace is the whole point: a plain launch opens a window on
+-- desktop 1, which is what a login should not do.
+reset()
+events["hyprland.start"]()
+local teams = 0
+for _, cmd in ipairs(execs) do
+    if cmd:find("teams-for-linux", 1, true) then
+        teams = teams + 1
+        check("it goes to special:teams without taking focus",
+              cmd:match("^%[workspace special:teams silent%]") ~= nil, true)
+    end
+end
+check("it is started once", teams, 1)
+
 print("scenario: a monitor plugged in after the session is up")
 reset()
 events["hyprland.start"]()

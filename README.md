@@ -119,6 +119,9 @@ Notifications are on `N`: `SUPER + N` closes the topmost, `SUPER+SHIFT + N`
 closes all of them, and `SUPER+CTRL + N` follows the topmost one's action (or
 opens dunst's context menu when it has none).
 
+Teams starts at login in a hidden special workspace, so its messages notify
+without a window in the way; `SUPER + T` shows and hides it.
+
 Inside a mode the motions work **whether or not you keep SUPER held**, so
 `SUPER+S` then `h`, and holding SUPER through `SUPER+S+h`, do the same thing.
 
