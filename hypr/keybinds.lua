@@ -81,13 +81,24 @@ hl.bind(mainMod .. " + W", hl.dsp.exec_cmd(browser),      { description = "App: 
 hl.bind(mainMod .. " + T", hl.dsp.workspace.toggle_special("teams"),
         { description = "App: Teams, show or hide" })
 
--- bin/ide: Rider if the directory holds a .NET solution, nvim otherwise. Given
--- the desktop's directory, so it opens whatever that desktop is for. It brings
--- up a terminal of its own when it needs one, which a keybind cannot give it.
 hl.bind(mainMod .. " + I", function()
     local directory = require("quake").directory() or os.getenv("HOME") or "."
+    hl.dispatch(hl.dsp.exec_cmd(
+        ("%s --directory '%s' nvim ."):format(terminal, directory:gsub("'", "'\\''"))))
+end, { description = "App: nvim (where this desktop is)" })
+
+-- SUPER+I is nvim every time, in a terminal of its own like SUPER+O, rather than
+-- going through bin/ide: that picks Rider whenever the directory holds a
+-- solution, so one key gave a terminal editor in one project and a GUI app in
+-- the next. Choosing the IDE is SUPER+SHIFT+I, below. `nvim .` is what bin/ide
+-- runs, so neovim's session restore sees the same argv.
+-- SHIFT marks the variant of a letter: the IDE instead of the plain editor.
+-- bin/ide opens Rider for a .NET solution (nvim otherwise), and starts its own
+-- terminal when it needs one, which a keybind cannot give it.
+hl.bind(mainMod .. " + SHIFT + I", function()
+    local directory = require("quake").directory() or os.getenv("HOME") or "."
     hl.dispatch(hl.dsp.exec_cmd(("ide '%s'"):format(directory:gsub("'", "'\\''"))))
-end, { description = "App: editor (where this desktop is)" })
+end, { description = "App: IDE, Rider for a .NET solution (where this desktop is)" })
 
 -- opencode is a TUI, so it gets a terminal of its own on this desktop — the
 -- same trick as SUPER+Q, just with a program to run once kitty is there. Its

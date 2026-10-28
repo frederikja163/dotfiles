@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Open a directory in whichever editor suits it: Rider if there is a .NET
 # solution in it, nvim otherwise. Defaults to the current directory, and takes
-# one as an argument so SUPER+I can pass the directory its desktop is in.
+# one as an argument so SUPER+SHIFT+I can pass the directory its desktop is in.
 #
 # Rider is a GUI app, so it is detached and the script returns immediately;
 # nvim is a terminal app, so it replaces this shell and keeps the terminal.
