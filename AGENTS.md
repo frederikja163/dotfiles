@@ -69,5 +69,11 @@ it concerns, and is expected to say what was tried and rejected. `README.md` is
 only an index. See `.opencode/skills/` for the compositor API's silent
 failures, the testing harnesses, and the repo's conventions.
 
-Skip the numbered comment table from `~/.config/opencode/comments.md` in this
-repo; the rules on when to write a comment still apply.
+**This repo overrides the global no-comments default in
+`~/.config/opencode/comments.md`.** Its files are documented heavily on purpose:
+a header comment saying why the file is the way it is, what was tried and
+rejected, and a note wherever behaviour is deliberate rather than accidental.
+Write those, in the existing plain-prose voice, when a change adds or alters
+behaviour that needs the reasoning recorded. Still do not narrate what a line
+does, restate a name, or describe the change you just made; that goes in the
+reply or the commit. Skip the numbered comment table in this repo.
