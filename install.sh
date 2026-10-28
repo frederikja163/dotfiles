@@ -206,11 +206,17 @@ install_packages() {
 
     # --- login shell -----------------------------------------------------------
 
-    if [ "$(getent passwd "$USER" | cut -d: -f7)" = "$(command -v zsh)" ]; then
+    # Compared by resolved path: the directory service on a domain account says
+    # /bin/zsh and `command -v` says /usr/bin/zsh, the same file through Arch's
+    # /bin symlink. Comparing the strings called that a mismatch, ran chsh, and
+    # chsh refuses domain accounts ("can only change local entries") -- which
+    # under `set -e` ended the whole script before the system config below.
+    login_shell="$(getent passwd "$USER" | cut -d: -f7)"
+    if [ "$(realpath "$login_shell" 2>/dev/null)" = "$(realpath "$(command -v zsh)")" ]; then
         echo "==> login shell already zsh"
     else
         echo "==> setting login shell to zsh"
-        chsh -s "$(command -v zsh)"
+        chsh -s "$(command -v zsh)" || echo "!! could not change the login shell, skipping" >&2
     fi
 
     # --- system config ---------------------------------------------------------
