@@ -655,6 +655,16 @@ define_mode(SUBMAP_DESKTOP, mainMod .. " + D", function()
     bind_in_mode("SHIFT + Tab", oneshot(function() deskbinds.focus_neighbour_desktop(-1) end),
                  { description = "The previous desktop on this screen" })
 
+    for _, d in ipairs(DIRECTIONS) do
+        if d.col then
+            local step = d.col == "prev" and -1 or 1
+            for i, key in ipairs(d.keys) do
+                bind_in_mode(key, oneshot(function() deskbinds.focus_neighbour_desktop(step) end),
+                             { description = i == 1 and ("The %s desktop on this screen"):format(d.col == "prev" and "previous" or "next") or nil })
+            end
+        end
+    end
+
     -- Making a desktop without naming a screen.
     --
     -- SUPER+CTRL+n does this too, but it names a screen. This is the one that
@@ -668,7 +678,7 @@ define_mode(SUBMAP_DESKTOP, mainMod .. " + D", function()
 end)
 
 hl.bind(mainMod .. " + D", hl.dsp.submap(SUBMAP_DESKTOP),
-        { description = "Mode: desktop (1-0 by number, Tab to step, n for a new one)" })
+        { description = "Mode: desktop (1-0 by number, h/l or Tab to step, n for a new one)" })
 
 ----------------------------------------------------------------------------
 -- Display: the screens themselves
