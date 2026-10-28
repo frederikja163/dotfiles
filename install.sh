@@ -224,7 +224,7 @@ install_packages() {
     # Files in system/ belong under /etc, so they need root. See the comments in
     # each for what it does and why.
     install_system_file() {
-        local src="$1" dest="$2"
+        local src="$1" dest="$2" mode="${3:-644}"
 
         if sudo cmp -s "$src" "$dest" 2>/dev/null; then
             echo "==> $(basename "$dest") already installed"
@@ -232,7 +232,7 @@ install_packages() {
         fi
 
         echo "==> installing $(basename "$dest")"
-        sudo install -Dm 644 "$src" "$dest"
+        sudo install -Dm "$mode" "$src" "$dest"
         return 0
     }
 
@@ -242,6 +242,14 @@ install_packages() {
             # logind re-reads its config on restart. Restarting it does not end the
             # session, but it does briefly drop its inhibitor locks.
             sudo systemctl restart systemd-logind
+        fi
+    fi
+
+    # Only where sssd is set up: elsewhere there is no /etc/sssd to put it in.
+    if [ -d /etc/sssd ] && [ -e "$DOTFILES/system/90-sssd-pam-idle.conf" ]; then
+        if install_system_file "$DOTFILES/system/90-sssd-pam-idle.conf" \
+                               /etc/sssd/conf.d/90-pam-idle.conf 600; then
+            sudo systemctl restart sssd
         fi
     fi
 }

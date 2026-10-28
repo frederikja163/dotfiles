@@ -357,6 +357,8 @@ script with two halves, `install.sh packages` and `install.sh links`.
   that, but needs root.
 - **Suspend is disabled deliberately**, by every route — see
   `system/90-no-suspend.conf` for why and how to undo it.
+- **The lock screen's first password attempt used to fail** after a long lock,
+  because sssd hung up on it for being idle — see `system/90-sssd-pam-idle.conf`.
 - **Rider is not installed by the script.** `jetbrains-toolbox` is, and Rider is
   installed from its GUI; Toolbox has no usable CLI. When Rider is missing,
   `install.sh` opens Toolbox at the end of the run so it is one click away.
