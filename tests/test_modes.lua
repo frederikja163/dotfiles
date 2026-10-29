@@ -649,6 +649,34 @@ if #undescribed > 0 then
     for _, name in ipairs(undescribed) do print("       missing: " .. name) end
 end
 
+print("scenario: no key string repeats a key")
+-- The stub records what Hyprland rejects: "SUPER + SHIFT + SHIFT + Tab" would
+-- register fine here but fail --verify-config as a repeated key. bind_in_mode
+-- skips those chords (see repeats_key in modes.lua), so this is the only place
+-- a regression can be caught short of loading the real config.
+local function repeats(keys)
+    local seen = {}
+    for raw in keys:gmatch("[^+]+") do
+        local token = raw:match("^%s*(.-)%s*$")
+        if seen[token] then return true end
+        seen[token] = true
+    end
+    return false
+end
+local repeated = {}
+for submap, set in pairs(binds) do
+    for keys in pairs(set) do
+        if repeats(keys) then
+            table.insert(repeated, (submap == "" and "normal" or submap) .. " / " .. keys)
+        end
+    end
+end
+table.sort(repeated)
+check("none", #repeated, 0)
+if #repeated > 0 then
+    for _, name in ipairs(repeated) do print("       repeated: " .. name) end
+end
+
 print()
 print(("%d passed, %d failed"):format(pass, fail))
 os.exit(fail == 0 and 0 or 1)

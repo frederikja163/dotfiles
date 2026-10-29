@@ -210,11 +210,28 @@ end
 -- Variants carry no description, so the cheatsheet lists each motion once.
 local mode_prefixes, taken = { "" }, {}
 
+-- A held prefix can repeat a modifier the key already carries: in the column
+-- mode (entered SUPER+SHIFT+M) the held prefix is "SUPER + SHIFT + ", so the
+-- previous-desktop motion "SHIFT + Tab" would read "SUPER + SHIFT + SHIFT +
+-- Tab" -- a chord Hyprland rejects as a repeated key, and one that cannot be
+-- typed anyway, since holding SHIFT twice is not a thing. Skip those.
+local function repeats_key(keys)
+    local seen = {}
+    for raw in keys:gmatch("[^+]+") do
+        local token = raw:match("^%s*(.-)%s*$")
+        if seen[token] then
+            return true
+        end
+        seen[token] = true
+    end
+    return false
+end
+
 local function bind_in_mode(key, action, opts)
     for i, prefix in ipairs(mode_prefixes) do
         local keys = prefix .. key
 
-        if not taken[keys] then
+        if not taken[keys] and not repeats_key(keys) then
             taken[keys] = true
 
             if i == 1 then
