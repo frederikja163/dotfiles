@@ -122,9 +122,9 @@ A **verb** enters a mode, and inside a mode the motions are bare.
 Teams starts at login in a hidden special workspace, so its messages notify
 without a window in the way; `SUPER + T` shows and hides it.
 
-Notifications are on `N`: `SUPER + N` closes the topmost, `SUPER+SHIFT + N`
-closes all of them, and `SUPER+CTRL + N` follows the topmost one's action (or
-opens dunst's context menu when it has none).
+Notifications are on `N`: `SUPER + N` follows the topmost one's action (or
+opens dunst's context menu when it has none), `SUPER+SHIFT + N` closes the
+topmost without following it, and `SUPER+CTRL + N` closes all of them.
 
 Inside a mode the motions work **whether or not you keep SUPER held**, so
 `SUPER+S` then `h`, and holding SUPER through `SUPER+S+h`, do the same thing.

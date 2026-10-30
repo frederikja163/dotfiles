@@ -34,7 +34,7 @@
 # from anything started by Hyprland goes nowhere.
 #
 # Each notice opens its thread in the browser when it is clicked or followed
-# (SUPER+CTRL+N, `dunstctl action`). dunst only has something to invoke if the
+# (SUPER+N, `dunstctl action`). dunst only has something to invoke if the
 # notification carries an action, and one posted without it did nothing: with no
 # default action `dunstctl action` falls back to the context menu, which lists
 # nothing for a notice with no URL in it. So every notice is posted with a
