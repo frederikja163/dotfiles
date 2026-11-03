@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Dim, restore and wake the screen, the three things hypridle.conf asks of it.
+#
+# wake turns the displays back on after the displays-off listener has blanked
+# them (dpms off), and after any sleep that should not have happened -- it is
+# the after_sleep_cmd safety net. It is the one of the three that matters on an
+# all-external setup, where there is no backlight to dim: without it the
+# screens stay black until someone runs the dispatcher by hand.
+#
+# dim and restore dim the panel backlight rather than blanking the screen.
+# brightnessctl's own -s/-r could do this, but -s saves the level that is
+# current *now*: a second dim before a restore saves the already-dimmed level,
+# and -r then restores it -- a screen left black for good. Saving the level
+# here, and only the first time, avoids that. With no backlight at all -- this
+# machine docked, or any all-external setup -- the two are no-ops, because
+# brightnessctl would otherwise reach for a keyboard LED.
+set -uo pipefail
+
+STATE="${XDG_RUNTIME_DIR:-/tmp}/screen-power-brightness"
+
+# The one backlight device, if there is one.
+backlight() {
+    for d in /sys/class/backlight/*; do
+        [ -e "$d" ] || continue
+        basename "$d"
+        return 0
+    done
+    return 1
+}
+
+case "${1:-}" in
+    dim)
+        dev="$(backlight)" || exit 0
+        # Save once: a repeat dim before a restore must not overwrite the real
+        # level with the dimmed one.
+        [ -s "$STATE" ] || brightnessctl -d "$dev" get > "$STATE"
+        brightnessctl -d "$dev" set 10%
+        ;;
+    restore)
+        [ -s "$STATE" ] || exit 0
+        dev="$(backlight)" || { rm -f "$STATE"; exit 0; }
+        brightnessctl -d "$dev" set "$(cat "$STATE")"
+        rm -f "$STATE"
+        ;;
+    wake)
+        hyprctl dispatch 'hl.dsp.dpms({ action = "on" })'
+        ;;
+    *)
+        printf 'screen-power: want dim, restore or wake\n' >&2
+        exit 2
+        ;;
+esac

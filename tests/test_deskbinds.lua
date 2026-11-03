@@ -189,7 +189,7 @@ local function two_monitors(focused)
     local ws1  = { id = 1, special = false, monitor = mon0 }
     local ws2  = { id = 2, special = false, monitor = mon0 }
     local ws3  = { id = 3, special = false, monitor = mon1 }
-    local wsS  = { id = -99, special = true, monitor = mon0 }
+    local wsS  = { special = true, monitor = mon0 }
     mon0.active_workspace = ws1
     mon1.active_workspace = ws3
     return {
@@ -580,11 +580,13 @@ table.insert(keep.workspaces, { id = 6, special = false, monitor = keep.monitors
 keep.monitors[1].active_workspace = keep.workspaces[2]
 reset(keep)
 local before_ids = {}
-for _, ws in ipairs(hl.get_workspaces()) do before_ids[ws.id] = true end
+for _, ws in ipairs(hl.get_workspaces()) do
+    if not ws.special then before_ids[ws.id] = true end
+end
 mod.move_desktop_in_row(1)
 local same = true
 for _, ws in ipairs(hl.get_workspaces()) do
-    if not before_ids[ws.id] then same = false end
+    if not ws.special and not before_ids[ws.id] then same = false end
 end
 check("no workspace was renumbered", same, true)
 

@@ -17,6 +17,7 @@ set -uo pipefail
 
 CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/waybar/config.jsonc"
 GENERATED="${XDG_RUNTIME_DIR:-/tmp}/waybar-main.jsonc"
+LOCK="${XDG_RUNTIME_DIR:-/tmp}/waybar-main.lock"
 
 # Copy the config into one bar per role, with "output" set. Comments are
 # stripped, so the parser has to know not to treat // inside a string as one.
@@ -105,6 +106,17 @@ waybar_nocaps() {
     exec setpriv --inh-caps=-all --ambient-caps=-all waybar "$@"
 }
 
+# Serialize against another run of this script. Two overlapping runs each
+# pkill before the other's bar exists, and both survive: the first bar's spawn
+# races the second's pkill. A monitor arriving while the first run is still in
+# its `hyprctl monitors` enumeration -- the TV on the motherboard coming up
+# after the main screens, which makes that enumeration slow -- is exactly the
+# overlap. Holding the lock across the kill and the spawn, and dropping it only
+# once the new bar is up, makes a concurrent run's pkill find the bar instead
+# of racing it into being.
+exec 9>"$LOCK"
+flock 9
+
 pkill -x waybar 2>/dev/null
 # Give it a moment to release its layer surfaces, or a new bar can land on a
 # monitor that is still occupied.
@@ -113,8 +125,15 @@ sleep 0.3
 monitors="$(hyprctl monitors -j 2>/dev/null)"
 
 if [ -n "$monitors" ] && write_config "$monitors"; then
-    waybar_nocaps -c "$GENERATED"
+    # Forked without the lock fd: held, it would keep the lock for the bar's
+    # whole life and the next run would block on the very bar it is here to
+    # replace.
+    ( exec 9>&-; waybar_nocaps -c "$GENERATED" ) &
+else
+    echo "waybar-main: could not read the monitors, showing the full bar on all of them" >&2
+    ( exec 9>&-; waybar_nocaps ) &
 fi
 
-echo "waybar-main: could not read the monitors, showing the full bar on all of them" >&2
-waybar_nocaps
+# A moment for the fork to become waybar before this shell exits and drops the
+# lock, so the next run's pkill finds it rather than the fork mid-exec.
+sleep 0.3

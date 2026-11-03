@@ -606,11 +606,15 @@ local function unused_desktop_id(mon)
     local highest = 0
 
     for _, ws in ipairs(hl.get_workspaces() or {}) do
-        used[ws.id] = true
+        -- A special workspace carries no id in Hyprland 0.57+, so it has to
+        -- be skipped before anything is keyed by id.
+        if not ws.special then
+            used[ws.id] = true
 
-        if mon and not ws.special and ws.monitor and ws.monitor.id == mon.id
-           and ws.id > highest then
-            highest = ws.id
+            if mon and ws.monitor and ws.monitor.id == mon.id
+               and ws.id > highest then
+                highest = ws.id
+            end
         end
     end
 
@@ -729,7 +733,11 @@ local function renumber_desktops()
     do
         local live = {}
         for _, ws in ipairs(hl.get_workspaces() or {}) do
-            live[ws.id] = true
+            -- Special workspaces have no id in Hyprland 0.57+, and `seen`
+            -- only ever holds desktop ids, so they are not part of this pass.
+            if not ws.special then
+                live[ws.id] = true
+            end
         end
 
         local gone = {}
