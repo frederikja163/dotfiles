@@ -161,10 +161,68 @@ vim.lsp.config('omnisharp', {
     end,
 })
 
+-- Quickfix entries from a test file go to the bottom of the list, so the real
+-- code comes first. "Test" is matched anywhere in the path, case-sensitively
+-- and relative to the working directory: case-insensitive also caught `latest`
+-- and `contest`, and the full path would sink every result if the project
+-- itself lived under a directory called Test. The order within each half is
+-- kept, whatever it was.
+--
+-- This is done once, where every list passes, rather than per source. The
+-- first version gave grr an on_list of its own, which worked for references
+-- and would have had to be repeated for gri, grt, workspace symbols, call
+-- hierarchy, diagnostics and the hunks list -- and an on_list also switches
+-- off the jump nvim makes when a lookup has a single result, so each copy would
+-- have had to reimplement that too. Every one of those ends in
+-- vim.fn.setqflist, which is looked up at the time of the call and so can be
+-- wrapped. The wrapper only touches entries going in; its arguments and
+-- result pass through as they came, nil-padding included.
+--
+-- :grep, :vimgrep, :make and the like fill the list without calling it, and
+-- are handled by QuickFixCmdPost below. Location lists are left alone: they
+-- belong to one window, and the only LSP one (document symbols) is a single
+-- file.
+local function tests_last(items)
+    local first, last = {}, {}
+    for _, item in ipairs(items) do
+        local name = item.filename
+        if (name == nil or name == '') and item.bufnr and item.bufnr > 0 then
+            name = vim.api.nvim_buf_get_name(item.bufnr)
+        end
+        local path = vim.fn.fnamemodify(name or '', ':.')
+        table.insert(path:find('Test', 1, true) and last or first, item)
+    end
+    return vim.list_extend(first, last)
+end
+
+local setqflist = vim.fn.setqflist
+vim.fn.setqflist = function(...)
+    local args = vim.F.pack_len(...)
+    local what = args[3]
+    if type(what) == 'table' and type(what.items) == 'table' then
+        args[3] = vim.tbl_extend('force', what, { items = tests_last(what.items) })
+    elseif what == nil and type(args[1]) == 'table' then
+        args[1] = tests_last(args[1])
+    end
+    return setqflist(vim.F.unpack_len(args))
+end
+
 vim.keymap.set('n', '<leader>d', vim.diagnostic.open_float)
 
 local augroup = vim.api.nvim_create_augroup("custom", {
     clear = true,
+})
+
+-- Fires after the list is filled and before the jump to its first entry, so
+-- reordering here still has the jump land on the new first. Only the
+-- quickfix commands: the location-list ones all start with `l`.
+vim.api.nvim_create_autocmd("QuickFixCmdPost", {
+    group = augroup,
+    pattern = "[^l]*",
+    callback = function()
+        local items = vim.fn.getqflist()
+        vim.fn.setqflist({}, 'r', { items = items, idx = 1 })
+    end,
 })
 
 vim.api.nvim_create_autocmd("BufWritePre", {

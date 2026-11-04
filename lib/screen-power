@@ -1,52 +1,69 @@
 #!/usr/bin/env bash
-# Dim, restore and wake the screen, the three things hypridle.conf asks of it.
+# What hypr/hypridle.conf runs to dim the laptop panel, bring it back, and wake
+# the displays: screen-power dim | restore | wake.
 #
-# wake turns the displays back on after the displays-off listener has blanked
-# them (dpms off), and after any sleep that should not have happened -- it is
-# the after_sleep_cmd safety net. It is the one of the three that matters on an
-# all-external setup, where there is no backlight to dim: without it the
-# screens stay black until someone runs the dispatcher by hand.
+# In lib/ rather than bin/ because only hypridle runs it, by this path.
 #
-# dim and restore dim the panel backlight rather than blanking the screen.
-# brightnessctl's own -s/-r could do this, but -s saves the level that is
-# current *now*: a second dim before a restore saves the already-dimmed level,
-# and -r then restores it -- a screen left black for good. Saving the level
-# here, and only the first time, avoids that. With no backlight at all -- this
-# machine docked, or any all-external setup -- the two are no-ops, because
-# brightnessctl would otherwise reach for a keyboard LED.
+# It replaces `brightnessctl -s set 10` and `brightnessctl -r`, which left the
+# laptop screen black until the level was set by hand. -s saves whatever the
+# backlight is at *that moment*, so a dim that runs while the panel is already
+# dimmed -- a restore that never came, hypridle restarted by dotfiles-reload
+# while dimmed, a resume that raced the timeout -- overwrites the good level
+# with the dimmed one. Every later restore then restores 10 of 192000, which is
+# off, and each later dim saves 10 again, so it never recovers on its own. The
+# state sat in $XDG_RUNTIME_DIR/brightnessctl/ with `10` in it when this was
+# found.
+#
+# So the saved level is kept here, written only by a dim that finds none, and
+# removed by the restore that uses it. A second dim while one is outstanding
+# does nothing. A saved level under 1% is not trusted either, and restores to
+# 50% instead: a screen that can be read is a better mistake than one that
+# cannot, and a level that low was never one anybody picked.
+#
+# `wake` names every monitor rather than issuing a bare dpms on. Bare, it was
+# seen to wake the laptop panel and switch the external monitor off in the same
+# call, so the monitors are listed from hyprctl and woken one at a time. Reading
+# the list is harmless; it is the dispatch that is aimed.
 set -uo pipefail
 
-STATE="${XDG_RUNTIME_DIR:-/tmp}/screen-power-brightness"
+DIM_LEVEL=10
+FALLBACK=50%
 
-# The one backlight device, if there is one.
-backlight() {
-    for d in /sys/class/backlight/*; do
-        [ -e "$d" ] || continue
-        basename "$d"
-        return 0
-    done
-    return 1
+state="${XDG_RUNTIME_DIR:-/tmp}/screen-power.saved"
+
+# The device's current and maximum raw values, one per line.
+levels() {
+    brightnessctl -m 2>/dev/null | awk -F, 'NR == 1 { print $3; print $5 }'
 }
 
 case "${1:-}" in
     dim)
-        dev="$(backlight)" || exit 0
-        # Save once: a repeat dim before a restore must not overwrite the real
-        # level with the dimmed one.
-        [ -s "$STATE" ] || brightnessctl -d "$dev" get > "$STATE"
-        brightnessctl -d "$dev" set 10%
+        [ -e "$state" ] && exit 0
+        { read -r cur; read -r _; } < <(levels)
+        [ -n "${cur:-}" ] || exit 0
+        printf '%s\n' "$cur" > "$state"
+        brightnessctl -q set "$DIM_LEVEL"
         ;;
     restore)
-        [ -s "$STATE" ] || exit 0
-        dev="$(backlight)" || { rm -f "$STATE"; exit 0; }
-        brightnessctl -d "$dev" set "$(cat "$STATE")"
-        rm -f "$STATE"
+        [ -e "$state" ] || exit 0
+        saved="$(cat "$state")"
+        rm -f "$state"
+        { read -r _; read -r max; } < <(levels)
+        case "$saved" in ''|*[!0-9]*) saved=0 ;; esac
+        if [ -n "${max:-}" ] && [ $((saved * 100)) -ge "$max" ]; then
+            brightnessctl -q set "$saved"
+        else
+            brightnessctl -q set "$FALLBACK"
+        fi
         ;;
     wake)
-        hyprctl dispatch 'hl.dsp.dpms({ action = "on" })'
+        hyprctl monitors all 2>/dev/null | sed -n 's/^Monitor \([^ ]*\) .*/\1/p' |
+            while read -r name; do
+                hyprctl dispatch "hl.dsp.dpms({ action = \"on\", monitor = \"$name\" })" >/dev/null
+            done
         ;;
     *)
-        printf 'screen-power: want dim, restore or wake\n' >&2
+        echo "usage: screen-power dim|restore|wake" >&2
         exit 2
         ;;
 esac
