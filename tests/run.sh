@@ -7,6 +7,16 @@
 # The tests stub the `hl` API, so they check the logic in hypr/*.lua without a
 # compositor. They cannot catch wrong API usage -- that needs a real Hyprland,
 # see the note at the bottom.
+#
+# Among the shell tests is tests/test_nvim.sh, the Neovim config's, which takes a
+# couple of minutes because it runs a real language server, dotnet and a debugger
+# on projects it makes. It can be run alone, and by name:
+#
+#   ./tests/test_nvim.sh             all of them
+#   ./tests/test_nvim.sh review      those with "review" in the name
+#
+# A test that needs a program that is not installed (netcoredbg, dotnet) says
+# SKIPPED and carries on; the others do not depend on anything installed.
 set -uo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."

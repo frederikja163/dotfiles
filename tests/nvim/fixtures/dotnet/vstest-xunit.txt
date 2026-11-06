@@ -1,0 +1,25 @@
+Test run for {ROOT}/tests/Lib.Tests/bin/Debug/net10.0/Lib.Tests.dll (.NETCoreApp,Version=v10.0)
+VSTest version 18.0.2-dev (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.12]     Lib.Tests.CalcTests.Half_is_wrong_on_purpose [FAIL]
+[xUnit.net 00:00:00.12]     Lib.Tests.OtherTests.Throws_unexpectedly [FAIL]
+  Failed Lib.Tests.CalcTests.Half_is_wrong_on_purpose [< 1 ms]
+  Error Message:
+   Assert.Equal() Failure: Values differ
+Expected: 3
+Actual:   2
+  Stack Trace:
+     at Lib.Tests.CalcTests.Half_is_wrong_on_purpose() in {ROOT}/tests/Lib.Tests/CalcTests.cs:line 17
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Failed Lib.Tests.OtherTests.Throws_unexpectedly [2 ms]
+  Error Message:
+   System.IndexOutOfRangeException : Index was outside the bounds of the array.
+  Stack Trace:
+     at Lib.Tests.OtherTests.Throws_unexpectedly() in {ROOT}/tests/Lib.Tests/CalcTests.cs:line 36
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+Failed!  - Failed:     2, Passed:     3, Skipped:     0, Total:     5, Duration: 15 ms - Lib.Tests.dll (net10.0)

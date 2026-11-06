@@ -140,11 +140,12 @@ install_packages() {
     # --- .NET global tools ----------------------------------------------------
 
     # Global tools are where these niceties live. dotnet-script runs C# files
-    # straight from the command line. roslyn-language-server is the C# language
-    # server (Microsoft.CodeAnalysis.LanguageServer) for real .cs projects; nvim
-    # starts it via lspconfig's roslyn_ls config. OmniSharp (installed from the
-    # AUR, for .csx scripts -- roslyn serves no project-less file) is the second
-    # half of that split, see neovim/init.lua.
+    # straight from the command line, and bin/lines-changed is one of them.
+    # roslyn-language-server is the C# language server
+    # (Microsoft.CodeAnalysis.LanguageServer) for real .cs projects; nvim starts
+    # it via lspconfig's roslyn_ls config. OmniSharp (installed from the AUR,
+    # for .csx scripts -- roslyn serves no project-less file) is the second half
+    # of that split, see neovim/lua/ide/lsp.lua.
     #
     # roslyn-language-server must come from the Azure DevOps feed rather than
     # nuget.org: it is what ships the versions VS Code uses, and the --prerelease

@@ -2,6 +2,7 @@
 New desktop name after first 9
 
 # Features
+mini.pick preview
 nvim better keyboard keybinds for using as a fully fletched C# ide
 Move desktop mode -> D -> 2 should move desktop after number two. Maybe with shift to mean before/after
 Git prune worktrees command

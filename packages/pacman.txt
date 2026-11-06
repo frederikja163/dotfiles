@@ -5,7 +5,7 @@
 git
 github-cli          # gh: setup.sh signs in to GitHub with it, and git/config
                     # uses it as the credential helper in place of an ssh key
-base-devel          # compiler toolchain, needed by treesitter auto_install
+base-devel          # compiler toolchain, which nvim-treesitter builds parsers with
 curl
 unzip               # bin/unzip-here, which is what yazi opens a zip with --
                     # see yazi/yazi.toml for why it is not 7-zip
@@ -15,7 +15,7 @@ desktop-file-utils  # update-desktop-database, run by install.sh after linking
 linux-headers       # required to build out-of-tree / DKMS modules
 lua                 # runs tests/run.sh
 python              # parses hyprctl -j in bin/waybar-main and bin/dotfiles-monitor-order;
-                    # bin/music-get and bin/pr-line-counts are written in it
+                    # and bin/music-get is written in it
 wtype               # types into the nested Hyprland in tests/sandbox.sh, the only
                     # way to test a keybind that enters or leaves a mode
 dotnet-sdk
@@ -27,6 +27,8 @@ zsh
 
 # neovim
 bob                 # neovim version manager
+tree-sitter-cli     # nvim-treesitter's main branch builds every parser with it
+                    # (neovim/lua/ide/treesitter.lua); 0.26.1 or newer
 
 # cli tools
 ripgrep             # used by mini.pick
@@ -38,7 +40,7 @@ grim                # captures the image in bin/screenshot-region
 slurp               # selects the region in bin/screenshot-region
 wl-clipboard        # wl-copy, the clipboard end of bin/screenshot-region
 
-# language servers enabled in neovim/init.lua
+# language servers enabled in neovim/lua/ide/lsp.lua
 lua-language-server
 clang               # clangd
 deno                # denols
@@ -70,7 +72,7 @@ plasma-integration            # Qt6 platform theme plugin for QT_QPA_PLATFORMTHE
 breeze                        # the Breeze Qt widget style that plugin loads
 
 # fonts + icons
-ttf-jetbrains-mono-nerd       # icons for waybar / kitty / lspkind
+ttf-jetbrains-mono-nerd       # icons for waybar / kitty / nvim (mini.icons)
 papirus-icon-theme            # notification icons, referenced by dunst/dunstrc
 
 # media players

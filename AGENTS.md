@@ -57,6 +57,19 @@ also useful from a terminal is still a `bin/` script. Scripts that already sit
 in `bin/` only because the config starts them are not to be moved without being
 asked.
 
+**`lines-changed` is how a change is measured here.** A pull request
+description ends with its table, and `opencode/pull-requests.md` says how: run
+`lines-changed --require-clean`, which refuses a dirty tree rather than print a
+number the PR would not show, so commit first. A bare `lines-changed` counts
+uncommitted files too, which is for checking your own size while you work; never
+paste that one, and `--committed` is the same number without them. `BASE` is the merge base with the default branch (the PR view), and a
+bare branch name is that branch's tip. It is a dotnet-script
+(`bin/lines-changed` launches `lib/lines-changed.csx`), so `dotnet-script` has
+to be on `PATH`, and `tests/test_lines_changed.sh` says SKIPPED, loudly, when it
+is not. Change it with that test beside you: the numbers it prints end up in
+other people's PRs. The pair is written to be copied into another repo whole, so
+keep anything of this one out of it.
+
 Nothing secret belongs in this repo — it is public on GitHub. Credentials stay
 in `~/.local/share/opencode/auth.json`, which is outside the config directory
 and is not tracked. opencode's global config *is* tracked, as `opencode/`,

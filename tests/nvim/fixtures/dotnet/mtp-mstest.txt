@@ -1,0 +1,48 @@
+Running tests from {ROOT}/Mt/bin/Debug/net10.0/Mt.dll (net10.0|x64)
+failed Fails_on_purpose (10ms)
+  Assert.AreEqual failed. Expected:<3>. Actual:<2>. 'expected' expression: '3', 'actual' expression: 'Half(5)'.
+  from {ROOT}/Mt/bin/Debug/net10.0/Mt.dll (net10.0|x64)
+  Assert.AreEqual failed. Expected:<3>. Actual:<2>. 'expected' expression: '3', 'actual' expression: 'Half(5)'.
+    at Microsoft.VisualStudio.TestTools.UnitTesting.Assert.ThrowAssertAreEqualFailed(Object expected, Object actual, String userMessage) in /_/src/TestFramework/TestFramework/Assertions/Assert.AreEqual.cs:665
+    at Microsoft.VisualStudio.TestTools.UnitTesting.Assert.AreEqual[T](T expected, T actual, IEqualityComparer`1 comparer, String message, String expectedExpression, String actualExpression) in /_/src/TestFramework/TestFramework/Assertions/Assert.AreEqual.cs:492
+    at Microsoft.VisualStudio.TestTools.UnitTesting.Assert.AreEqual[T](T expected, T actual, String message, String expectedExpression, String actualExpression) in /_/src/TestFramework/TestFramework/Assertions/Assert.AreEqual.cs:405
+    at Mt.Test1.Fails_on_purpose() in {ROOT}/Mt/Test1.cs:12
+    at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+    at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+failed Rows (2,4) (10ms)
+  Assert.AreEqual failed. Expected:<4>. Actual:<3>. 'expected' expression: 'expected', 'actual' expression: 'a + 1'.
+  from {ROOT}/Mt/bin/Debug/net10.0/Mt.dll (net10.0|x64)
+  Assert.AreEqual failed. Expected:<4>. Actual:<3>. 'expected' expression: 'expected', 'actual' expression: 'a + 1'.
+    at Microsoft.VisualStudio.TestTools.UnitTesting.Assert.ThrowAssertAreEqualFailed(Object expected, Object actual, String userMessage) in /_/src/TestFramework/TestFramework/Assertions/Assert.AreEqual.cs:665
+    at Microsoft.VisualStudio.TestTools.UnitTesting.Assert.AreEqual[T](T expected, T actual, IEqualityComparer`1 comparer, String message, String expectedExpression, String actualExpression) in /_/src/TestFramework/TestFramework/Assertions/Assert.AreEqual.cs:492
+    at Microsoft.VisualStudio.TestTools.UnitTesting.Assert.AreEqual[T](T expected, T actual, String message, String expectedExpression, String actualExpression) in /_/src/TestFramework/TestFramework/Assertions/Assert.AreEqual.cs:405
+    at Mt.Test1.Rows(Int32 a, Int32 expected) in {ROOT}/Mt/Test1.cs:26
+    at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+    at System.Reflection.MethodBaseInvoker.InvokeDirectByRefWithFewArgs(Object obj, Span`1 copyOfArgs, BindingFlags invokeAttr)
+failed Throws (10ms)
+  Test method Mt.Test1.Throws threw exception:
+System.IndexOutOfRangeException: Index was outside the bounds of the array.
+  from {ROOT}/Mt/bin/Debug/net10.0/Mt.dll (net10.0|x64)
+  Test method Mt.Test1.Throws threw exception:
+  System.IndexOutOfRangeException: Index was outside the bounds of the array.
+    at Mt.Test1.Throws() in {ROOT}/Mt/Test1.cs:20
+    at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+    at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+    
+  Standard output
+    hello from a test
+    
+  Error output
+{ROOT}/Mt/bin/Debug/net10.0/Mt.dll (net10.0|x64) failed with 3 error(s) (703ms)
+Exit code: 2
+  Standard output: MSTest v4.0.1 (UTC 10/14/2025) [arch-x64 - .NET 10.0.13]
+  Test Parallelization enabled for {ROOT}/Mt/bin/Debug/net10.0/Mt.dll (Workers: 16, Scope: MethodLevel)
+  
+
+Test run summary: Failed!
+  total: 5
+  failed: 3
+  succeeded: 2
+  skipped: 0
+  duration: 827ms
+Test run completed with non-success exit code: 2 (see: https://aka.ms/testingplatform/exitcodes)

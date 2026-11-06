@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# lines-changed: how many lines a change adds and removes, as code, comments,
+# docs and tests. `lines-changed --help` says how to use it; the reasoning is at
+# the top of lines-changed.csx, which does the work.
+#
+# This is only the launcher. The tool is a dotnet-script, and a script cannot
+# be started by name from PATH on its own without every caller knowing to run it
+# through dotnet-script -- git aliases, agents and a keybind included. Here the
+# one thing worth checking is that dotnet-script exists, because without this
+# the failure is the shell's "command not found" for a tool the user did not
+# type, and from a keybind or an agent that goes nowhere.
+#
+# It looks for the script beside itself, then in ../lib, so the pair works both
+# in this repo's bin/ + lib/ layout and copied flat into any other directory.
+#
+# As a git subcommand: `git lines-changed` works through an alias
+# (`lines-changed = !lines-changed`), or, anywhere, by putting this launcher on
+# PATH under the name git-lines-changed -- git runs any git-* it finds.
+set -uo pipefail
+
+here="$(dirname "$(readlink -f -- "${BASH_SOURCE[0]}")")"
+
+script=""
+for candidate in "$here/lines-changed.csx" "$here/../lib/lines-changed.csx"; do
+    if [ -f "$candidate" ]; then
+        # Resolved, not left as bin/../lib: dotnet-script builds its cache
+        # directory out of the path it is given, and a ".." in it made the
+        # compiled assembly land somewhere it then could not load from.
+        script="$(readlink -f -- "$candidate")"
+        break
+    fi
+done
+
+if [ -z "$script" ]; then
+    echo "lines-changed: lines-changed.csx not found beside $0 or in ../lib" >&2
+    exit 1
+fi
+
+if ! command -v dotnet-script >/dev/null; then
+    echo "lines-changed: dotnet-script not found; install it with" >&2
+    echo "    dotnet tool install -g dotnet-script" >&2
+    echo "and put ~/.dotnet/tools on PATH" >&2
+    exit 127
+fi
+
+# After `--` so that dotnet-script does not read -u or --help as its own.
+exec dotnet-script "$script" -- "$@"

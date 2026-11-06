@@ -18,10 +18,11 @@ the least that lets them review it:
 ## Line counts
 
 Whenever you open or write the description for a pull request, end the body
-with the output of `pr-line-counts`, run from the branch the PR is made from:
+with the output of `lines-changed --require-clean`, run from the branch the PR
+is made from:
 
-    pr-line-counts            # against the repository's default branch
-    pr-line-counts <base>     # against another base branch
+    lines-changed --require-clean                  # against the repository's default branch
+    lines-changed --require-clean BASE:<branch>    # against another base branch
 
 | Category | Added | Removed | Change |
 |----------|------:|--------:|-------:|
@@ -32,16 +33,25 @@ with the output of `pr-line-counts`, run from the branch the PR is made from:
 | Total    | 257 | 88 | +169 |
 
 - Paste the table as it prints; do not recount or adjust it by hand. It counts
-  only lines added and removed from the merge base to `HEAD`, so commit first,
-  and pass the PR's real base if it is not the default branch. Change is added
-  minus removed. `pr-line-counts -u` also counts uncommitted work, untracked
-  files included, to preview the numbers; do not paste that one into a PR.
+  only lines added and removed from the merge base to `HEAD` (`BASE`, which is
+  what a pull request shows), so the work has to be committed first.
+  `--require-clean` is what holds you to that: with uncommitted work it prints
+  no table and exits with status 3. Commit, or ask for the commit agent, and run
+  it again; do not drop the flag to get a number out of it.
+- Pass the PR's real base as `BASE:<branch>` if it is not the default branch.
+  A bare branch name means that branch's tip, which also counts whatever it
+  gained after the PR branched off. Change is added minus removed.
+- A bare `lines-changed` counts uncommitted work too, untracked files included,
+  which is right for checking your size while you work and wrong for a PR; do
+  not paste that one. `--committed` leaves uncommitted work out, and
+  `--require-clean` is the form that refuses rather than leave it out.
 - Put it last, after everything else in the description.
-- A note on stderr such as "no comment rules for .lua; counted as code" means
+- A note on stderr such as "no comment rules for .conf; counted as code" means
   that language's comments are in the Code row. Add one line under the table
-  saying so, so the number is not read as exact.
+  saying so, so the number is not read as exact. A note that generated files
+  (lockfiles, minified bundles) were left out needs nothing.
 - Leave the table out when the PR is not yours to describe.
 
-`pr-line-counts` is on `PATH` from `~/dotfiles/bin`. If it is not there -- a
-machine without these dotfiles -- say that the table is missing rather than
-estimating one.
+`lines-changed` is on `PATH` from `~/dotfiles/bin`, and runs on `dotnet-script`.
+If it is not there -- a machine without these dotfiles -- say that the table is
+missing rather than estimating one.

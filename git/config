@@ -45,3 +45,16 @@
 	# consulted first and a stale credential there would win over gh's.
 	helper =
 	helper = !gh auth git-credential
+
+[alias]
+	# `git lines-changed` is bin/lines-changed, so it reads like the rest of git
+	# when asked for a PR's size: `git lines-changed --require-clean`.
+	#
+	# An alias, not a git-lines-changed on PATH, which would work just as well:
+	# the launcher keeps its plain name for the places that run it without git
+	# (a PR description's instructions, a terminal), and the alias costs a line.
+	# Git ignores an alias that shadows one of its own commands, so the name
+	# matters: diff-count and diff-lines were passed over because git keeps its
+	# diff-* names for plumbing (diff-tree, diff-index, diff-pairs) and could
+	# take either one over later without a word.
+	lines-changed = !lines-changed

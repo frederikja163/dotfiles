@@ -1,0 +1,13 @@
+{ROOT}/src/Lib/Broken.cs(5,13): error CS0103: The name 'missing' does not exist in the current context [{ROOT}/src/Lib/Lib.csproj]
+{ROOT}/src/Lib/Broken.cs(6,13): error CS0103: The name 'Other' does not exist in the current context [{ROOT}/src/Lib/Lib.csproj]
+{ROOT}/src/Lib/Broken.cs(7,20): warning CS0168: The variable 'unused' is declared but never used [{ROOT}/src/Lib/Lib.csproj]
+
+Build FAILED.
+
+{ROOT}/src/Lib/Broken.cs(7,20): warning CS0168: The variable 'unused' is declared but never used [{ROOT}/src/Lib/Lib.csproj]
+{ROOT}/src/Lib/Broken.cs(5,13): error CS0103: The name 'missing' does not exist in the current context [{ROOT}/src/Lib/Lib.csproj]
+{ROOT}/src/Lib/Broken.cs(6,13): error CS0103: The name 'Other' does not exist in the current context [{ROOT}/src/Lib/Lib.csproj]
+    1 Warning(s)
+    2 Error(s)
+
+Time Elapsed 00:00:00.77

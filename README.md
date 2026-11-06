@@ -26,7 +26,7 @@ curl -fsSL https://raw.githubusercontent.com/frederikja163/dotfiles/main/setup.s
 
 | In repo    | Links to                      | Contents                             |
 | ---------- | ----------------------------- | ------------------------------------ |
-| `neovim`   | `~/.config/nvim`              | `init.lua` + pack lock               |
+| `neovim`   | `~/.config/nvim`              | `init.lua`, `lua/ide/` modules, pack lock |
 | `hypr`     | `~/.config/hypr`              | Hyprland modules, hyprlock, hypridle |
 | `waybar`   | `~/.config/waybar`            | `config.jsonc`, `style.css`          |
 | `kitty`    | `~/.config/kitty`             | `kitty.conf`                         |
@@ -40,7 +40,7 @@ curl -fsSL https://raw.githubusercontent.com/frederikja163/dotfiles/main/setup.s
 | `bin`      | — (on `PATH` in place)        | small scripts; not linked, see `install.sh` |
 | `system`   | `/etc`                        | system config (needs root)           |
 | `packages` | —                             | `pacman.txt`, `aur.txt`              |
-| `tests`    | —                             | `run.sh`, `sandbox.sh`, Lua tests    |
+| `tests`    | —                             | `run.sh`, `sandbox.sh`, Lua tests, `test_nvim.sh` for the editor |
 
 catppuccin-mocha and JetBrainsMono Nerd Font throughout.
 
@@ -87,7 +87,7 @@ dotfiles, and is named after whatever it drives instead.
 | `hypr-keybinds`          | the `SUPER + /` cheatsheet, generated from `hyprctl binds`          |
 | `ide`                    | `SUPER + SHIFT + I`: Rider if the directory holds a solution, else nvim |
 | `power-menu`             | `SUPER + Escape`: lock, log out, reboot, shut down                  |
-| `pr-line-counts`         | lines a branch adds and removes, by kind; for PR bodies |
+| `lines-changed`          | lines a change adds and removes, by kind; counts uncommitted work too, `--committed` leaves it out, `--require-clean` refuses it; also `git lines-changed`; for PR bodies |
 | `proc-cwd`               | the working directory of each pid given                             |
 | `screenshot-region`      | `Print`: select a region, onto the clipboard                        |
 | `terminal-cwd`           | the working directory of each terminal's shell, given their pids    |
@@ -97,9 +97,11 @@ dotfiles, and is named after whatever it drives instead.
 
 `lib/` is not on `PATH`, and is for what nobody types: shared shell code, and
 helpers that something else starts. See `lib/dotfiles-lib.sh`, sourced by
-`dotfiles-check-updates` and `dotfiles-update`, and `lib/dunst-follow`, which
+`dotfiles-check-updates` and `dotfiles-update`, `lib/dunst-follow`, which
 `hypr/autostart.lua` runs on every focus change to carry the notifications on
-screen to the focused monitor.
+screen to the focused monitor, and `lib/lines-changed.csx`, the dotnet-script
+that `bin/lines-changed` launches. That pair has nothing of this repo in it and
+is meant to be copied out whole.
 
 ## Keys
 
@@ -151,6 +153,44 @@ Apps open where the desktop is, meaning the directory of its quake terminal:
 *over* waybar, which is why the bar is on the `bottom` layer rather than `top`
 — see `waybar/config.jsonc`. The bar still reserves its strip, so no tiled
 window is ever placed under it.
+
+### In the editor
+
+The same grammar in nvim, with `Space` where Hyprland has SUPER. A **motion**
+is a chord with no leader: `Ctrl + h j k l` goes to the window there. A
+**verb** is `Space` and a letter, and either does one thing or enters a
+**mode**: inside it the motions are bare, `Escape` leaves, it ends itself after
+an idle spell, and the statusline says which one is on. A key a mode does not
+own leaves it and does what it always does.
+
+| | |
+| ------------------- | ------------------------------------------------- |
+| `Space ?`           | every key, read live; `Space Space` is the palette of commands, actions and modes |
+| `Space s`           | size mode: `hjkl` resize, `=` equalise, `m` maximise |
+| `Space m`           | move mode: `hjkl` swap with the neighbour, or go to the edge; `x` exchange, `r` rotate |
+| `Space r`           | review mode: `jk` hunk, `Tab` file, `d` drop, `u` undo, `b` pick what to compare with, `q` stop |
+| `Space D`           | debug mode: `j` step over, `l` into, `h` out, `c` continue or start, `b` breakpoint, `u` `d` the stack, `K` a value, `q` stop |
+| `Space f…`          | find: `ff` files, `fb` buffers, `fo` recent, `fr` symbols (the r of `grr`) and `fd` diagnostics, with `fR` and `fD` for this buffer only, `fq` `fl` quickfix and location lists, `fp` sessions |
+| `Space b…` `Space t…` | build, run, watch (`bb` `br` `bw`); test all, nearest, file, last (`tt` `tn` `tf` `tl`) |
+| `gd` `grr` `gri` `grt` `grb` `grc` `grC` | definition, usages, implementations, type, base types, callers, callees: one result jumps, several open a picker where `Tab` previews the highlighted one (and `Tab` again goes back to the list) and `Ctrl-d` drops entries and `Ctrl-q` or `Alt-q` sends what is left to the quickfix or location list. `gd` is only this where a language server is attached; elsewhere it is Vim's own |
+| `]e` `[e`           | next and previous error |
+| `Space d`           | the diagnostics under the cursor (Neovim's `Ctrl-w d` still works) |
+
+Commands for what has no key, all in the palette: `:Review [ref]` (`HEAD`,
+`BASE`, `BASE:<branch>`, `BASE~2`, a branch, a tag or a commit), `:Build`,
+`:Test [all|file|nearest|last]`, `:Run`, `:Watch`, `:Debug [profile]`,
+`:DebugAttach`, `:Breakpoints`, `:Usings`, `:Toggle`, `:Fresh` and
+`:Forget`. `ZR` restarts nvim and keeps the session.
+
+Two programs outside nvim are needed: `tree-sitter-cli` (pacman) builds the
+parsers, and `netcoredbg-bin` (AUR) is the debugger. Both are in `packages/`,
+and everything else that is a plugin is fetched by `vim.pack` on the first
+start. `./tests/test_nvim.sh` is the editor's tests.
+
+The reference is `Space ?`, not this table. Every key has a description and a
+test fails for one that does not. The reasoning is at the top of each module in
+`neovim/lua/ide/`: `modal.lua` is the engine the modes share, `keys.lua` says
+which key does what, and `init.lua` lists the modules in their load order.
 
 ## Desktop model
 
