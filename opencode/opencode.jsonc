@@ -48,7 +48,8 @@
   // machine.
   "instructions": [
     "~/.config/opencode/comments.md",
-    "~/.config/opencode/pull-requests.md"
+    "~/.config/opencode/pull-requests.md",
+    "~/.config/opencode/commits.md"
   ],
 
   // No mode may touch git history without a decision from you.
@@ -65,6 +66,9 @@
   // commit it was told to make cost one confirmation; that left it able to
   // commit, and the point is that it cannot -- the answer to "commit this" is
   // to switch to the commit agent, where the split and the table come with it.
+  // The denial itself only reads "Permission denied: shell", so commits.md is
+  // what tells build that; without it, build reported a bare denial and asked
+  // whether to loosen shell permissions.
   // plan denies for its own reason: a mode that will not edit a file has no
   // commit of its own to record.
   //
