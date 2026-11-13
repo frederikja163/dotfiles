@@ -10,7 +10,7 @@ local mainMod = "SUPER"
 return {
     terminal    = "kitty",
     fileManager = "yazi",
-    browser     = "firefox",
+    browser     = "brave",
     menu        = "fuzzel",
 
     mainMod     = mainMod,

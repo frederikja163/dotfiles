@@ -130,11 +130,10 @@ install_packages() {
     elif ! command -v yay >/dev/null; then
         echo "!! yay not found, skipping AUR packages: ${aur_missing[*]}" >&2
     else
-        # -Syu rather than -S for the reason the pacman block explains: building a
-        # new AUR package can pull repo dependencies with it, and naming those
-        # without upgrading the system is the same partial upgrade by another route.
+        # -S rather than -Syu: -u would rebuild every foreign package on the
+        # machine, including ones installed by hand that are not in aur.txt.
         echo "==> yay: ${#aur_missing[@]} of ${#aur[@]} missing: ${aur_missing[*]}"
-        yay -Syu --needed "${aur_missing[@]}"
+        yay -S --needed "${aur_missing[@]}"
     fi
 
     # --- .NET global tools ----------------------------------------------------
@@ -252,6 +251,34 @@ install_packages() {
                                /etc/sssd/conf.d/90-pam-idle.conf 600; then
             sudo systemctl restart sssd
         fi
+    fi
+
+    # Brave's own features are switched off, and Bitwarden installed, by a
+    # managed policy: it is the one route Brave documents for both, it survives
+    # Brave updates and a profile reset, and it greys the setting out in the UI
+    # so it cannot drift back. Editing Default/Preferences was the alternative
+    # for the password manager, and was rejected -- Brave rewrites that file on
+    # exit, so it only holds while the browser is closed, and it has no
+    # equivalent for Rewards, Wallet or the VPN at all.
+    #
+    # The password manager is off because Bitwarden is the one that is used.
+    # nngceckbapebfimnlniiiahkandclblb is Bitwarden's Chrome Web Store id, and a
+    # force-installed extension cannot be removed from the browser; deleting
+    # the file is how to undo it. JSON has no comments, which is why this
+    # reasoning sits here and not in the file.
+    #
+    # PromptForDownloadLocation makes Brave ask where to save every download,
+    # which is what puts a file dialog on screen at all: without it downloads
+    # land in ~/Downloads and the yazi chooser (xdg/termfilechooser) is only
+    # ever seen for uploads and "Save as". The cost is a yazi window per
+    # download; remove the line to get silent downloads back.
+    #
+    # Only where Brave is installed: elsewhere there is nothing reading
+    # /etc/brave. A running Brave picks the policy up on its next start, and
+    # brave://policy shows what it loaded.
+    if command -v brave >/dev/null && [ -e "$DOTFILES/system/brave-policy.json" ]; then
+        install_system_file "$DOTFILES/system/brave-policy.json" \
+                            /etc/brave/policies/managed/90-dotfiles.json || true
     fi
 }
 
@@ -390,6 +417,14 @@ install_links() {
     # fall back to yazi. See the comment in the file.
     link xdg/dbus-1/services/org.freedesktop.FileManager1.service \
          "$HOME/.local/share/dbus-1/services/org.freedesktop.FileManager1.service"
+
+    # Browsers and other portal apps get yazi for their file dialogs: the
+    # portal config routes FileChooser to termfilechooser, whose own config says
+    # to run yazi in a kitty window. See the comments in both files.
+    link xdg/xdg-desktop-portal/portals.conf \
+         "$HOME/.config/xdg-desktop-portal/portals.conf"
+    link xdg/termfilechooser/config \
+         "$HOME/.config/xdg-desktop-portal-termfilechooser/config"
 
     # The desktop database is a cache of which .desktop file claims which MIME
     # types, and the directory default is looked up through it. Linking the

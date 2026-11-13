@@ -7,3 +7,5 @@ tasks-bin
 omnisharp-roslyn-bin           # serves .csx scripts; see .omnisharp and neovim/lua/ide/lsp.lua
 netcoredbg-bin                 # debugs C# under nvim-dap; see neovim/lua/ide/debug.lua
 teams-for-linux-bin            # started at login by hypr/autostart.lua, so chat notifies
+brave-bin                      # SUPER+W; Chromium, which the Keychron Launcher (WebHID) needs
+xdg-desktop-portal-termfilechooser  # Brave's file and download dialogs open in yazi; see xdg/termfilechooser/config

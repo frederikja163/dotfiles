@@ -11,8 +11,21 @@
 # when it edits one, so `xdg-mime default ...` rewrites this file rather than
 # replacing the link -- expect such an edit to show up here to commit.
 #
+# Brave is the browser for every link: xdg-open, `gh`, kitty's clickable URLs,
+# a chat client handing off a link, all resolve http, https and html here.
+# Firefox is still installed, and with nothing named here the answer is
+# whichever .desktop file the desktop database lists first, so it was Brave
+# only by luck of ordering. The name is brave-browser.desktop, which is what
+# the brave-bin package installs. Terminal programs that skip xdg-open and read
+# $BROWSER are covered by hypr/environment.lua.
+#
 # The jetbrains:// handler is the JetBrains Toolbox's, kept because taking the
 # whole file over would otherwise drop it.
 [Default Applications]
 inode/directory=yazi.desktop
+x-scheme-handler/http=brave-browser.desktop
+x-scheme-handler/https=brave-browser.desktop
+x-scheme-handler/about=brave-browser.desktop
+text/html=brave-browser.desktop
+application/xhtml+xml=brave-browser.desktop
 x-scheme-handler/jetbrains=jetbrainsd.desktop

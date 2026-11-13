@@ -1,0 +1,23 @@
+; How a file dialog from Brave, or any portal app, becomes yazi.
+;
+; yazi-wrapper.sh is the one the package ships, in
+; /usr/share/xdg-desktop-portal-termfilechooser. It runs
+; `$TERMCMD yazi --chooser-file=...` and hands whatever was picked back to the
+; app, so the yazi inside is the one configured in ../yazi.
+;
+; TERMCMD is kitty, the terminal here, with a class of its own so
+; hypr/windowrules.lua can float it: a dialog opened as a tiled window would
+; rearrange the desktop it appears on. The package default is also kitty, but
+; with only a title, which a window rule has to match less reliably.
+;
+; Picking a file is Enter, or Space to mark several and Enter to confirm; Q
+; cancels. For a folder choice, navigate into it and quit with q.
+;
+; The service reads this at start: after editing, run
+; `systemctl --user restart xdg-desktop-portal-termfilechooser`.
+[filechooser]
+cmd=yazi-wrapper.sh
+default_dir=$HOME/Downloads
+env=TERMCMD=kitty --class termfilechooser --title termfilechooser
+open_mode=suggested
+save_mode=suggested

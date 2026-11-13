@@ -36,7 +36,7 @@ curl -fsSL https://raw.githubusercontent.com/frederikja163/dotfiles/main/setup.s
 | `zsh`      | `~/.zshenv`, `~/.config/zsh/` | oh-my-zsh setup, `PATH`, prompt, `title` |
 | `git`      | `~/.config/git`               | identity and settings                |
 | `opencode` | `~/.config/opencode`          | model, the `commit` agent, `/review`, `/aside`; no credentials (see `AGENTS.md`) |
-| `xdg`      | `~/.config/mimeapps.list`, `~/.local/share/{applications,dbus-1}` | yazi as the file explorer, browser "show in folder" included |
+| `xdg`      | `~/.config/{mimeapps.list,xdg-desktop-portal,xdg-desktop-portal-termfilechooser}`, `~/.local/share/{applications,dbus-1}` | yazi as the file explorer and Brave's file dialogs, Brave as the default browser |
 | `systemd`  | `~/.config/systemd/user/`     | drop-in that restarts hypridle and un-dims the screen when it crashes |
 | `bin`      | — (on `PATH` in place)        | small scripts; not linked, see `install.sh` |
 | `system`   | `/etc`                        | system config (needs root)           |
@@ -400,6 +400,9 @@ script with two halves, `install.sh packages` and `install.sh links`.
   `system/90-no-suspend.conf` for why and how to undo it.
 - **The lock screen's first password attempt used to fail** after a long lock,
   because sssd hung up on it for being idle — see `system/90-sssd-pam-idle.conf`.
+- **Brave is configured by policy.** `system/brave-policy.json` turns off its
+  password manager, Rewards, Wallet, VPN, News and Leo, and force-installs
+  Bitwarden; `install.sh` copies it to `/etc/brave/policies/managed`.
 - **Rider is not installed by the script.** `jetbrains-toolbox` is, and Rider is
   installed from its GUI; Toolbox has no usable CLI. When Rider is missing,
   `install.sh` opens Toolbox at the end of the run so it is one click away.

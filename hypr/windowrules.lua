@@ -59,6 +59,20 @@ hl.window_rule({
     float = true,
 })
 
+-- The file dialog termfilechooser opens for Brave and other portal apps: a
+-- kitty running yazi, with the class set by xdg/termfilechooser/config. Left
+-- alone it would tile into whatever desktop the browser is on and rearrange it
+-- for as long as the dialog is up, so it floats, centred, at most of the
+-- screen.
+hl.window_rule({
+    name  = "float-termfilechooser",
+    match = { class = "^termfilechooser$" },
+
+    float  = true,
+    size   = "monitor_w*0.7 monitor_h*0.7",
+    center = true,
+})
+
 -- Layer rules also return a handle.
 -- local overlayLayerRule = hl.layer_rule({
 --     name  = "no-anim-overlay",

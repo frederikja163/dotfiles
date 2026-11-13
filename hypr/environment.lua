@@ -68,6 +68,13 @@ hl.env("PATH", currentPath)
 -- `vi`, which is not worth a second copy of this in .zshrc to close.
 hl.env("EDITOR", "nvim")
 
+-- BROWSER is for the programs that read it instead of asking xdg-open, which
+-- is the gap xdg/mimeapps.list cannot close: python's webbrowser module, `gh
+-- browse`, and some CLIs that open a login page. Set here rather than in
+-- .zshrc for the reason EDITOR is: a kitty started with a command never reads
+-- a profile. Bare `brave` because it is on the stock PATH (/usr/bin).
+hl.env("BROWSER", "brave")
+
 -- Qt apps were the only thing on this desktop still opening in light mode. GTK
 -- is already dark by three separate routes and needs nothing: .gtkrc-2.0 names
 -- Breeze-Dark outright, GTK3 reads `gtk-application-prefer-dark-theme` and
