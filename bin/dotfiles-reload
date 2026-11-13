@@ -77,6 +77,21 @@ restart_if_running() {
     return 0
 }
 
+# hypridle runs as a user unit (hypr/autostart.lua), which is what restarts it
+# when it crashes. Killing it by pid and starting a bare one, as the generic
+# helper does, would take it out from under that: the unit sees a clean exit,
+# stays stopped, and the copy this started is unsupervised again. So a running
+# unit is restarted through systemd. The helper still serves the case of a
+# hypridle that is running without the unit -- a session begun before the unit
+# was used -- and still does nothing for one that has been stopped on purpose.
+restart_hypridle() {
+    if systemctl --user is-active --quiet hypridle.service; then
+        systemctl --user restart hypridle.service
+    else
+        restart_if_running hypridle
+    fi
+}
+
 # waybar cannot go through step() the way the others do.
 #
 # bin/waybar-main ends by exec'ing waybar (via setpriv, for the reason given
@@ -135,7 +150,7 @@ start_waybar() {
     step "hyprland"  hyprctl reload
     step "waybar"    start_waybar
     step "hyprpaper" restart_if_running hyprpaper
-    step "hypridle"  restart_if_running hypridle
+    step "hypridle"  restart_hypridle
 
     # dunst is started with the session now (see autostart.lua), so it should be
     # running -- but the guard stays, because a reload is not the place to

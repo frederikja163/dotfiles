@@ -359,6 +359,12 @@ install_links() {
     # hypr/environment.lua name ~/dotfiles/bin on PATH instead.
     link .omnisharp "$HOME/.omnisharp"     # global omnisharp.json for .csx scripts
 
+    # A drop-in over the hypridle unit the package ships, so a crashed hypridle
+    # restarts and puts the screen back; see the file. systemd only reads it
+    # after a reload, hence the line under the link.
+    link systemd/hypridle.service.d "$HOME/.config/systemd/user/hypridle.service.d"
+    systemctl --user daemon-reload 2>/dev/null || true
+
     # opencode's *global* config, which is the one that carries the model and
     # the agents; the repo's own opencode.json beside AGENTS.md is a separate,
     # project-scoped file and is not linked anywhere.

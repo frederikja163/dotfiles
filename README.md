@@ -37,6 +37,7 @@ curl -fsSL https://raw.githubusercontent.com/frederikja163/dotfiles/main/setup.s
 | `git`      | `~/.config/git`               | identity and settings                |
 | `opencode` | `~/.config/opencode`          | model, the `commit` agent, `/review`, `/aside`; no credentials (see `AGENTS.md`) |
 | `xdg`      | `~/.config/mimeapps.list`, `~/.local/share/{applications,dbus-1}` | yazi as the file explorer, browser "show in folder" included |
+| `systemd`  | `~/.config/systemd/user/`     | drop-in that restarts hypridle and un-dims the screen when it crashes |
 | `bin`      | — (on `PATH` in place)        | small scripts; not linked, see `install.sh` |
 | `system`   | `/etc`                        | system config (needs root)           |
 | `packages` | —                             | `pacman.txt`, `aur.txt`              |

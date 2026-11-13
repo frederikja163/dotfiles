@@ -48,7 +48,14 @@ hl.on("hyprland.start", function ()
     hl.exec_cmd("hyprpaper")
 
     -- Idle timeouts: dim, lock, displays off, suspend (see hypridle.conf)
-    hl.exec_cmd("hypridle")
+    --
+    -- Through its unit, not the bare binary, which is what this was. hypridle
+    -- crashes occasionally (an uncaught sdbus exception), and as a plain child
+    -- of the compositor it stayed dead with the backlight dimmed to nothing and
+    -- no one left to restore it: a black laptop screen. The unit restarts it and
+    -- puts the screen back on every start; see
+    -- systemd/hypridle.service.d/recover.conf.
+    hl.exec_cmd("systemctl --user start hypridle.service")
 
     -- Start writing the session down, and -- only if this is not the first
     -- compositor since the machine came up -- put the last one back (see

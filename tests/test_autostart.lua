@@ -88,6 +88,19 @@ for _, cmd in ipairs(execs) do
 end
 check("it is started once", teams, 1)
 
+print("scenario: hypridle is started through its unit")
+-- A bare `hypridle` is what left the laptop screen black: it crashed, nothing
+-- restarted it, and the dim it had written was never undone.
+reset()
+events["hyprland.start"]()
+local unit, bare = 0, 0
+for _, cmd in ipairs(execs) do
+    if cmd == "systemctl --user start hypridle.service" then unit = unit + 1 end
+    if cmd == "hypridle" then bare = bare + 1 end
+end
+check("the unit is started once", unit, 1)
+check("the bare binary is not", bare, 0)
+
 print("scenario: a monitor plugged in after the session is up")
 reset()
 events["hyprland.start"]()
