@@ -1,10 +1,22 @@
 -- Keyboard, mouse, touchpad and gestures.
 -- See https://wiki.hypr.land/Configuring/Basics/Variables/#input
 
+-- The US layout with the Danish letters on AltGr (right Alt): å is AltGr+w,
+-- æ is AltGr+z and ø is AltGr+l, and Shift makes them capitals.
+--
+-- us(altgr-intl) rather than plain us(intl): intl makes ' " ` ~ ^ dead keys, so
+-- every quote typed in code waits for the next character, which is unusable
+-- for programming. altgr-intl moves those dead keys up to AltGr and leaves the
+-- bare keys exactly as on us. us(altgr-weur) was the other candidate; it has
+-- all three letters too (on q, w and t) but is its own layout rather than a
+-- us variant, and altgr-intl is the one most other machines already have.
+--
+-- AltGr is no longer a plain Alt. Nothing in this config binds Alt_R, so no
+-- bind is affected.
 hl.config({
     input = {
         kb_layout  = "us",
-        kb_variant = "",
+        kb_variant = "altgr-intl",
         kb_model   = "",
         kb_options = "",
         kb_rules   = "",
