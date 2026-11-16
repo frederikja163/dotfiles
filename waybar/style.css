@@ -126,6 +126,24 @@ window#waybar {
   animation: recording 1.2s ease-in-out infinite alternate;
 }
 
+/* Camera, microphone and Caps Lock, each only while on. Solid and not pulsing,
+   which is the recording pill's alone: red for the camera, since it is the one
+   to notice, peach for the microphone to match the privacy pill beside it, and
+   blue for Caps Lock, which is a nuisance and not a warning. */
+#custom-camera,
+#custom-microphone,
+#custom-capslock {
+  padding: 0 10px;
+  margin: 4px 2px;
+  color: @base;
+  border-radius: 8px;
+  font-weight: bold;
+}
+
+#custom-camera     { background: @red; }
+#custom-microphone { background: @peach; }
+#custom-capslock   { background: @blue; }
+
 /* The active keybind mode. Coloured rather than grey like the other modules:
    it appears only while a mode is on, and it is there to be noticed. */
 #submap {

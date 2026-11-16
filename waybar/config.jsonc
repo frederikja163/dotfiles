@@ -53,6 +53,9 @@
   ],
   "modules-right": [
     "custom/recording",
+    "custom/camera",
+    "custom/microphone",
+    "custom/capslock",
     "mpris",
     "privacy",
     "idle_inhibitor",
@@ -155,6 +158,37 @@
     "format": "{}",
     "tooltip": false,
     "on-click": "screencast-region"
+  },
+  // Three more pills of the same kind, which appear only while they are true:
+  // the camera is open, the microphone is switched on, a Caps Lock is on.
+  // lib/indicator says how each is read and why. They are scripts that keep
+  // running and print a line when something changes, which Waybar shows and
+  // hides while empty, so there is no interval and nothing is polled from here.
+  // "restart-interval" starts one again if it dies, which it should only do if
+  // pactl does, and is not allowed beside an interval, which is why it is the
+  // continuous form that has it.
+  //
+  // The microphone one is the mute state and not "something is recording",
+  // which is what "privacy" below already shows as audio-in; clicking it
+  // toggles the mute, the same as the mic mute key.
+  "custom/camera": {
+    "exec": "$HOME/dotfiles/lib/indicator camera",
+    "restart-interval": 5,
+    "format": "{}",
+    "tooltip": false
+  },
+  "custom/microphone": {
+    "exec": "$HOME/dotfiles/lib/indicator mic",
+    "restart-interval": 5,
+    "format": "{}",
+    "tooltip": false,
+    "on-click": "wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle"
+  },
+  "custom/capslock": {
+    "exec": "$HOME/dotfiles/lib/indicator caps",
+    "restart-interval": 5,
+    "format": "{}",
+    "tooltip": false
   },
   // What is playing, first in the right-hand group so it reads as the leftmost
   // of the status pills. There is no text when nothing is playing and Waybar

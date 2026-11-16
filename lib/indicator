@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+# Print a status line for one of Waybar's indicator pills, whenever it changes:
+#
+#   indicator camera   the webcam is open in some program
+#   indicator mic      the default microphone is switched on (not muted)
+#   indicator caps     a keyboard has Caps Lock on
+#
+# Run by the custom/camera, custom/microphone and custom/capslock modules in
+# waybar/config.jsonc, one process each, and in lib/ because nobody types it.
+# Waybar keeps a script that prints lines running and shows the latest one, and
+# hides the module while that line is empty, so the bar is unchanged until one
+# of these is on -- the way the recording pill (bin/screencast-region) works.
+#
+# Why each is read the way it is:
+#
+# The camera is /sys/module/uvcvideo/refcnt. The kernel holds a reference on
+# the driver for every open handle to a video device, so it is 0 with the camera
+# idle and counts up for each program that opens it, which was checked by
+# opening /dev/video0 and /dev/video2 by hand (1, then 2, then 0 again). It
+# needs no permission and no list of programs to look for. What it does not see
+# is a camera that is not a uvcvideo one, of which this machine has none.
+#
+# Caps Lock is the LED the kernel exposes for each keyboard,
+# /sys/class/leds/*::capslock/brightness, which anyone can read and which
+# Hyprland keeps in step with the lock. Any keyboard having it on counts. The
+# alternative, Waybar's own keyboard-state module, reads /dev/input and so
+# needs the user in the input group; and `hyprctl devices` would be a process
+# a second.
+#
+# The microphone is on when it is not muted, rather than when something is
+# recording from it, since there is a key for that (XF86AudioMicMute) and it is
+# the thing that is toggled. A program capturing from it is what Waybar's
+# privacy module already shows. The state is read from PulseAudio's side of
+# PipeWire, `pactl get-source-mute @DEFAULT_SOURCE@`, and re-read only when
+# `pactl subscribe` reports a change to a source or the server (the default
+# source changing, a headset plugged in), so nothing is polled.
+#
+# The two sysfs ones are polled every half second, which costs nothing as long
+# as it forks nothing. Reading a file is `read < file` for that reason and not
+# `$(<file)`, which looks like a builtin and still forks a subshell: counting
+# the pids used showed forty in four seconds for these three. The wait between
+# looks is `read -t` on a FIFO that never gets written to, where `sleep` would
+# be a new process each time. Starting a process is not free here (see the note
+# on shelling out in the hyprland-lua-config skill), and three of these run for
+# the whole session.
+#
+# Every 20 seconds the current line is printed again even if it has not
+# changed. That is what makes these exit when Waybar does: a script that only
+# speaks on a change could sit idle for days after the bar that started it has
+# gone, but one that writes to a closed pipe is killed at once. It also means
+# a line Waybar somehow dropped is back within 20 seconds.
+#
+# INDICATOR_LEDS_DIR, INDICATOR_CAMERA_REFCNT, INDICATOR_TICK,
+# INDICATOR_HEARTBEAT and INDICATOR_RETRY point it at a test's files and shorten
+# its waits.
+set -uo pipefail
+
+what="${1:-}"
+leds_dir="${INDICATOR_LEDS_DIR:-/sys/class/leds}"
+refcnt="${INDICATOR_CAMERA_REFCNT:-/sys/module/uvcvideo/refcnt}"
+tick="${INDICATOR_TICK:-0.5}"
+heartbeat="${INDICATOR_HEARTBEAT:-20}"
+retry="${INDICATOR_RETRY:-5}"
+
+text=""
+last=""
+first=1
+beat=$SECONDS
+sub_pid=""
+nap=""
+
+trap '[ -n "$sub_pid" ] && kill "$sub_pid" 2>/dev/null' EXIT
+
+emit() {
+    if [ "$first" = 1 ] || [ "$1" != "$last" ] || [ $((SECONDS - beat)) -ge "$heartbeat" ]; then
+        printf '%s\n' "$1"
+        last="$1"
+        first=0
+        beat=$SECONDS
+    fi
+}
+
+setup_nap() {
+    local fifo="${XDG_RUNTIME_DIR:-/tmp}/indicator-nap.$$"
+    mkfifo "$fifo" || exit 1
+    exec {nap}<>"$fifo"
+    rm -f "$fifo"
+}
+
+nap_for() { read -r -t "$1" -u "$nap" _; }
+
+read_camera() {
+    text=""
+    local count=0
+    [ -r "$refcnt" ] && read -r count < "$refcnt"
+    [ "${count:-0}" -gt 0 ] 2>/dev/null && text=" CAMERA"
+    return 0
+}
+
+read_caps() {
+    text=""
+    local led level
+    for led in "$leds_dir"/*::capslock/brightness; do
+        [ -r "$led" ] || continue
+        read -r level < "$led"
+        if [ "${level:-0}" != 0 ]; then
+            text="⇪ CAPS"
+            return 0
+        fi
+    done
+}
+
+read_mic() {
+    text=""
+    local out
+    out="$(pactl get-source-mute @DEFAULT_SOURCE@ 2>/dev/null)" || return 0
+    case "$out" in
+        *": no") text=" MIC" ;;
+    esac
+}
+
+poll() {
+    setup_nap
+    while :; do
+        "$1"
+        emit "$text"
+        nap_for "$tick"
+    done
+}
+
+watch_mic() {
+    setup_nap
+    local line rc
+    while :; do
+        read_mic
+        emit "$text"
+        exec {sub}< <(pactl subscribe 2>/dev/null)
+        sub_pid=$!
+        while :; do
+            IFS= read -r -t "$heartbeat" -u "$sub" line
+            rc=$?
+            if [ "$rc" -gt 128 ]; then
+                emit "$text"
+                continue
+            fi
+            [ "$rc" -eq 0 ] || break
+            case "$line" in
+                *" on source #"*|*" on server")
+                    read_mic
+                    emit "$text" ;;
+            esac
+        done
+        exec {sub}<&-
+        kill "$sub_pid" 2>/dev/null
+        sub_pid=""
+        nap_for "$retry"
+    done
+}
+
+case "$what" in
+    camera) poll read_camera ;;
+    caps)   poll read_caps ;;
+    mic)    watch_mic ;;
+    *)
+        echo "usage: indicator camera|mic|caps" >&2
+        exit 2 ;;
+esac

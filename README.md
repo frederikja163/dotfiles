@@ -105,7 +105,8 @@ screen to the focused monitor; `lib/pick-region`, the picker both capture
 scripts start with (drag for an area, click for a window), and `lib/focused-window` and
 `lib/focused-output`, which say what they capture in their `--window` and `--screen` modes; `lib/capture-saved`,
 which they end with: a notice that opens the file in yazi, and the deleting of
-captures over thirty days old; and `lib/lines-changed.csx`, the dotnet-script
+captures over thirty days old; `lib/indicator`, which feeds the bar's camera,
+microphone and Caps Lock pills; and `lib/lines-changed.csx`, the dotnet-script
 that `bin/lines-changed` launches. That pair has nothing of this repo in it and
 is meant to be copied out whole.
 
