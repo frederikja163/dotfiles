@@ -39,6 +39,7 @@ yazi                # file manager: SUPER+E, and what the desktop opens a
 grim                # captures the image in bin/screenshot-region
 slurp               # selects the region in bin/screenshot-region
 wl-clipboard        # wl-copy, the clipboard end of bin/screenshot-region
+wf-recorder         # records the region in bin/screencast-region
 
 # language servers enabled in neovim/lua/ide/lsp.lua
 lua-language-server

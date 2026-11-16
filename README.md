@@ -90,7 +90,8 @@ dotfiles, and is named after whatever it drives instead.
 | `power-menu`             | `SUPER + Escape`: lock, log out, reboot, shut down                  |
 | `lines-changed`          | lines a change adds and removes, by kind; counts uncommitted work too, `--committed` leaves it out, `--require-clean` refuses it; also `git lines-changed`; for PR bodies |
 | `proc-cwd`               | the working directory of each pid given                             |
-| `screenshot-region`      | `Print`: select a region, onto the clipboard                        |
+| `screencast-region`      | `SUPER + Print`: drag an area or click a window and record it to `~/Videos/Screencasts`; `SUPER+SHIFT` the focused window (`--window`), `SUPER+CTRL` the whole screen (`--screen`); again to stop, with a red pill in the bar meanwhile |
+| `screenshot-region`      | `Print`: drag an area or click a window, onto the clipboard and into `~/Pictures/Screenshots`; `SHIFT` the focused window (`--window`), `CTRL` the whole focused monitor (`--screen`); a window is its own surface, with nothing on top of it |
 | `terminal-cwd`           | the working directory of each terminal's shell, given their pids    |
 | `title`                  | `title comms`: name the desktop you are on; no argument clears it   |
 | `unzip-here`             | extract zips into the current directory; what yazi's Enter runs     |
@@ -98,9 +99,13 @@ dotfiles, and is named after whatever it drives instead.
 
 `lib/` is not on `PATH`, and is for what nobody types: shared shell code, and
 helpers that something else starts. See `lib/dotfiles-lib.sh`, sourced by
-`dotfiles-check-updates` and `dotfiles-update`, `lib/dunst-follow`, which
+`dotfiles-check-updates` and `dotfiles-update`; `lib/dunst-follow`, which
 `hypr/autostart.lua` runs on every focus change to carry the notifications on
-screen to the focused monitor, and `lib/lines-changed.csx`, the dotnet-script
+screen to the focused monitor; `lib/pick-region`, the picker both capture
+scripts start with (drag for an area, click for a window), and `lib/focused-window` and
+`lib/focused-output`, which say what they capture in their `--window` and `--screen` modes; `lib/capture-saved`,
+which they end with: a notice that opens the file in yazi, and the deleting of
+captures over thirty days old; and `lib/lines-changed.csx`, the dotnet-script
 that `bin/lines-changed` launches. That pair has nothing of this repo in it and
 is meant to be copied out whole.
 

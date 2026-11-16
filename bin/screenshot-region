@@ -1,18 +1,55 @@
 #!/usr/bin/env bash
-# Select a region with the mouse and put the image on the clipboard. Bound to
-# SUPER+S; see hypr/keybinds.lua.
+# Take a screenshot, save it and put it on the clipboard. Bound to Print; see
+# hypr/keybinds.lua.
 #
-# Clipboard only, deliberately: nothing is written to disk. Almost every
-# screenshot here goes straight into a chat or an issue, and a directory slowly
-# filling with timestamped PNGs nobody ever looks at again is worse than
-# losing the odd one. Pasting it is the whole point, so if it matters, paste it.
+#   screenshot-region            drag an area, or click a window   (Print)
+#   screenshot-region --window   the focused window                (SHIFT+Print)
+#   screenshot-region --screen   the whole of the focused monitor  (CTRL+Print)
+#
+# Both, now. It used to be the clipboard alone, on the grounds that almost every
+# screenshot goes straight into a chat or an issue and a directory slowly filling
+# with timestamped PNGs nobody looks at again is worse than losing the odd one.
+# It was changed on request, so that a shot can be found again after the
+# clipboard has been overwritten: each one is also written to
+# ~/Pictures/Screenshots, and the folder filling up is answered by
+# lib/capture-saved deleting what is over thirty days old rather than by
+# keeping nothing. The clipboard is still the main route.
+#
+# Following the notification opens the file in yazi; see lib/capture-saved.
 #
 # grim + slurp rather than hyprshot, which wraps exactly this pair and adds a
 # save-to-file default we do not want. Nothing has to be granted screencopy
 # permission because ecosystem:enforce_permissions is off (hypr/environment.lua).
+#
+# A window is captured as itself and not as the rectangle it occupies: grim -T
+# is given the window's id and asks the compositor for that window's own
+# surface. So a floating window or a notification on top of it is not in the
+# picture, nor are its border and shadow, and it works for a window that is
+# half covered or on a desktop that is not showing. This holds for --window and
+# also for a window clicked in the picker. An area is a crop of the screen as it
+# looks, which is what one is for.
+#
+# The modes are flags here rather than scripts of their own, so the clipboard
+# and the way failures are reported are written once. The name says "region"
+# only because that is what the script began as.
 set -uo pipefail
 
-for tool in slurp grim wl-copy; do
+lib="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../lib"
+
+mode=region
+case "${1:-}" in
+    "") ;;
+    --screen) mode=screen ;;
+    --window) mode=window ;;
+    *)
+        echo "usage: screenshot-region [--screen | --window]" >&2
+        exit 2 ;;
+esac
+
+tools=(grim wl-copy)
+[ "$mode" = region ] && tools+=(slurp)
+
+for tool in "${tools[@]}"; do
     # Checked up front rather than left to fail. Started from a keybind stderr
     # goes nowhere at all, so a missing package would look like a dead key.
     if ! command -v "$tool" >/dev/null; then
@@ -22,19 +59,62 @@ for tool in slurp grim wl-copy; do
     fi
 done
 
-# Two steps rather than grim -g "$(slurp)", so a cancelled selection can be
-# told apart from a failed capture: slurp prints nothing and exits non-zero on
-# escape or a right-click, and feeding that empty geometry to grim would
-# silently copy the entire output instead.
-region=$(slurp) || exit 0
-[ -n "$region" ] || exit 0
+case "$mode" in
+    screen)
+        output="$("$lib/focused-output")"
+        if [ -z "$output" ]; then
+            echo "screenshot-region: could not tell which monitor is focused" >&2
+            notify-send "Screenshot" "Could not tell which monitor is focused" 2>/dev/null
+            exit 1
+        fi
+        target=(-o "$output")
+        done_message="Screen copied and saved" ;;
+    window)
+        read -r window _ <<< "$("$lib/focused-window")"
+        if [ -z "${window:-}" ]; then
+            echo "screenshot-region: no window is focused" >&2
+            notify-send "Screenshot" "No window is focused" 2>/dev/null
+            exit 1
+        fi
+        target=(-T "$window")
+        done_message="Window copied and saved" ;;
+    region)
+        # Two steps rather than grim -g "$(pick)", so a cancelled selection can
+        # be told apart from a failed capture: the picker prints nothing and
+        # exits non-zero on escape or a right-click, and feeding that empty
+        # geometry to grim would silently copy the entire output instead. What
+        # the picker offers, and why a click can take a window, is in
+        # lib/pick-region; its second line, when there is one, is the window.
+        picked="$("$lib/pick-region")" || exit 0
+        [ -n "$picked" ] || exit 0
+        { read -r region; read -r window; } <<< "$picked"
+        if [ -n "${window:-}" ]; then
+            target=(-T "$window")
+            done_message="Window copied and saved"
+        else
+            target=(-g "$region")
+            done_message="Area copied and saved"
+        fi ;;
+esac
 
-if ! grim -g "$region" - | wl-copy --type image/png; then
+dir="${XDG_PICTURES_DIR:-$HOME/Pictures}/Screenshots"
+mkdir -p "$dir" || exit 1
+file="$dir/screenshot-$(date +%Y-%m-%d_%H-%M-%S).png"
+
+# To the file first and the clipboard from it, rather than tee-ing one capture
+# into both: a failed grim then leaves nothing half-written to copy, and the
+# clipboard is never given a picture that is not the one on disk.
+if ! grim "${target[@]}" "$file"; then
+    rm -f "$file"
     echo "screenshot-region: capture failed" >&2
     notify-send "Screenshot" "Capture failed" 2>/dev/null
     exit 1
 fi
 
-# The only feedback there is, with no file to point at. Low urgency so it
-# expires on its own without covering what was just captured.
-notify-send --urgency=low --expire-time=1500 "Screenshot" "Region copied to clipboard" 2>/dev/null
+if ! wl-copy --type image/png < "$file"; then
+    echo "screenshot-region: could not copy to the clipboard" >&2
+    notify-send "Screenshot" "Saved, but could not copy to the clipboard" 2>/dev/null
+    exit 1
+fi
+
+"$lib/capture-saved" "$done_message" "$file"

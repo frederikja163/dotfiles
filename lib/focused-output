@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Print the name of the monitor that has focus (DP-4, eDP-1, ...), and nothing
+# if there is none.
+#
+# Shared by bin/screenshot-region and bin/screencast-region for their --screen
+# mode, which captures the monitor in use. Called by path, and in lib/ because
+# nobody types it.
+#
+# The one that has focus rather than all of them: grim with no output joins
+# every monitor into one wide picture, and wf-recorder with no output only
+# asks on a second screen. What someone pressing a key wants is what they are
+# looking at, and that is the focused one.
+#
+# hyprctl's plain output rather than -j, because there is no jq here and the
+# line is as easy to read: each monitor is a "Monitor NAME (ID n):" line
+# followed by indented fields, one of which is "focused: yes".
+hyprctl monitors 2>/dev/null | awk '
+    /^Monitor /          { name = $2 }
+    /^[ \t]+focused: yes/ { print name; exit }
+'

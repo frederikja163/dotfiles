@@ -108,6 +108,24 @@ window#waybar {
   font-style: italic;
 }
 
+/* A screencast is running. Red and pulsing on purpose: it is the only sign
+   there is, and a recording left on by mistake should be noticed. Its own
+   keyframes rather than the battery's blink, which ends on red and so would
+   not move a red pill: this one flips to red text on the dark pill instead. */
+@keyframes recording {
+  to { background: @surface0; color: @red; }
+}
+
+#custom-recording {
+  padding: 0 10px;
+  margin: 4px 2px;
+  background: @red;
+  color: @base;
+  border-radius: 8px;
+  font-weight: bold;
+  animation: recording 1.2s ease-in-out infinite alternate;
+}
+
 /* The active keybind mode. Coloured rather than grey like the other modules:
    it appears only while a mode is on, and it is there to be noticed. */
 #submap {

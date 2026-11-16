@@ -52,6 +52,7 @@
     "clock"
   ],
   "modules-right": [
+    "custom/recording",
     "mpris",
     "privacy",
     "idle_inhibitor",
@@ -136,6 +137,24 @@
       "mode": "month",
       "on-scroll": 1
     }
+  },
+  // Says a screencast is being recorded (bin/screencast-region), in place of a
+  // notification, which would sit over the screen that is being filmed. Empty
+  // text hides a module, so the bar is unchanged until one starts. Leftmost of
+  // the right-hand group for the reason given under mpris below: a pill that
+  // comes and goes is absorbed at the group's left edge and moves nothing else.
+  //
+  // "once" because it is not polled at all. The script signals waybar when a
+  // recording starts and ends (SIGRTMIN+8 is the "signal" below, and nothing
+  // else here uses it), and waybar runs "exec" again then. Clicking it stops
+  // the recording, which is what the same key does.
+  "custom/recording": {
+    "exec": "screencast-region --status",
+    "interval": "once",
+    "signal": 8,
+    "format": "{}",
+    "tooltip": false,
+    "on-click": "screencast-region"
   },
   // What is playing, first in the right-hand group so it reads as the leftmost
   // of the status pills. There is no text when nothing is playing and Waybar

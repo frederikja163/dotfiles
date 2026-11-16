@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# What happens once a screenshot or screencast is on disk: say so in a
+# notification that opens the file in yazi, and delete captures that have got
+# old. Usage: capture-saved SUMMARY FILE
+#
+# Run by bin/screenshot-region and bin/screencast-region, which start it
+# detached; it lives in lib/ because nobody types it.
+#
+# The notification is a link, not a dead end. It carries a default action, which
+# is what a click does (mouse_left_click in dunst/dunstrc) and what SUPER+N
+# follows, and that opens kitty with yazi sitting on the file. yazi is given the
+# file itself rather than its directory: given a file it opens the folder with
+# that file under the cursor, which is the whole point of following it. This is
+# the same arrangement as bin/github-notify, and notify-send blocks until the
+# notice is gone when it has an action, which is why the scripts start this in
+# the background instead of waiting for it.
+#
+# Eight seconds, because the notice is what you click and a click needs time to
+# be aimed. The 1.5 seconds the screenshot used to get was right when there was
+# nothing to click, and the recording used to have none at all.
+#
+# A screenshot's own picture is the notification's icon, at dunst's 48px, which
+# is enough to tell the shot just taken from the one before. A video has no
+# picture to show, and dunst's icon lookup finds a generic one by name.
+#
+# Pruning is here because every capture ends here, and a separate timer would
+# be one more thing to install and enable: systemd's user tmpfiles timer, the
+# obvious home for it, is disabled on this machine. The cost is that nothing is
+# pruned while nothing is captured, which does not matter, since only captures
+# fill the folder. Only files with the capture's own prefix are touched
+# (screenshot-*, screencast-*), so something moved into the folder by hand is
+# never deleted. It goes by modification time, not access time, so opening a
+# file does not give it another thirty days, and it counts minutes rather than
+# find's -mtime days, which round and would keep a file for 31.
+#
+# It detaches itself, so a caller just runs it and carries on: setsid -f, with
+# the output discarded and fd 9 closed. Closing 9 matters to screencast-region,
+# whose recording lock is that descriptor; a notice kept open for eight seconds
+# would otherwise keep the lock, and a recording started in that time would be
+# taken for a press that means "stop". DOTFILES_CAPTURE_SYNC=1 stays in the
+# foreground, which is for a test, whose stubs would otherwise be read before
+# they were written.
+#
+# DOTFILES_CAPTURE_KEEP_DAYS changes the thirty.
+set -uo pipefail
+
+summary="${1:-}"
+file="${2:-}"
+
+if [ -z "$summary" ] || [ ! -e "$file" ]; then
+    echo "usage: capture-saved SUMMARY FILE" >&2
+    exit 2
+fi
+
+if [ "${DOTFILES_CAPTURE_SYNC:-0}" != 1 ] && [ -z "${CAPTURE_SAVED_DETACHED:-}" ]; then
+    CAPTURE_SAVED_DETACHED=1 setsid -f "$0" "$@" 9>&- >/dev/null 2>&1
+    exit 0
+fi
+
+dir="$(dirname "$file")"
+name="$(basename "$file")"
+
+keep_days="${DOTFILES_CAPTURE_KEEP_DAYS:-30}"
+find "$dir" -maxdepth 1 -type f -name "${name%%-*}-*" \
+    -mmin "+$((keep_days * 1440))" -delete 2>/dev/null
+
+icon=()
+case "$name" in
+    *.png) icon=(--icon="$file") ;;
+    *)     icon=(--icon=video-x-generic) ;;
+esac
+
+action="$(notify-send --app-name=capture --urgency=low --expire-time=8000 \
+    --action=default=Open "${icon[@]}" "$summary" \
+    "$name"$'\n'"Click to show it in yazi" 2>/dev/null)"
+
+[ "$action" = default ] || exit 0
+
+if ! command -v kitty >/dev/null; then
+    notify-send "Capture" "kitty is not installed, so yazi cannot be opened" 2>/dev/null
+    exit 1
+fi
+setsid kitty --directory "$dir" yazi "$file" >/dev/null 2>&1 &

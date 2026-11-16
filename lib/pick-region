@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# Let the user pick a region of the screen with the mouse, and print it as
+# "x,y WxH" -- the one thing grim -g and wf-recorder -g both take. Exits
+# non-zero, printing nothing, when the pick is cancelled.
+#
+# When the pick was a click on a window, a second line gives that window's id
+# (Hyprland's stableId), which grim -T can capture on its own: just the window,
+# with nothing floating over it. A recording has nothing to do with it and
+# reads the first line only. The id is only given when the result is that
+# window's rectangle to the pixel. slurp hands back the label of whatever
+# rectangle was last under the pointer, so a drag that started over a window
+# can come back carrying that window's label with a different shape, and
+# that has to count as an area.
+#
+# Used by bin/screenshot-region and bin/screencast-region, which is why it is
+# its own file: a screenshot and a recording choose their target the same way,
+# and the way is the interesting part.
+#
+# Drag to take any area, as slurp does by itself. Or click without dragging to
+# take the window under the pointer, or, where there is no window, the whole of
+# that monitor. That is slurp's own feature: it is handed a list of rectangles
+# on stdin, highlights the smallest one under the cursor as it moves, and a
+# click that has not become a drag selects it. So one picker covers an area, a
+# window and a screen, and there is nothing extra to remember on the keys.
+#
+# "Smallest" is also what settles overlaps: a floating window over a tiled one
+# wins where they overlap, a window over the bare desktop beats the monitor,
+# and none of it needs ordering here. What it cannot know is that a window is
+# hidden behind another, so one that is covered by a bigger floating window
+# can still be picked at the point where the pointer is over the cover.
+#
+# The windows come from hyprctl, and which are on screen takes working out.
+# Hyprland's own "visible" flag is true for every mapped window, including the
+# ones on desktops that are not showing, so it is no help. A window counts if
+# its desktop is the one a monitor is showing, or its special workspace is the
+# one open on a monitor, which is how the quake terminals and Teams are
+# held; those carry a name and no id. Positions are in layout coordinates, the
+# same as slurp's and grim's, so a scaled monitor needs no conversion.
+#
+# A click that hits nothing at all -- between two monitors that do not touch --
+# is a 1x1 region, which is a picture of one pixel, or a recording wf-recorder
+# refuses. That is treated as a cancelled pick.
+#
+# If hyprctl is not there or does not answer, slurp is simply given no windows
+# and the monitors alone, which is worse but is not no screenshot.
+set -uo pipefail
+
+if ! command -v slurp >/dev/null; then
+    echo "pick-region: slurp is not on PATH" >&2
+    exit 1
+fi
+
+windows="$(python3 - <<'PY' 2>/dev/null
+import json, subprocess, sys
+
+def hypr(what):
+    out = subprocess.run(["hyprctl", "-j", what], capture_output=True, text=True, check=True)
+    return json.loads(out.stdout)
+
+try:
+    clients, monitors = hypr("clients"), hypr("monitors")
+except Exception:
+    sys.exit(0)
+
+shown_ids, shown_specials = set(), set()
+for m in monitors:
+    shown_ids.add(m.get("activeWorkspace", {}).get("id"))
+    special = m.get("specialWorkspace", {}).get("name")
+    if special:
+        shown_specials.add(special)
+
+for c in clients:
+    if not c.get("mapped") or c.get("hidden"):
+        continue
+    ws = c.get("workspace", {})
+    if ws.get("id") not in shown_ids and ws.get("name") not in shown_specials:
+        continue
+    (x, y), (w, h) = c["at"], c["size"]
+    sid = c.get("stableId")
+    if w > 0 and h > 0 and sid:
+        print(f"{x},{y} {w}x{h} window:{sid}")
+PY
+)"
+
+picked="$(printf '%s\n' "$windows" | sed '/^$/d' | slurp -o -f '%x,%y %wx%h %l')" || exit 1
+
+[ -n "$picked" ] || exit 1
+read -r position size label <<< "$picked"
+region="$position $size"
+case "$region" in
+    *" 1x1") exit 1 ;;
+esac
+
+printf '%s\n' "$region"
+case "$label" in
+    window:*)
+        if printf '%s\n' "$windows" | grep -Fxq -- "$region $label"; then
+            printf '%s\n' "${label#window:}"
+        fi ;;
+esac

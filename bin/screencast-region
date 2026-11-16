@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+# Record a region of the screen, a window, or the whole of it, to a video; run it
+# again to stop. Bound to SUPER+Print, SUPER+SHIFT+Print and SUPER+CTRL+Print,
+# beside screenshot-region on Print, SHIFT+Print and CTRL+Print; see
+# hypr/keybinds.lua.
+#
+#   screencast-region            drag an area, or click a window, and record it
+#   screencast-region --window   record the focused window
+#   screencast-region --screen   record the whole of the focused monitor
+#   screencast-region --status   print the bar's pill text while recording
+#
+# A window is recorded as the rectangle it occupies, which is not what
+# screenshot-region does: a screenshot asks the compositor for the window's own
+# surface, and nothing installed here can record one. wf-recorder 0.6 and
+# wl-screenrec take an output or a region and no more, and the only recorder
+# that takes a window on Wayland goes through the screen-share portal, which
+# stops to ask for the window again in a dialog of its own. So a floating window
+# or a notification over the window is in the video, and the recording stays on
+# that part of the screen if the window is moved or sent to another desktop.
+# Accepted for now. Pausing dunst while recording was proposed and declined,
+# to come later as a proper do-not-disturb mode if it is wanted.
+#
+# Either start form stops a recording that is running, whichever of the two
+# began it: the key is one key, and a press that has to remember which flavour
+# it is stopping is a press that leaves a recording on.
+#
+# A file on disk, unlike screenshot-region, which keeps nothing: a clip cannot
+# be pasted the way a PNG can, and most places that take one want a file to
+# attach. ~/Videos/Screencasts is where they pile up, named by the second.
+# Nothing is recorded with sound; wf-recorder only takes audio when asked
+# (-a), and a bug report clip seldom wants the room it was made in.
+#
+# One key both starts and stops, because a keybind has nowhere to put a second
+# one that is as easy to reach while the thing being recorded has focus. What
+# says which of the two this press is: a lock held for as long as a recording
+# (or its region selection) lasts. flock rather than a pid file alone, because
+# the lock goes away with its holder however that ends, where a pid file left
+# behind by a crash would make the next press try to stop something that is not
+# there. wf-recorder inherits the lock, so if this script is killed the
+# recording still counts as running, which is true.
+#
+# What shows a recording is on is a red pill in the bar (custom/recording in
+# waybar/config.jsonc), not a notification. A notice stays up for as long as it
+# is there to be read, which is the whole recording, and it sits over the
+# corner of the screen that is being filmed. The pill is in a strip that is
+# already there. Waybar only looks again when told to: it is signalled
+# (SIGRTMIN+8, the module's "signal") as the recording starts and as it ends,
+# which costs nothing in between where polling would fork a process a second.
+# That signal is safe to send whether or not the module is loaded, because
+# waybar catches every real-time signal rather than leaving the default, which
+# would kill it.
+#
+# The first run stays alive for the length of the recording and does the
+# announcing when it ends, so a recorder that dies by itself is reported the
+# same way as one that was stopped. The announcing is lib/capture-saved, whose
+# notification opens the file in yazi and which also deletes recordings over
+# thirty days old. The second run only sends the recorder SIGINT, which is how
+# wf-recorder is told to finish the file; killing it any harder leaves an mp4
+# with no index, which does not play.
+#
+# -x yuv420p because without it wf-recorder hands libx264 the screen's own
+# pixel format, which makes a file Firefox, chat apps and most phones refuse.
+# An odd-sized selection needs no care here: a 301x203 region (on a scale-1.5
+# screen) came out as a valid 452x304 file.
+set -uo pipefail
+
+dir="${XDG_VIDEOS_DIR:-$HOME/Videos}/Screencasts"
+runtime="${XDG_RUNTIME_DIR:-/tmp}"
+lock="$runtime/screencast-region.lock"
+pidfile="$runtime/screencast-region.pid"
+
+# -x so only a process called waybar is reached: it matches the name and not
+# the command line, which is what makes a pkill safe to run from here.
+refresh_bar() { pkill -x -RTMIN+8 waybar 2>/dev/null; }
+
+mode=region
+case "${1:-}" in
+    "") ;;
+    --screen) mode=screen ;;
+    --window) mode=window ;;
+    --status)
+        # Liveness, not just the file: a pid file left by a run that was killed
+        # would otherwise leave the pill up for good.
+        pid=""
+        [ -r "$pidfile" ] && pid="$(<"$pidfile")"
+        [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && printf '%s\n' "● REC"
+        exit 0 ;;
+    *)
+        echo "usage: screencast-region [--screen | --window | --status]" >&2
+        exit 2 ;;
+esac
+
+tools=(wf-recorder flock)
+[ "$mode" = region ] && tools+=(slurp)
+
+for tool in "${tools[@]}"; do
+    # Checked up front, as in screenshot-region: stderr from a keybind goes
+    # nowhere, so a missing package would look like a dead key.
+    if ! command -v "$tool" >/dev/null; then
+        echo "screencast-region: $tool is not on PATH" >&2
+        notify-send "Screencast" "$tool is not installed" 2>/dev/null
+        exit 1
+    fi
+done
+
+exec 9>"$lock"
+if ! flock -n 9; then
+    # Somebody holds it. If the recorder's pid is there it is recording and
+    # this press means stop; if not, the other run is still waiting on the
+    # selection, and a second press is better ignored than stacked on top.
+    pid=""
+    [ -r "$pidfile" ] && pid="$(<"$pidfile")"
+    [ -n "$pid" ] && kill -INT "$pid" 2>/dev/null
+    exit 0
+fi
+
+rm -f "$pidfile"
+
+lib="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../lib"
+
+case "$mode" in
+    screen)
+        output="$("$lib/focused-output")"
+        if [ -z "$output" ]; then
+            echo "screencast-region: could not tell which monitor is focused" >&2
+            notify-send "Screencast" "Could not tell which monitor is focused" 2>/dev/null
+            exit 1
+        fi
+        target=(-o "$output") ;;
+    window)
+        read -r _ region <<< "$("$lib/focused-window")"
+        if [ -z "${region:-}" ]; then
+            echo "screencast-region: no window is focused" >&2
+            notify-send "Screencast" "No window is focused" 2>/dev/null
+            exit 1
+        fi
+        target=(-g "$region") ;;
+    region)
+        # Two steps rather than wf-recorder -g "$(pick)", for the reason in
+        # screenshot-region: a cancelled selection prints nothing, and an empty
+        # geometry would record the whole screen instead of nothing. A click on
+        # a window records its rectangle; lib/pick-region says how. Its second
+        # line, the window's id, is for screenshots and is not read here.
+        picked="$("$lib/pick-region")" || exit 0
+        read -r region <<< "$picked"
+        [ -n "$region" ] || exit 0
+        target=(-g "$region") ;;
+esac
+
+mkdir -p "$dir" || exit 1
+file="$dir/screencast-$(date +%Y-%m-%d_%H-%M-%S).mp4"
+
+wf-recorder "${target[@]}" -x yuv420p -f "$file" >/dev/null 2>&1 &
+recorder=$!
+printf '%s\n' "$recorder" > "$pidfile"
+refresh_bar
+
+wait "$recorder"
+rm -f "$pidfile"
+refresh_bar
+
+if [ -s "$file" ]; then
+    "$lib/capture-saved" "Screencast saved" "$file"
+else
+    rm -f "$file"
+    echo "screencast-region: recording failed" >&2
+    notify-send "Screencast" "Recording failed" 2>/dev/null
+    exit 1
+fi

@@ -146,13 +146,49 @@ hl.bind(mainMod .. " + CTRL + F", hl.dsp.window.float({ action = "toggle" }),
         { description = "Window: toggle floating" })
 hl.bind(mainMod .. " + R", hl.dsp.exec_cmd(menu), { description = "App: launcher" })
 
--- Screenshot of a mouse-selected region, onto the clipboard. In bin/ rather
--- than inline because it is a pipeline: hl.exec_cmd does not run a shell, so
--- the "|" into wl-copy would be passed to grim as an argument.
--- On Print rather than SUPER+S, which is the size mode now. Print is where
--- this belongs anyway, and it needs no modifier at all.
+-- Screenshots and screen recordings, all on Print. The modifier says what is
+-- captured and the key says how, and the two never mix:
+--
+--                  screenshot       recording
+--   (nothing)      Print            SUPER+Print          drag an area, or click a window
+--   SHIFT          SHIFT+Print      SUPER+SHIFT+Print    the focused window
+--   CTRL           CTRL+Print       SUPER+CTRL+Print     the whole focused monitor
+--
+-- SUPER is "record instead", and SHIFT and CTRL are alternatives for what to
+-- take, never held together. A recording is stopped by pressing any of the
+-- three again, whichever started it. A screenshot is saved and on the
+-- clipboard, a recording goes to ~/Videos/Screencasts, everything is kept for
+-- thirty days, and its notification opens it in yazi; lib/capture-saved does
+-- all of that.
+--
+-- SUPER rather than ALT for the recording, which was the first choice. Print
+-- is the SysRq key, and the kernel holds back Alt+SysRq: it replays the
+-- keystroke only when Alt is let go, as Alt alone, so the bind would fire on
+-- the release, and with SHIFT or CTRL it would only fire if they were still
+-- down by then. Reading that in drivers/tty/sysrq.c was enough; it was not
+-- tried on the keyboard, since SUPER has no such trouble.
+--
+-- A screenshot of a window is the window's own surface, so nothing on top of
+-- it is in the picture; a recording of one is the rectangle it fills, and
+-- anything on top of that is in the video. See bin/screenshot-region and
+-- bin/screencast-region for why they differ.
+--
+-- In bin/ rather than inline because each is several steps: hl.exec_cmd does
+-- not run a shell, so a "|" or a "<" would be passed to the program as an
+-- argument. On Print rather than SUPER+S, which is the size mode now. Print is
+-- where this belongs anyway, and it needs no modifier at all.
 hl.bind("Print", hl.dsp.exec_cmd("screenshot-region"),
-        { description = "Screenshot: region to clipboard" })
+        { description = "Screenshot: drag an area or click a window" })
+hl.bind("SHIFT + Print", hl.dsp.exec_cmd("screenshot-region --window"),
+        { description = "Screenshot: the focused window" })
+hl.bind("CTRL + Print", hl.dsp.exec_cmd("screenshot-region --screen"),
+        { description = "Screenshot: the whole screen" })
+hl.bind(mainMod .. " + Print", hl.dsp.exec_cmd("screencast-region"),
+        { description = "Screencast: drag an area or click a window / stop" })
+hl.bind(mainMod .. " + SHIFT + Print", hl.dsp.exec_cmd("screencast-region --window"),
+        { description = "Screencast: the focused window / stop" })
+hl.bind(mainMod .. " + CTRL + Print", hl.dsp.exec_cmd("screencast-region --screen"),
+        { description = "Screencast: the whole screen / stop" })
 
 -- Notifications, all on N. dunst 1.13 has no keyboard shortcut options of its
 -- own (dunst(5) lists none), so these are dunstctl calls.

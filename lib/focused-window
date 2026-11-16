@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Print the focused window as "ID x,y WxH", and nothing if there is none.
+#
+# Shared by bin/screenshot-region and bin/screencast-region for their --window
+# mode. Called by path, and in lib/ because nobody types it.
+#
+# ID is Hyprland's stableId, which is also the identifier grim's -T takes for a
+# window: that was tried with the focused window and with one on a workspace
+# that was not showing, and both came back as the window's own surface. The
+# rectangle is what a recording has to use instead, since no recorder here can
+# be handed a window.
+#
+# hyprctl's JSON, read with python3, rather than the plain `hyprctl
+# activewindow`: the plain form has the position and size but no stableId.
+# With nothing focused hyprctl prints an empty object, which gives no output
+# here, so a caller can tell "no window" from a failure by the empty answer.
+hyprctl -j activewindow 2>/dev/null | python3 -c '
+import json, sys
+try:
+    w = json.load(sys.stdin)
+    stable = w["stableId"]
+    x, y = w["at"]
+    width, height = w["size"]
+    print(stable, "%d,%d %dx%d" % (x, y, width, height))
+except Exception:
+    pass
+' 2>/dev/null
