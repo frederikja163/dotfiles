@@ -58,3 +58,15 @@
 	# diff-* names for plumbing (diff-tree, diff-index, diff-pairs) and could
 	# take either one over later without a word.
 	lines-changed = !lines-changed
+
+	# `git wt` and `git br` for worktree and branch. Plain aliases rather than
+	# scripts, since all they do is shorten a name, and git only ignores an alias
+	# that shadows one of its own commands: neither does. The same abbreviations
+	# are accepted by `git cleanup` (`git cleanup wt`, `git cleanup br`), so one
+	# spelling does for both.
+	#
+	# There is no `git wt clean` to go with them: `worktree` is a built-in, and
+	# git does not look for an external command beneath one, alias or not. That
+	# is why the cleanup lives under `git cleanup` (bin/git-cleanup).
+	wt = worktree
+	br = branch
