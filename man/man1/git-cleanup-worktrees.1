@@ -1,0 +1,191 @@
+.\" The manual for lib/cleanup-worktrees, which is what `git cleanup worktrees
+.\" --help` opens: the script hands --help to man, since git passes arguments
+.\" after a subcommand through untouched. Only `git cleanup --help` is git's,
+.\" and is git-cleanup.1. -h prints the short form.
+.\"
+.\" It is found with no setup: man puts a `man` directory beside any bin on
+.\" PATH into its search path, and ~/dotfiles/bin is on PATH. Installing it
+.\" under ~/.local/share/man was passed over for needing an install.sh line
+.\" and a MANPATH nothing else here wants.
+.\"
+.\" What is common to every `git cleanup` subcommand (the flags, the file the
+.\" editor opens, the exit status) is in git-cleanup.1, not repeated here.
+.\"
+.\" The list of words is written out three times: here, in the script's
+.\" words(), which is also the header of the file the editor opens and what -h
+.\" prints, and nowhere else. tests/test_cleanup_worktrees.sh fails when this
+.\" page lacks one the script reads, so they cannot drift apart unnoticed.
+.TH GIT\-CLEANUP\-WORKTREES 1 "" "dotfiles" "dotfiles"
+.SH NAME
+git\-cleanup\-worktrees \- remove git worktrees that have had no activity for 14 days
+.SH SYNOPSIS
+.B git cleanup worktrees
+[\fB\-n\fR | \fB\-y\fR] [\fB\-\-days\fR \fIN\fR]
+.br
+.B git cleanup worktrees
+\fB\-h\fR
+.SH DESCRIPTION
+Sorts every worktree of the repository into a group, opens the list in your git
+editor, and does what the saved list says. Only worktrees that have been idle
+for
+.B \-\-days
+days (14 unless told otherwise) start out turned on.
+.PP
+\fBworktree\fR and \fBwt\fR do for \fBworktrees\fR. The options, the file the
+editor opens and the exit status are the same for every subcommand and are in
+.BR git\-cleanup (1).
+.PP
+It is
+.B git cleanup worktrees
+and not
+.BR "git worktree clean" :
+.B worktree
+is a built\-in command with a fixed list of subcommands, and git does not look
+for an external one beneath it.
+.SH THE LIST
+A worktree is put in the first of these that fits it, and they are listed in
+this order.
+.TP
+.B 1 protected
+The main worktree (the first one \fBgit worktree list\fR names, including a bare
+repository) and the one you are running the command from. Never cleaned.
+Written as a comment with no word, so it cannot be turned on.
+.TP
+.B 2 locked
+Locked with \fBgit worktree lock\fR, whatever else is true of it. Shown with the
+reason for the lock. Written as \fB# unlock\fR.
+.TP
+.B 3 has work
+Uncommitted changes (untracked files count), or a detached HEAD whose commits no
+branch, remote or tag holds. Written as \fB# clean\fR.
+.TP
+.B 4 recent
+Clean, but active within the last \fB\-\-days\fR days. Written as \fB# clean\fR.
+.TP
+.B 5 idle
+Clean and quiet for \fB\-\-days\fR days. A worktree whose directory has gone is
+idle too. Written as \fBclean\fR, so it is on.
+.PP
+Idle ones are listed oldest first, recent and has\-work ones newest first.
+.SH THE WORDS
+The first word of a line says what happens to the worktree it names. A line
+starting with
+.B #
+and a space is off: take the
+.B #
+and the space off to turn it on, put them back or delete the line to skip it.
+A line starting with
+.B ##
+is a note and is never read, which is why uncommenting the whole file
+(\fB:%s/^# //\fR) turns every worktree on and leaves the notes and the
+protected worktrees alone.
+.TP
+.B clean
+Remove the worktree. Refused if it has uncommitted changes, or is on a detached
+HEAD whose commits no branch holds.
+.TP
+.B force
+Remove it even then, discarding those changes.
+.TP
+.B discard
+Throw away its uncommitted changes and untracked files, then clean it. Tracked
+files go back to HEAD, staged additions are dropped, untracked files and
+directories are deleted, and the worktree is removed as \fBclean\fR would. It
+reads like \fBunlock\fR does. Refused, with nothing discarded, if the worktree
+is locked (use \fBunlock\-force\fR) or is on a detached HEAD whose commits no
+branch holds (use \fBforce\fR), so a refused line loses nothing. There is no
+\fBdiscard\-force\fR: it would be the same as \fBforce\fR.
+.TP
+.B unlock
+Unlock it, then clean.
+.TP
+.B unlock\-force
+Unlock it, then force.
+.TP
+.B lock
+Lock it instead, so it is kept: it is listed as locked from then on, and a
+locked worktree is never cleaned until unlocked. Say why in double quotes
+between the word and the path:
+.RS
+.PP
+.nf
+lock "waiting on QA"  ~/ws/release  release/1.4
+.fi
+.PP
+The reason cannot contain a double quote. Without one the lock says it was made
+by this command. A different reason for a worktree that is already locked
+replaces the old one.
+.RE
+.PP
+Any other word, an unterminated reason, a reason on anything but
+.BR lock ,
+a worktree that is not listed, one that is protected, or the same worktree
+twice is an error: the editor opens again with the faults at the top of the
+file, as \fBgit rebase \-i\fR does. Quit it with an error (\fB:cq\fR) to cancel.
+.SH SAFETY
+.IP \(bu 2
+.B clean
+never throws work away. Turning on a whole group is safe, because git refuses to
+remove a worktree with changes and so does this. Only
+.B force
+and
+.B discard
+written on the line do.
+.IP \(bu 2
+Each line is looked at again just before it is acted on. A worktree that has
+moved to a riskier group while the editor was open (idle to recent, anything to
+has work) is refused rather than changed on out\-of\-date information.
+.IP \(bu 2
+A failure or a refusal is reported and the rest carry on, with a non\-zero exit
+at the end. A worktree that was unlocked to be removed and then could not be is
+locked again, with its old reason.
+.IP \(bu 2
+After the editor closes the plan is summarised and confirmed once more.
+Removal cannot be undone the way a rebase can, and saving an unedited list
+applies its defaults.
+.IP \(bu 2
+Ignored files are not work. They are not counted, and
+.B git worktree remove
+deletes them without a word, so a \fB.env\fR goes with its worktree.
+.IP \(bu 2
+Branches are left alone. A removed worktree's work is still on its branch.
+.PP
+When the last worktree in a folder is removed, the folder is removed with it: an
+\fBrmdir\fR on the parent straight afterwards, which refuses anything that still
+holds a file. It goes one level up and no further, and is skipped when the
+folder is or holds the directory you ran the command from.
+.SH ACTIVITY
+The newer of the HEAD commit's date and the newest entry in the worktree's own
+HEAD reflog. Not the commit date alone: a worktree's HEAD starts as whatever it
+was branched from, so one made today from a year\-old commit would read as a
+year idle and be cleaned out from under you. The reflog is stamped when the
+worktree is made and on every commit, checkout, pull and reset. Where it is gone
+the modification time of the worktree's HEAD file is used.
+.SH EXAMPLES
+See what would happen, and change nothing:
+.PP
+.nf
+git cleanup worktrees \-n
+.fi
+.PP
+Clean what is idle without looking at it:
+.PP
+.nf
+git cleanup worktrees \-y
+.fi
+.PP
+Treat a week as idle, and review the list:
+.PP
+.nf
+git cleanup worktrees \-\-days 7
+.fi
+.PP
+In the editor, throw away the changes in one worktree and remove it, and keep another for good:
+.PP
+.nf
+discard  ~/ws/parser      parser      40d  3 modified, 1 untracked
+lock "release hotfix"  ~/ws/hotfix  hotfix/1.4  12d
+.fi
+.SH SEE ALSO
+.BR git\-worktree (1),
+.BR git\-cleanup (1)

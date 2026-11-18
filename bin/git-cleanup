@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# git cleanup <thing>: clear out what has gone stale in a repository. Today the
+# thing is worktrees (`git cleanup worktrees`), and branches are meant to sit
+# beside it; see lib/cleanup-lib.sh for what they would share.
+#
+# Only this launcher is on PATH. Git runs any git-* it finds there, so no alias
+# or setup is needed, and the work is in lib/cleanup-<thing>, called by its path
+# the way hypr/autostart.lua calls lib/dunst-follow: nobody types those, which
+# is what keeps them out of bin/. The name is `cleanup` rather than `clean`,
+# which is a git built-in (`git clean` deletes untracked files, and does
+# nothing without -f), and rather than a subcommand of `worktree`, which git
+# does not let an external command extend; lib/cleanup-worktrees says why.
+#
+# The thing may be spelled out or shortened to match the aliases in
+# git/config (`git wt`, `git br`): worktrees, worktree, wt. Everything after it
+# is passed on untouched, --help included, which is why a --help after the
+# subcommand reaches that script's own manual while `git cleanup --help` is
+# git's, and looks for man/man1/git-cleanup.1.
+set -uo pipefail
+
+here="$(dirname "$(readlink -f -- "${BASH_SOURCE[0]}")")"
+
+usage() {
+    cat <<'USAGE'
+usage: git cleanup <thing> [options]
+
+  worktrees  (worktree, wt)   remove worktrees with no activity for 14 days
+
+`git cleanup <thing> -h` says how each works; man git-cleanup has the rest.
+USAGE
+}
+
+if [ $# -eq 0 ]; then
+    usage >&2
+    exit 2
+fi
+
+thing="$1"
+shift
+
+case "$thing" in
+    -h) usage; exit 0 ;;
+    worktrees|worktree|wt) target="$here/../lib/cleanup-worktrees" ;;
+    *)
+        usage >&2
+        echo "git-cleanup: unknown thing to clean: $thing" >&2
+        exit 2
+        ;;
+esac
+
+if [ ! -x "$target" ]; then
+    echo "git-cleanup: $target is missing or not executable" >&2
+    exit 1
+fi
+
+exec "$target" "$@"

@@ -1,0 +1,399 @@
+#!/usr/bin/env bash
+# git cleanup worktrees: remove the worktrees nobody has touched in 14 days.
+#
+# Started by bin/git-cleanup, which is the command typed (`git cleanup
+# worktrees`, or `wt`); this is not on PATH. The editor, the parser, the
+# confirmation and the apply loop are lib/cleanup-lib.sh's, which says how the
+# list works and why. What is here is what is particular to worktrees: how they
+# are listed and judged, and what each word does to one.
+#
+# It cannot be `git worktree clean`, which was the name first wanted:
+# `worktree` is a built-in with its own list of subcommands and git does not
+# look for an external one beneath it (`git worktree clean` answers "unknown
+# subcommand"), and an alias only ever names a top-level command, so it cannot
+# reach below `worktree` either. `git worktree-clean` worked, and was dropped
+# for `git cleanup worktrees` so that `git cleanup branches` can sit beside it.
+#
+# Every worktree is on its own line, in the first of these that fits it:
+#
+#   1 protected  the main worktree, or the one you are standing in
+#   2 locked     `git worktree lock`ed, whatever else is true of it
+#   3 has work   uncommitted changes (untracked files count), or a detached
+#                HEAD whose commits no branch, remote or tag holds
+#   4 recent     clean, but active in the last 14 days
+#   5 idle       clean, and quiet for 14 days; a missing directory is idle too
+#
+# Only idle ones start turned on. The first word of a line says what happens to
+# it: clean, force, discard, unlock, unlock-force, lock. The words are
+# documented at the top of the file the editor opens, from `words` below, which
+# is also what -h prints, so there is one list to keep true;
+# man/man1/git-cleanup-worktrees.1 is the third copy, and
+# tests/test_cleanup_worktrees.sh fails when it lacks a word. Protected
+# worktrees get no word at all and are written as comments, so they cannot be
+# turned on by uncommenting.
+#
+# The default for every line is `clean`, which git itself refuses on a worktree
+# with uncommitted changes, so turning on a whole section can never throw work
+# away; discarding it takes a `force` typed on that line. Git alone does not
+# catch a detached HEAD whose commits are held by nothing else, so `clean`
+# refuses those as well.
+#
+# discard is clean with the changes thrown away first: it reverts tracked files
+# to HEAD, drops staged additions and deletes untracked files, then removes the
+# worktree as `clean` would. It reads like unlock does (unlock, then clean).
+# Keeping the worktree afterwards was the first design, and was dropped on
+# being asked for: the word is for worktrees that are being cleaned out. Both
+# steps are `git restore` and `git clean` rather than `git reset --hard`, which
+# would write a HEAD reflog entry, though nothing is left to read it once the
+# worktree is gone. Ignored files are left alone, as everywhere here.
+#
+# What it refuses, it refuses before discarding anything, so a refused line
+# loses nothing: a locked worktree (unlock-force is the word for that), and a
+# detached HEAD whose commits nothing else holds, which only `force` removes.
+# That is the whole difference between discard and force, which makes them near
+# twins. A separate discard-force was asked about and not added, as it would be
+# the same as force.
+#
+# lock takes a reason in double quotes between the word and the path, which
+# is the shape of `git worktree lock --reason <string> <path>`, and which
+# cannot be mistaken for anything else on a line. At the end of the line, where
+# a note is easier to type, it would have to be told apart from the commit
+# subject printed there, and a subject can hold any text at all. The reason
+# cannot itself hold a double quote. Without one the lock says it was made by
+# this command. Giving a different reason to a worktree that is already locked
+# replaces the old one.
+#
+# Activity is the newer of the HEAD commit's date and the newest entry in the
+# worktree's own HEAD reflog, not the commit date alone. (There is no format
+# placeholder for a reflog entry's time, so it is read out of the selector,
+# `HEAD@{<unix time>}`, which `--date=unix` makes of it.) A worktree's HEAD
+# starts as whatever it was branched from: made today from a year-old commit,
+# it would read as a year idle and be cleaned out from under its owner. The
+# reflog is stamped when the worktree is created and on every commit, checkout,
+# pull and reset, so it counts all of those. Where the reflog is gone (expired,
+# or never kept) the modification time of the worktree's HEAD file is the
+# floor.
+#
+# Ignored files are not work. `git worktree remove` deletes them without a
+# word and `git status` does not mention them; counting them would put every
+# dotnet worktree in "has work" for its bin/ and obj/, and a .env that is not
+# needed once its worktree is gone is not worth stopping for.
+#
+# A worktree that was unlocked to be removed and then could not be is locked
+# again, with its old reason.
+#
+# After a worktree is removed its parent directory gets an rmdir, there and
+# then: a folder of worktrees (~/Projects/app/workspaces) goes with the last
+# one, and rmdir refuses anything that still holds a file, so nothing else is
+# ever deleted by it. It goes one level up and no further, and is skipped when
+# the directory is, or holds, the one the command was run from. Branches are
+# left alone; a removed worktree's work is still on its branch.
+set -uo pipefail
+
+here="$(dirname "$(readlink -f -- "${BASH_SOURCE[0]}")")"
+. "$here/cleanup-lib.sh"
+
+CLEANUP_CMD="git cleanup worktrees"
+CLEANUP_MAN="git-cleanup-worktrees"
+ITEM="worktree"
+ITEMS="worktrees"
+VALID_WORDS=(clean force discard unlock unlock-force lock)
+REASON_WORD="lock"
+RECHECK_EXEMPT=(lock)
+HEADER_NOTE="A removed worktree's branch is kept."
+
+words() {
+    cat <<'EOF'
+clean         remove the worktree. Refused if it has uncommitted changes, or
+              is on a detached HEAD whose commits no branch holds
+force         remove it even then, discarding those changes
+discard       throw away its uncommitted changes and untracked files, then
+              clean. Refused, with nothing discarded, if it is locked or is on
+              a detached HEAD whose commits no branch holds
+unlock        unlock it, then clean
+unlock-force  unlock it, then force
+lock          lock it instead, so it is kept: it is listed as locked from
+              then on, and a locked worktree is never cleaned until unlocked.
+              Say why in quotes after the word: lock "waiting on QA" ~/ws/x
+EOF
+}
+
+setup() {
+    CUR=""
+    local top
+    if top="$(git rev-parse --show-toplevel 2>/dev/null)" && [ -n "$top" ]; then
+        CUR="$(readlink -f -- "$top")"
+    fi
+
+    STATE_NAME=([3]="has work" [4]="recent" [5]="idle")
+    TITLE=(
+        [1]="1 protected: never cleaned"
+        [2]="2 locked: needs unlock or unlock-force first"
+        [3]="3 has work: uncommitted changes, or a detached HEAD whose commits no branch holds"
+        [4]="4 recent: clean, but active in the last $DAYS days"
+        [5]="5 idle: clean, and no activity for $DAYS days"
+    )
+    VERB=([1]="##" [2]="# unlock" [3]="# clean" [4]="# clean" [5]="clean")
+}
+
+header_title() {
+    echo "$CLEANUP_CMD for $(basename -- "${W_path[0]}"): idle means no activity for $DAYS days."
+}
+
+# `worktree list -z` ends each field with a NUL and each worktree with an empty
+# one, which is the only form that is safe for a path with a newline in it.
+# The first worktree listed is the main one, which is git's own answer to
+# "which is the main worktree" and needs no guessing at a directory or branch
+# called main.
+load_items() {
+    W_path=(); W_branch=(); W_detached=(); W_bare=(); W_locked=(); W_reason=(); W_prunable=()
+    local field i=-1
+    while IFS= read -r -d '' field; do
+        case $field in
+            worktree\ *)
+                i=$((i + 1))
+                W_path[i]="${field#worktree }"
+                I_key[i]="${W_path[i]}"
+                W_branch[i]=""; W_detached[i]=0; W_bare[i]=0
+                W_locked[i]=0; W_reason[i]=""; W_prunable[i]=0
+                ;;
+            branch\ *) W_branch[i]="${field#branch refs/heads/}" ;;
+            detached) W_detached[i]=1; W_branch[i]="(detached)" ;;
+            bare) W_bare[i]=1; W_branch[i]="(bare)" ;;
+            locked*)
+                W_locked[i]=1
+                W_reason[i]="${field#locked}"
+                W_reason[i]="${W_reason[i]# }"
+                ;;
+            prunable*) W_prunable[i]=1 ;;
+        esac
+    done < <(git worktree list --porcelain -z)
+    N=$((i + 1))
+}
+
+# Everything the list and the checks before removal need to know about worktree
+# $1, left in the I_* arrays at the same index.
+#
+# A check that cannot be answered counts against the worktree, not for it: a
+# `git status` that fails is "has work", never "clean", since clean and quiet
+# is what gets removed without being asked about.
+inspect() {
+    local i=$1 p="${W_path[$1]}" prot="" out line x
+    local commit=0 reflog="" act=0 subject="" mod=0 unt=0 unique=0 broken=0 miss=0
+    local state tier work="" badge="" parts=()
+
+    if [ "$i" -eq 0 ]; then
+        if [ "${W_bare[0]}" -eq 1 ]; then prot="bare repository"; else prot="main worktree"; fi
+    elif [ -n "$CUR" ] && [ "$(readlink -f -- "$p")" = "$CUR" ]; then
+        prot="current"
+    fi
+
+    if [ "${W_bare[i]}" -eq 1 ]; then
+        :
+    elif [ "${W_prunable[i]}" -eq 1 ] || [ ! -d "$p" ]; then
+        miss=1
+    else
+        IFS=$'\t' read -r commit subject < <(git -C "$p" log -1 --format='%ct%x09%s' HEAD 2>/dev/null)
+        commit="${commit:-0}"
+
+        reflog="$(git -C "$p" log -g -1 --date=unix --format=%gd HEAD 2>/dev/null)"
+        reflog="${reflog#*@\{}"
+        reflog="${reflog%\}}"
+        [[ $reflog =~ ^[0-9]+$ ]] || reflog=""
+        if [ -z "$reflog" ]; then
+            reflog="$(stat -c %Y -- "$(git -C "$p" rev-parse --absolute-git-dir 2>/dev/null)/HEAD" 2>/dev/null)"
+        fi
+        reflog="${reflog:-0}"
+        act=$((commit > reflog ? commit : reflog))
+
+        if out="$(git --no-optional-locks -C "$p" status --porcelain 2>/dev/null)"; then
+            while IFS= read -r line; do
+                case $line in
+                    '') ;;
+                    '??'*) unt=$((unt + 1)) ;;
+                    *) mod=$((mod + 1)) ;;
+                esac
+            done <<< "$out"
+        else
+            broken=1
+        fi
+
+        if [ "${W_detached[i]}" -eq 1 ]; then
+            if out="$(git -C "$p" rev-list -1 HEAD --not --branches --remotes --tags 2>/dev/null)"; then
+                [ -n "$out" ] && unique=1
+            else
+                unique=1
+            fi
+        fi
+    fi
+
+    (( mod )) && parts+=("$mod modified")
+    (( unt )) && parts+=("$unt untracked")
+    (( unique )) && parts+=("detached, commits on no branch")
+    (( broken )) && parts+=("git status failed")
+    for x in "${parts[@]}"; do work+="${work:+, }$x"; done
+
+    if (( miss )); then
+        state=5
+    elif (( mod + unt > 0 || unique || broken )); then
+        state=3
+    elif (( NOW - act < DAYS_S )); then
+        state=4
+    else
+        state=5
+    fi
+
+    if [ -n "$prot" ]; then
+        tier=1
+    elif [ "${W_locked[i]}" -eq 1 ]; then
+        tier=2
+    else
+        tier=$state
+    fi
+
+    if [ -n "$prot" ]; then
+        badge="($prot)"
+    else
+        parts=()
+        if [ "${W_locked[i]}" -eq 1 ]; then
+            if [ -n "${W_reason[i]}" ]; then parts+=("locked: ${W_reason[i]}"); else parts+=("locked"); fi
+        fi
+        [ -n "$work" ] && parts+=("$work")
+        (( miss )) && parts+=("directory missing")
+        for x in "${parts[@]}"; do badge+="${badge:+, }$x"; done
+    fi
+
+    case $p in
+        "$HOME"/*) I_disp[i]="~${p#"$HOME"}" ;;
+        *) I_disp[i]="$p" ;;
+    esac
+    I_key[i]="$p"; I_col2[i]="${W_branch[i]}"
+    I_prot[i]="$prot"; I_tier[i]=$tier; I_state[i]=$state; I_act[i]=$act
+    I_miss[i]=$miss; I_unique[i]=$unique; I_work[i]="$work"; I_badge[i]="$badge"; I_subject[i]="$subject"
+}
+
+drop_parent() {
+    local parent
+    parent="$(dirname -- "$1")"
+    case "$(pwd -P)/" in
+        "$parent"/*) return ;;
+    esac
+    rmdir -- "$parent" 2>/dev/null
+}
+
+restore_lock() {
+    if [ -n "$2" ]; then
+        git worktree lock --reason "$2" "$1" >/dev/null 2>&1
+    else
+        git worktree lock "$1" >/dev/null 2>&1
+    fi
+}
+
+REMOVED=0
+LOCKED=0
+
+# What the word on one line does to worktree I, which the library has already
+# looked at again: it is not protected, and has not moved to a riskier tier
+# unless the word is a lock.
+act_on() {
+    local i=$1 k=$2 verb path d now err reason text note relock flags
+    verb="${A_verb[k]}"; path="${A_key[k]}"
+    d="${I_disp[i]}"; now="${I_state[i]}"
+
+    if [ "$verb" = lock ]; then
+        text="${A_reason[k]:-kept by git cleanup worktrees}"
+        if [ "${W_locked[i]}" -eq 1 ]; then
+            if [ -z "${A_reason[k]}" ] || [ "${A_reason[k]}" = "${W_reason[i]}" ]; then
+                echo "locked    $d (already)"
+                return
+            fi
+            if ! err="$(git worktree unlock "$path" 2>&1)"; then failed "$d" "$err"; return; fi
+        fi
+        if err="$(git worktree lock --reason "$text" "$path" 2>&1)"; then
+            echo "locked    $d: $text"; LOCKED=$((LOCKED + 1))
+        else
+            [ "${W_locked[i]}" -eq 1 ] && restore_lock "$path" "${W_reason[i]}"
+            failed "$d" "$err"
+        fi
+        return
+    fi
+
+    reason=""
+    [ -n "${W_reason[i]}" ] && reason=" (${W_reason[i]})"
+
+    case $verb in
+        clean|force|discard)
+            if [ "${W_locked[i]}" -eq 1 ]; then
+                refuse "$d" "locked$reason; use unlock or unlock-force"
+                return
+            fi
+            ;;
+    esac
+    case $verb in
+        clean|unlock)
+            if [ "$now" -eq 3 ]; then
+                refuse "$d" "has work (${I_work[i]}); use $( [ "$verb" = clean ] && echo force || echo unlock-force ) to discard it"
+                return
+            fi
+            ;;
+    esac
+
+    if [ "$verb" = discard ] && [ "${I_unique[i]}" -eq 1 ]; then
+        refuse "$d" "has commits on no branch; use force to remove it anyway"
+        return
+    fi
+
+    flags=()
+    case $verb in force|unlock-force) flags=(--force) ;; esac
+
+    note=""
+    if [ "$verb" = discard ] && [ -n "${I_work[i]}" ]; then
+        if ! err="$(git -C "$path" restore --source=HEAD --staged --worktree -- :/ 2>&1 &&
+                    git -C "$path" clean -fdq 2>&1)"; then
+            failed "$d" "$err"
+            return
+        fi
+        note=" (changes discarded)"
+    fi
+
+    relock=0
+    if [ "${W_locked[i]}" -eq 1 ]; then
+        if ! err="$(git worktree unlock "$path" 2>&1)"; then failed "$d" "$err"; return; fi
+        relock=1
+    fi
+
+    if err="$(git worktree remove "${flags[@]}" "$path" 2>&1)"; then
+        echo "removed   $d$note"
+        REMOVED=$((REMOVED + 1))
+        drop_parent "$path"
+    else
+        (( relock )) && restore_lock "$path" "${W_reason[i]}"
+        failed "$d" "$err"
+    fi
+}
+
+confirm_text() {
+    local verb removing=0 forcing=0 unlocking=0 locking=0 text
+    for verb in "${A_verb[@]}"; do
+        case $verb in
+            lock) locking=$((locking + 1)) ;;
+            *) removing=$((removing + 1)) ;;
+        esac
+        case $verb in force|unlock-force|discard) forcing=$((forcing + 1)) ;; esac
+        case $verb in unlock|unlock-force) unlocking=$((unlocking + 1)) ;; esac
+    done
+    text=""
+    if (( removing )); then
+        text="remove $removing"
+        (( forcing )) && text+=", $forcing of them discarding changes"
+        (( unlocking )) && text+=", $unlocking unlocked first"
+    fi
+    if (( locking )); then text+="${text:+; }lock $locking"; fi
+    echo "$text"
+}
+
+summary() {
+    printf '%d removed, %d locked, %d not done\n' "$REMOVED" "$LOCKED" "$BAD"
+}
+
+cleanup_main "$@"

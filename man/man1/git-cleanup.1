@@ -1,0 +1,115 @@
+.\" The manual for bin/git-cleanup, which is what `git cleanup --help` opens.
+.\" Git turns --help on any `git <command>` into `man git-<command>` before
+.\" the command runs, an external one included, so without this page the
+.\" answer is "No manual entry for git-cleanup". Arguments after a subcommand
+.\" are not touched by git, so `git cleanup worktrees --help` is the
+.\" subcommand's own page, git-cleanup-worktrees.1.
+.\"
+.\" This page holds what every subcommand shares, so that the next one does
+.\" not copy it: the flags, the file the editor opens, the environment and the
+.\" exit status. The code behind it is lib/cleanup-lib.sh.
+.TH GIT\-CLEANUP 1 "" "dotfiles" "dotfiles"
+.SH NAME
+git\-cleanup \- clear out what has gone stale in a git repository
+.SH SYNOPSIS
+.B git cleanup
+.I thing
+[\fB\-n\fR | \fB\-y\fR] [\fB\-\-days\fR \fIN\fR]
+.SH DESCRIPTION
+Lists what a repository has collected, sorted by how safe each is to remove,
+opens the list in your git editor, and does what the saved list says. Nothing is
+removed that has work in it unless the line says so in as many words.
+.PP
+It is
+.B git cleanup
+rather than
+.B git clean
+because that is a git built\-in, and rather than a subcommand of
+.B git worktree
+because git does not let an external command extend a built\-in.
+.SH THINGS
+.TP
+.BR worktrees ", " worktree ", " wt
+Worktrees with no activity for 14 days. See
+.BR git\-cleanup\-worktrees (1),
+which \fBgit cleanup worktrees \-\-help\fR opens.
+.PP
+The spellings match the aliases \fBgit wt\fR (for \fBworktree\fR) and \fBgit br\fR
+(for \fBbranch\fR) in the git config.
+.SH OPTIONS
+.TP
+.BR \-n ", " \-\-dry\-run
+Print the list as it would be written, with what would happen to each item by
+default, and stop.
+.TP
+.BR \-y ", " \-\-yes
+Clean the idle items now, without the editor and without a question. Only idle
+ones: nothing that is locked, recent or has work is touched.
+.TP
+.BI \-\-days " N"
+How long without activity counts as idle. The default is 14.
+.TP
+.B \-h
+The short help, with the words a line may start with. (\fB\-\-help\fR after a
+thing opens that thing's manual page.)
+.SH THE FILE
+Every item is on its own line, in the first of five groups that fits it, and the
+groups are listed in this order:
+.IP "1 protected" 14
+Never cleaned. Written as a comment with no word, so it cannot be turned on.
+.IP "2 locked" 14
+Kept by the user. Needs unlocking first.
+.IP "3 has work" 14
+Something would be lost: uncommitted changes, or commits nothing else holds.
+.IP "4 recent" 14
+Nothing to lose, but active within the last \fB\-\-days\fR days.
+.IP "5 idle" 14
+Nothing to lose and quiet for \fB\-\-days\fR days. The only group that starts
+turned on.
+.PP
+The first word of a line says what happens to the item it names; each thing
+documents its own words. A line starting with
+.B #
+and a space is off: take the
+.B #
+and the space off to turn it on, put them back or delete the line to skip it.
+A line starting with
+.B ##
+is a note and is never read, which is why uncommenting the whole file
+(\fB:%s/^# //\fR) turns every item on and leaves the notes and the protected
+items alone.
+.PP
+Any other word, an unterminated reason in quotes, a reason on a word that does
+not take one, an item that is not listed, one that is protected, or the same item
+twice is an error: the editor opens again with the faults at the top of the file,
+as \fBgit rebase \-i\fR does. Quit it with an error (\fB:cq\fR) to cancel.
+.SH SAFETY
+.IP \(bu 2
+The default word never throws work away. Turning on a whole group is safe,
+because git refuses to remove an item with work in it and so does this. Only the
+stronger words, written on the line, do.
+.IP \(bu 2
+Each line is looked at again just before it is acted on. An item that has moved
+to a riskier group while the editor was open (idle to recent, anything to has
+work) is refused rather than changed on out\-of\-date information.
+.IP \(bu 2
+A failure or a refusal is reported and the rest carry on, with a non\-zero exit
+at the end.
+.IP \(bu 2
+After the editor closes the plan is summarised and confirmed once more. Removal
+cannot be undone the way a rebase can, and saving an unedited list applies its
+defaults.
+.SH ENVIRONMENT
+.TP
+.B GIT_EDITOR
+The editor, as git picks it: \fBGIT_EDITOR\fR, then \fBcore.editor\fR, then
+\fBVISUAL\fR and \fBEDITOR\fR.
+.TP
+.B CLEANUP_NOW
+Seconds since the epoch, standing in for the clock. Only the tests set it.
+.SH EXIT STATUS
+0 when everything asked for was done, or there was nothing to do. 1 when the
+list was cancelled, or any item was refused or failed. 2 for a bad argument.
+.SH SEE ALSO
+.BR git\-cleanup\-worktrees (1),
+.BR git\-worktree (1)
