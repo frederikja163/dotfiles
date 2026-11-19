@@ -540,7 +540,7 @@ T.async(function()
     dotnet.watch = function() called = 'watch' end
     dotnet.test = function(scope) called = 'test ' .. tostring(scope) end
     for keys, want in pairs({
-        ['<Space>bb'] = 'build', ['<Space>br'] = 'run', ['<Space>bw'] = 'watch',
+        ['<Space>bb'] = 'build', ['<Space>br'] = 'run',
         ['<Space>tt'] = 'test all', ['<Space>tn'] = 'test nearest', ['<Space>tf'] = 'test file', ['<Space>tl'] = 'test last',
     }) do
         called = nil

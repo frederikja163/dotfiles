@@ -182,7 +182,7 @@ own leaves it and does what it always does.
 | `Space r`           | review mode: `jk` hunk, `Tab` file, `d` drop, `u` undo, `b` pick what to compare with, `q` stop |
 | `Space D`           | debug mode: `j` step over, `l` into, `h` out, `c` continue or start, `b` breakpoint, `u` `d` the stack, `K` a value, `q` stop |
 | `Space f…`          | find: `ff` files, `fb` buffers, `fo` recent, `fr` symbols (the r of `grr`) and `fd` diagnostics, with `fR` and `fD` for this buffer only, `fq` `fl` quickfix and location lists, `fp` sessions |
-| `Space b…` `Space t…` | build, run, watch (`bb` `br` `bw`); test all, nearest, file, last (`tt` `tn` `tf` `tl`) |
+| `Space b…` `Space t…` | build, run (`bb` `br`; watch is `:Watch`); test all, nearest, file, last (`tt` `tn` `tf` `tl`) |
 | `gd` `grr` `gri` `grt` `grb` `grc` `grC` | definition, usages, implementations, type, base types, callers, callees: one result jumps, several open a picker where `Tab` previews the highlighted one (and `Tab` again goes back to the list) and `Ctrl-d` drops entries and `Ctrl-q` or `Alt-q` sends what is left to the quickfix or location list. `gd` is only this where a language server is attached; elsewhere it is Vim's own |
 | `]e` `[e`           | next and previous error |
 | `Space d`           | the diagnostics under the cursor (Neovim's `Ctrl-w d` still works) |

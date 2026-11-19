@@ -15,7 +15,7 @@
 --
 --   f   find: files, buffers, recent, symbols, diagnostics, lists, sessions
 --   w   windows, and writing
---   b   build, run, watch
+--   b   build, run
 --   t   test: all, nearest, file, last
 --   s m r   size, move and review, which are modes (see ide.modes, ide.review)
 --
@@ -143,10 +143,11 @@ end, { desc = 'Show or hide this window\'s location list' })
 -- Build and run (<leader>b) and test (<leader>t), which are ide.dotnet's. A build
 -- or a test run goes on in the background and the result is a quickfix list; run
 -- and watch are terminals. All of them are also commands -- :Build, :Run, :Watch,
--- :Test [all|file|nearest|last] -- for when there is something to add.
+-- :Test [all|file|nearest|last] -- for when there is something to add. Watch has
+-- no key: <leader>bw was hit by accident, and a stray dotnet watch is a process
+-- left running, so it is only ever started by typing :Watch.
 map('n', '<leader>bb', function() dotnet.build() end, { desc = 'Build the solution; errors go to a list' })
 map('n', '<leader>br', function() dotnet.run() end, { desc = 'Run this project, in a terminal below' })
-map('n', '<leader>bw', function() dotnet.watch() end, { desc = 'Run this project under dotnet watch' })
 map('n', '<leader>tt', function() dotnet.test('all') end, { desc = 'Run all the tests; failures go to a list' })
 map('n', '<leader>tn', function() dotnet.test('nearest') end, { desc = 'Run the test at the cursor' })
 map('n', '<leader>tf', function() dotnet.test('file') end, { desc = 'Run the tests in this file' })
