@@ -28,6 +28,18 @@ local function write_if_possible()
     end
 end
 
+-- No byte order mark is written. Neovim keeps one the file was read with ('bomb'
+-- is set by the read), so a .cs file saved by Visual Studio would go on getting it
+-- back from every write here. Clearing the option in BufWritePre, rather than on
+-- read, leaves the buffer unmodified when nothing was edited, so the mark goes at
+-- the first real write and just opening a file never touches it.
+vim.api.nvim_create_autocmd("BufWritePre", {
+    group = augroup,
+    callback = function()
+        vim.bo.bomb = false
+    end,
+})
+
 -- Not while a review is on. The buffer is being read against a revision, and a
 -- write that reformats it -- autosave writes on every focus change -- puts
 -- changes of its own into the diff being read, so the hunks stop being the

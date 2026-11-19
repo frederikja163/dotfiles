@@ -116,6 +116,24 @@ T.async(function()
     T.check('but <leader>ww always writes', disk(), 'class C { }')
     vim.cmd('Toggle autosave')
 
+    local bom_file = root .. '/Bom.txt'
+    local function bytes(path)
+        local f = assert(io.open(path, 'rb'))
+        local text = f:read('a')
+        f:close()
+        return text
+    end
+    local f = assert(io.open(bom_file, 'wb'))
+    f:write('\239\187\191one\n')
+    f:close()
+    vim.cmd.edit(bom_file)
+    T.check('a file with a byte order mark is read as having one', vim.bo.bomb, true)
+    T.check('and opening it changes nothing on disk', bytes(bom_file), '\239\187\191one\n')
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'two' })
+    vim.cmd.write()
+    T.check('a write drops the mark', bytes(bom_file), 'two\n')
+    vim.cmd.bwipeout()
+
     ------------------------------------------------------------------------
     T.section('the usages highlight')
     vim.o.updatetime = 60
