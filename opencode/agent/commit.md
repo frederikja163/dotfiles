@@ -37,7 +37,23 @@ permission:
     # agent flattens the index, and which would prompt on every run if the
     # list reached it.
     "*git push*": deny
-    "*git pull*": ask
+
+    # Every other way of reaching or re-aiming a remote, denied for the same
+    # reason as push. They sit above the trailing `*git commit*` allow like
+    # the rest, so a commit message that mentions one is still a commit.
+    "*git remote*": deny
+    "*git clone*": deny
+    "*git ls-remote*": deny
+    "*gh repo clone*": deny
+    "*insteadOf*": deny
+    "*GIT_SSH_COMMAND*": deny
+    "*GIT_ASKPASS*": deny
+
+    # Fetch and pull bring the remote's updates in. If the user has not run
+    # them they do not want the agent to have what they would fetch.
+    "*git fetch*": deny
+    "*git pull*": deny
+
     "*git merge*": ask
     "*git am*": ask
     "*git cherry-pick*": ask

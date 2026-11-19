@@ -49,7 +49,8 @@
   "instructions": [
     "~/.config/opencode/comments.md",
     "~/.config/opencode/pull-requests.md",
-    "~/.config/opencode/commits.md"
+    "~/.config/opencode/commits.md",
+    "~/.config/opencode/git-remotes.md"
   ],
 
   // No mode may touch git history without a decision from you.
@@ -74,8 +75,11 @@
   //
   // Everything else that moves a ref, rewrites what is already recorded, or
   // publishes it is gated below. Reading history is untouched: log, show,
-  // diff, status, blame, describe, rev-parse and fetch all stay silent, so an
-  // agent can still orient itself without asking.
+  // diff, status, blame, describe and rev-parse all stay silent, so an agent
+  // can still orient itself without asking. fetch is not among them: whether
+  // the remote's updates reach the working copy is the user's call, and an
+  // agent that fetches has made it for them. It is denied with pull, which
+  // fetches as its first step.
   //
   // For those, "ask" rather than "deny", because the point is that *you*
   // decide, not that it becomes impossible. An agent that decided to tidy up
@@ -126,8 +130,25 @@
           // Needs your push credential, so no agent gets to run it.
           "*git push*": "deny",
 
-          // Publishes a commit, or brings someone else's in.
-          "*git pull*": "ask",
+          // The rest of the ways to reach, or re-aim, a remote. Denied for the
+          // same reason as push: an agent whose SSH push is refused has
+          // switched the remote to HTTPS and tried again, and a clone is the
+          // same move into a fresh directory. See git-remotes.md.
+          "*git remote*": "deny",
+          "*git clone*": "deny",
+          "*git ls-remote*": "deny",
+          "*gh repo clone*": "deny",
+          "*insteadOf*": "deny",
+          "*GIT_SSH_COMMAND*": "deny",
+          "*GIT_ASKPASS*": "deny",
+
+          // Brings the remote's updates in. If the user has not run it, they
+          // do not want the agent to have what it would fetch, so this is a
+          // deny and not an ask.
+          "*git fetch*": "deny",
+          "*git pull*": "deny",
+
+          // Brings someone else's commits in.
           "*git merge*": "ask",
           "*git am*": "ask",
           "*git cherry-pick*": "ask",
@@ -177,7 +198,16 @@
           "*git commit*": "deny",
 
           "*git push*": "deny",
-          "*git pull*": "ask",
+          "*git remote*": "deny",
+          "*git clone*": "deny",
+          "*git ls-remote*": "deny",
+          "*gh repo clone*": "deny",
+          "*insteadOf*": "deny",
+          "*GIT_SSH_COMMAND*": "deny",
+          "*GIT_ASKPASS*": "deny",
+          "*git fetch*": "deny",
+          "*git pull*": "deny",
+
           "*git merge*": "ask",
           "*git am*": "ask",
           "*git cherry-pick*": "ask",

@@ -69,6 +69,10 @@ shared_commands() {
     cat <<'CMDS'
 commit
 push
+remote
+clone
+ls-remote
+fetch
 pull
 merge
 am
@@ -105,6 +109,11 @@ CMDS
 expected_action() {
     case "$1:$2" in
         *:push)        printf 'deny' ;;
+        *:remote)      printf 'deny' ;;
+        *:clone)       printf 'deny' ;;
+        *:ls-remote)   printf 'deny' ;;
+        *:fetch)       printf 'deny' ;;
+        *:pull)        printf 'deny' ;;
         commit:commit) printf 'allow' ;;
         build:commit)  printf 'deny' ;;
         plan:commit)   printf 'deny' ;;
@@ -145,6 +154,18 @@ for agent in build plan commit; do
     # pattern rewritten to "git push*" is still caught.
     got="$(grep -F -- "$agent shell " "$TMP/flat" | grep -E 'git push' | tail -1 | awk '{print $3}')"
     check "$agent refuses to push" "${got:-missing}" deny
+done
+
+echo "scenario: no mode may reach or re-aim a remote"
+# The same credential reasoning as push: an agent refused over SSH has
+# switched the remote to HTTPS and retried, or cloned afresh. These are not
+# `git <cmd>` patterns, so they are checked by their literal resource here
+# rather than through the shared list.
+for agent in build plan commit; do
+    for pattern in '*gh repo clone*' '*insteadOf*' '*GIT_SSH_COMMAND*' '*GIT_ASKPASS*'; do
+        got="$(grep -F -- "$agent shell " "$TMP/flat" | grep -F -- " $pattern" | tail -1 | awk '{print $3}')"
+        check "$agent denies $pattern" "${got:-missing}" deny
+    done
 done
 
 echo "scenario: commit's git commit allow stays last in its list"
@@ -207,7 +228,7 @@ echo "scenario: reading history is never gated"
 # pattern like "*git *" would do.
 for agent in build plan commit; do
     gated=""
-    for safe in log show diff status blame rev-parse describe fetch; do
+    for safe in log show diff status blame rev-parse describe; do
         if grep -F -- "$agent shell " "$TMP/flat" | grep -qF -- " *git $safe*"; then
             gated="$gated $safe"
         fi
