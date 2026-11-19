@@ -58,7 +58,7 @@ in `bin/` only because the config starts them are not to be moved without being
 asked.
 
 **`lines-changed` is how a change is measured here.** A pull request
-description ends with its table, and `opencode/pull-requests.md` says how: run
+description ends with its table, and `opencode/skills/makepr/SKILL.md` (loaded by `/makepr`) says how: run
 `lines-changed --require-clean`, which refuses a dirty tree rather than print a
 number the PR would not show, so commit first. A bare `lines-changed` counts
 uncommitted files too, which is for checking your own size while you work; never

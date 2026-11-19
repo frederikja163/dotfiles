@@ -8,7 +8,7 @@
 
   // Restores the todo tool OpenCode V2 removed.
   //
-  // commands/review.md queues requested fixes with `todowrite` so they outlive the user
+  // skills/review/SKILL.md queues requested fixes with `todowrite` so they outlive the user
   // switching to build mode, but V2 dropped `todowrite` and `todoread` from the
   // runtime: the installed 2.0.12 binary has no such tool, there is no
   // /api/todo endpoint, and the docs list neither the tool nor an action for
@@ -35,6 +35,16 @@
   // entry and nothing else changes.
   "plugins": ["./plugins/opencode2-todo"],
 
+  // /review and /makepr are a few lines each, with their long instructions in
+  // skills/<name>/SKILL.md. A command's whole body lands in the transcript as
+  // a user message every time it runs, so a 250-line review prompt was
+  // re-pasted on each pass. A skill is loaded once and then stays in the
+  // conversation, and the command only asks for it if it is not there yet.
+  // Both set `opencode/autoinvoke: false`, so they are not advertised to the
+  // model on every step; only the command loads them. The same goes for
+  // anything else that is only wanted when a command runs: keep it out of
+  // "instructions" below, which is for what every session should carry.
+  //
   // Appended to every agent's context. "instructions" is documented as
   // additive, unlike an agent's "prompt", which does not say whether it
   // replaces a built-in agent's own prompt -- not worth finding out on build
@@ -48,7 +58,6 @@
   // machine.
   "instructions": [
     "~/.config/opencode/comments.md",
-    "~/.config/opencode/pull-requests.md",
     "~/.config/opencode/commits.md",
     "~/.config/opencode/git-remotes.md"
   ],
@@ -183,10 +192,11 @@
     // to it otherwise, and the guard has to be on every mode that can reach a
     // shell or it is only a speed bump.
     //
-    // This is also the mode /review runs in (commands/review.md). There used
+    // This is also the mode /review runs in (commands/review.md, which loads
+    // skills/review/SKILL.md). There used
     // to be a `review` agent for it, which denied the whole list and also
     // `git restore` and `git checkout`, and was removed so that the review
-    // prompt lives in one place -- a command -- instead of an agent that /review
+    // prompt lives in one place -- a command and its skill -- instead of an agent that /review
     // did not use. The cost is that those two are no longer blocked for
     // reviews: plan asks on the history-rewriting ones and leaves restore and
     // checkout alone. The prompt forbids them in words; nothing enforces it.

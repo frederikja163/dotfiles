@@ -14,7 +14,7 @@ not offer to "allow shell commands".
 Say it in two sentences, using the numbers the user can act on:
 
 > `git commit` is denied in this mode; commits are made by the commit agent.
-> Switch to it (Tab cycles agents) and say "commit"; the work is left
+> Run `/commit` (or switch to it with Tab and say "commit"); the work is left
 > uncommitted in the tree until then.
 
 Then carry on with anything that does not need the commit.

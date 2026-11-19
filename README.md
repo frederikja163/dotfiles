@@ -35,7 +35,7 @@ curl -fsSL https://raw.githubusercontent.com/frederikja163/dotfiles/main/setup.s
 | `yazi`     | `~/.config/yazi`              | `yazi.toml`, software video previewer |
 | `zsh`      | `~/.zshenv`, `~/.config/zsh/` | oh-my-zsh setup, `PATH`, prompt, `title` |
 | `git`      | `~/.config/git`               | identity and settings                |
-| `opencode` | `~/.config/opencode`          | model, the `commit` agent, `/review`, `/aside`; no credentials (see `AGENTS.md`) |
+| `opencode` | `~/.config/opencode`          | model, the `commit` agent, `/review`, `/commit`, `/makepr`, `/aside`; no credentials (see `AGENTS.md`) |
 | `xdg`      | `~/.config/{mimeapps.list,xdg-desktop-portal,xdg-desktop-portal-termfilechooser}`, `~/.local/share/{applications,dbus-1}` | yazi as the file explorer and Brave's file dialogs, Brave as the default browser |
 | `systemd`  | `~/.config/systemd/user/`     | drop-in that restarts hypridle and un-dims the screen when it crashes |
 | `bin`      | — (on `PATH` in place)        | small scripts; not linked, see `install.sh` |
