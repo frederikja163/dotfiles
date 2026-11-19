@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# git cleanup <thing>: clear out what has gone stale in a repository. Today the
-# thing is worktrees (`git cleanup worktrees`), and branches are meant to sit
-# beside it; see lib/cleanup-lib.sh for what they would share.
+# git cleanup <thing>: clear out what has gone stale in a repository. The things
+# are worktrees and branches, and lib/cleanup-lib.sh is what they share.
 #
 # Only this launcher is on PATH. Git runs any git-* it finds there, so no alias
 # or setup is needed, and the work is in lib/cleanup-<thing>, called by its path
@@ -12,8 +11,8 @@
 # does not let an external command extend; lib/cleanup-worktrees says why.
 #
 # The thing may be spelled out or shortened to match the aliases in
-# git/config (`git wt`, `git br`): worktrees, worktree, wt. Everything after it
-# is passed on untouched, --help included, which is why a --help after the
+# git/config (`git wt`, `git br`): worktrees, worktree, wt; branches, branch, br.
+# Everything after it is passed on untouched, --help included, which is why a --help after the
 # subcommand reaches that script's own manual while `git cleanup --help` is
 # git's, and looks for man/man1/git-cleanup.1.
 set -uo pipefail
@@ -25,6 +24,8 @@ usage() {
 usage: git cleanup <thing> [options]
 
   worktrees  (worktree, wt)   remove worktrees with no activity for 14 days
+  branches   (branch, br)     delete local branches that are merged or pushed
+                              and have had no activity for a week
 
 `git cleanup <thing> -h` says how each works; man git-cleanup has the rest.
 USAGE
@@ -41,6 +42,7 @@ shift
 case "$thing" in
     -h) usage; exit 0 ;;
     worktrees|worktree|wt) target="$here/../lib/cleanup-worktrees" ;;
+    branches|branch|br) target="$here/../lib/cleanup-branches" ;;
     *)
         usage >&2
         echo "git-cleanup: unknown thing to clean: $thing" >&2

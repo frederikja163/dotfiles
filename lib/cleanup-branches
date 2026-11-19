@@ -1,0 +1,489 @@
+#!/usr/bin/env bash
+# git cleanup branches: delete the local branches that are merged, or pushed,
+# and have not been touched for a week.
+#
+# Started by bin/git-cleanup, which is the command typed (`git cleanup
+# branches`, `branch` or `br`); this is not on PATH. The editor, the parser, the
+# confirmation and the apply loop are lib/cleanup-lib.sh's, which says how the
+# list works and why, and lib/cleanup-worktrees is the other script written on
+# it. What is here is what is particular to branches: how they are listed and
+# judged, and what each word does to one.
+#
+# Local branches only. A remote branch is somebody else's as much as yours and
+# is not recoverable from a reflog; `git cleanup remote-branches`, or a
+# --remote=origin here, was talked of for later and is a different action with
+# its own words, so nothing is prepared for it.
+#
+# Every branch is on its own line, in the first of these that fits it:
+#
+#   1 protected  the default branch, the branch you are on, or one that is
+#                checked out in a worktree (named in the row)
+#   2 locked     marked as kept, whatever else is true of it
+#   3 has work   commits that are on neither the default branch nor any
+#                remote-tracking branch, and that no merged pull request
+#                accounts for
+#   4 recent     nothing to lose, but active in the last week
+#   5 idle       nothing to lose, and quiet for a week
+#
+# Only idle ones start turned on. The words are the worktrees' (clean, force,
+# unlock, unlock-force, lock) less discard, which has nothing to apply to. They
+# are documented at the top of the file the editor opens, from `words` below,
+# and in man/man1/git-cleanup-branches.1, which tests/test_cleanup_branches.sh
+# checks for every one.
+#
+# A week, not the worktrees' fourteen days. Everything an idle branch has is
+# already in the default branch or on a remote, so deleting it loses a name and
+# nothing else, and it takes one command to bring back; that is why this can be
+# shorter than for a worktree, which is a checkout somebody may come back to.
+# It is a week and not shorter because the local branch list is also a record of
+# what was worked on lately: it was a day first, and a branch merged on Monday
+# was gone from the list by Tuesday, which is not what is wanted from it. `--days`
+# moves it, and a branch with work only it has is in "has work" however old it
+# is, so a short fuse here cannot reach anything that matters.
+#
+# Why `lock` and not a word of its own. Git has no lock on a branch, and the
+# first plan called this `pin` because of that: a marker only this command
+# honours is not what a lock is, and `lock` promises more than it keeps. The
+# worktrees' words won, since the same five do for both and nobody learns two
+# vocabularies, and the library's tier two is already written as "locked". What
+# it keeps stays honest in the manual: `git branch -D` takes no notice. The
+# marker is `branch.<name>.cleanupLock`, whose value is the reason. It needs no
+# file of its own, is local to the clone, moves with `git branch -m` and goes
+# when the branch is deleted, so it cannot go stale.
+#
+# What counts as merged, in order. The tip is reachable from the default branch,
+# or every commit is on some remote-tracking branch (pushed), and either makes
+# the branch safe. Neither sees a squash merge, which is how GitHub merges most
+# pull requests: the branch's commits are never in the default branch, only a
+# new one that holds the same change, and `git cherry` cannot match them
+# because the patch ids are of the combined change. So a third test asks GitHub:
+# a merged pull request whose head branch has this name *and this tip*. The tip
+# is what stops a branch that went on after the merge, or was amended, from
+# being called merged; it stays in "has work", which is the safe side.
+#
+# That question is one GraphQL request for all the branches that need it, and
+# it is *not* `gh pr list --state merged --limit N`, which is what this did
+# first. That call's cost grows with the pull requests the repository has, not
+# with the branches asked about: a thousand of them took 6.7 seconds against
+# 0.5 for everything else this script does, which is what made it feel broken
+# on a repo with 130 branches. Asking by branch name costs one round trip
+# whatever the history, and has no limit to fall off, so an old branch is found
+# as readily as a new one. Names go in as variables, never into the query text,
+# since a branch name may hold a double quote. At most 40 are asked at once, and
+# a longer list is several requests. Without gh, offline, or on a remote that is
+# not GitHub, the run says so once and every such branch stays in "has work".
+# `upstream gone` is shown but not trusted: it is as true of an unmerged branch
+# that was deleted on the remote.
+#
+# Cost, since it was once the complaint: the git work is a fixed handful of
+# processes however many branches there are (one for-each-ref, one for the
+# reflogs, one for what is merged into the default branch), plus one rev-list
+# for each branch that is not merged, which is the only question git cannot
+# answer for all of them at once. A branch checked out in a worktree skips even
+# that, being protected whatever it holds.
+#
+# Applying was the other cost, and it was quadratic: the library looked at every
+# branch again before each action, so deleting 560 of 1040 branches reloaded
+# all 1040 five hundred and sixty times and took 30 seconds. load_one reloads
+# only the branch being acted on, which made it 8, at about 12ms a deletion.
+# Reading the list is linear, around 1.2 seconds for 1040 branches. On a
+# terminal each slow stage shows a line that counts as it goes (progress in
+# lib/cleanup-lib.sh), and nothing is written to a pipe or a file.
+#
+# The default branch is what origin/HEAD says, then init.defaultBranch, then
+# main or master, whichever exists. Branches are judged against the local
+# default branch and every remote-tracking branch, so a main that has fallen
+# behind origin/main, or run ahead of it, does not matter.
+#
+# Activity is the newer of the tip commit's date and the newest entry in the
+# branch's own reflog, as for worktrees: a branch made today from an old commit
+# is not idle. That reflog is stamped when the branch is created and on a
+# commit, reset or rebase on it, and not on a checkout, which is HEAD's to
+# record, so a branch only looked at reads as quiet. That costs nothing here,
+# since a quiet branch with no work of its own is exactly what is being asked
+# for.
+#
+# A branch is deleted with `git branch -D`, after the check above, and not -d.
+# -d judges "merged" against whatever branch is checked out, and refuses a
+# squash-merged one that is fine to go. Deleting takes the branch's reflog with
+# it, so what it was at is printed, `deleted feat/x (was a1b2c3d)`, and
+# `git branch feat/x a1b2c3d` brings it back.
+#
+# A branch that a worktree has checked out is protected, and git itself refuses
+# to delete one, even with -D. That includes a worktree whose directory has
+# gone, until `git cleanup worktrees` prunes it, and the row says so. Removing a
+# worktree keeps its branch, so run that first and the branch is judged on its
+# own the next time. The two commands stay apart on purpose: each only deletes
+# its own kind of thing.
+set -uo pipefail
+
+here="$(dirname "$(readlink -f -- "${BASH_SOURCE[0]}")")"
+. "$here/cleanup-lib.sh"
+
+CLEANUP_CMD="git cleanup branches"
+CLEANUP_MAN="git-cleanup-branches"
+ITEM="branch"
+ITEMS="branches"
+DAYS_DEFAULT=7
+VALID_WORDS=(clean force unlock unlock-force lock)
+REASON_WORD="lock"
+RECHECK_EXEMPT=(lock)
+HEADER_NOTE="Deleting prints the commit a branch was at, to bring it back with git branch."
+
+words() {
+    cat <<'EOF'
+clean         delete the branch. Refused if it has commits that are neither
+              merged nor pushed
+force         delete it even then, losing those commits
+unlock        unlock it, then clean
+unlock-force  unlock it, then force
+lock          lock it instead, so it is kept: it is listed as locked from
+              then on, and a locked branch is never cleaned until unlocked.
+              Only git cleanup honours it; git branch -D does not.
+              Say why in quotes after the word: lock "release 1.4" feat/x
+EOF
+}
+
+find_default() {
+    local ref
+    DEFAULT=""
+    if ref="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null)" && [ -n "$ref" ]; then
+        DEFAULT="${ref#origin/}"
+        return
+    fi
+    ref="$(git config init.defaultBranch 2>/dev/null)"
+    for ref in $ref main master; do
+        if git show-ref --verify --quiet "refs/heads/$ref"; then DEFAULT="$ref"; return; fi
+    done
+}
+
+setup() {
+    CUR=""
+    local top
+    if top="$(git rev-parse --show-toplevel 2>/dev/null)" && [ -n "$top" ]; then
+        CUR="$(readlink -f -- "$top")"
+    fi
+    find_default
+
+    STATE_NAME=([3]="has work" [4]="recent" [5]="idle")
+    TITLE=(
+        [1]="1 protected: never cleaned (the default branch, the branch you are on, or checked out in a worktree)"
+        [2]="2 locked: needs unlock or unlock-force first"
+        [3]="3 has work: commits that are neither merged into ${DEFAULT:-the default branch} nor pushed"
+        [4]="4 recent: nothing to lose, but active in the last $DAYS days"
+        [5]="5 idle: nothing to lose, and no activity for $DAYS days"
+    )
+    VERB=([1]="##" [2]="# unlock" [3]="# clean" [4]="# clean" [5]="clean")
+}
+
+header_title() {
+    echo "$CLEANUP_CMD for $(basename -- "${CUR:-$PWD}"): idle means no activity for $DAYS days."
+}
+
+GH_STATE=""
+declare -A PRS=()
+declare -A B_lockreason=()
+declare -A MERGED=()
+declare -A RL=()
+declare -A UNIQ=()
+BASE=()
+
+gh_fail() {
+    progress_done
+    echo "$CLEANUP_CMD: $1, so branches squash-merged on GitHub are not recognised and stay in has work" >&2
+    GH_STATE=failed
+}
+
+# Whether each of the branches named has a merged pull request, in as few
+# requests as will do. A failure is said out loud a single time and remembered,
+# so a dozen branches do not say it a dozen times.
+gh_batch() {
+    local nwo owner repo out i j k oid num query decl body chunk size=40
+    local args=()
+    GH_STATE=failed
+    if ! command -v gh >/dev/null; then
+        gh_fail "gh is not installed"
+        return
+    fi
+    progress "$CLEANUP_CMD: asking GitHub about $# unmerged branches..."
+    if ! nwo="$(timeout 30 gh repo view --json nameWithOwner --jq .nameWithOwner 2>&1)"; then
+        gh_fail "gh could not tell which repository this is (${nwo%%$'\n'*})"
+        return
+    fi
+    owner="${nwo%%/*}"; repo="${nwo#*/}"
+
+    for ((i = 1; i <= $#; i += size)); do
+        chunk=("${@:i:size}")
+        decl=""; body=""; args=(-f "o=$owner" -f "n=$repo")
+        for j in "${!chunk[@]}"; do
+            decl+=",\$h$j:String!"
+            body+=" p$j:pullRequests(headRefName:\$h$j,states:MERGED,first:10,orderBy:{field:CREATED_AT,direction:DESC}){nodes{number headRefOid}}"
+            args+=(-f "h$j=${chunk[j]}")
+        done
+        query="query(\$o:String!,\$n:String!$decl){repository(owner:\$o,name:\$n){$body}}"
+        if ! out="$(timeout 30 gh api graphql -f "query=$query" "${args[@]}" \
+                --jq '.data.repository | to_entries[] | .key as $k | .value.nodes[] | [$k, .headRefOid, .number] | @tsv' 2>&1)"; then
+            gh_fail "gh could not list merged pull requests (${out%%$'\n'*})"
+            return
+        fi
+        while IFS=$'\t' read -r k oid num; do
+            [ -n "$k" ] && PRS["${chunk[${k#p}]} $oid"]="$num"
+        done <<< "$out"
+    done
+    progress_done
+    GH_STATE=ok
+}
+
+# Branch names cannot hold a space, a control character or a backslash, so one
+# line per branch with the unit separator between fields is safe to split, and
+# the subject, which can hold anything, is last. The separator is not
+# whitespace, which is what lets an empty upstream stay an empty field.
+#
+# I_key is set here and not only in inspect: the library finds an item again
+# by its key after each action, and a branch deleted by the one before shifts
+# every later index, so a key that waits for inspect is a key for the wrong
+# branch. (Found by the tests: the second deletion of a run took the wrong
+# branch's row.)
+#
+# What is cheap for every branch at once is read here: the reflog times (the
+# first line seen for a branch is its newest) and the branches the default
+# branch already holds.
+load_items() {
+    local only="${1:-}" pat=refs/heads reflogs=(--branches)
+    if [ -n "$only" ]; then pat="refs/heads/$only"; reflogs=("refs/heads/$only"); fi
+    B_name=(); B_sha=(); B_date=(); B_up=(); B_track=(); B_wt=(); B_subject=(); B_lock=()
+    B_lockreason=(); MERGED=(); RL=(); UNIQ=(); BASE=()
+    local rec k v ref sha date up track wt subj name sel i=0
+    local sep=$'\x1f'
+
+    while IFS= read -r -d '' rec; do
+        k="${rec%%$'\n'*}"; v=""
+        [[ $rec == *$'\n'* ]] && v="${rec#*$'\n'}"
+        k="${k#branch.}"; k="${k%.cleanuplock}"
+        B_lockreason["$k"]="$v"
+    done < <(git config -z --get-regexp '^branch\..*\.cleanuplock$' 2>/dev/null)
+
+    while IFS="$sep" read -r ref sha date up track wt subj; do
+        [ -n "$ref" ] || continue
+        name="${ref#refs/heads/}"
+        I_key[i]="$name"
+        B_name[i]="$name"; B_sha[i]="$sha"; B_date[i]="${date:-0}"; B_up[i]="$up"
+        B_track[i]="$track"; B_wt[i]="$wt"; B_subject[i]="$subj"
+        if [ -n "${B_lockreason["$name"]+x}" ]; then B_lock[i]=1; else B_lock[i]=0; fi
+        i=$((i + 1))
+    done < <(git for-each-ref "$pat" --format="%(refname)%1f%(objectname)%1f%(committerdate:unix)%1f%(upstream:short)%1f%(upstream:track)%1f%(worktreepath)%1f%(contents:subject)")
+    N=$i
+
+    while IFS= read -r sel; do
+        name="${sel%@\{*}"; name="${name#refs/heads/}"
+        [ -n "${RL["$name"]+x}" ] && continue
+        sel="${sel##*@\{}"; RL["$name"]="${sel%\}}"
+    done < <(git log -g "${reflogs[@]}" --date=unix --format=%gD 2>/dev/null)
+
+    if [ -n "$DEFAULT" ] && git show-ref --verify --quiet "refs/heads/$DEFAULT"; then
+        BASE=("refs/heads/$DEFAULT")
+        while IFS= read -r ref; do
+            MERGED["${ref#refs/heads/}"]=1
+        done < <(git for-each-ref "$pat" --merged="refs/heads/$DEFAULT" --format='%(refname)')
+    fi
+}
+
+# The one branch, for cleanup_apply to look at again just before acting on it.
+# Everything load_items reads, restricted to that ref, so the cost of an action
+# does not depend on how many branches there are.
+load_one() {
+    load_items "$1"
+}
+
+# How many commits on branch $1 are on neither the default branch nor any
+# remote-tracking branch, into U, or -1 when git cannot say. Into a variable and
+# not printed, because a $(...) is a process of its own for each branch.
+count_unique() {
+    if U="$(git rev-list --count "refs/heads/$1" --not "${BASE[@]}" --remotes 2>/dev/null)"; then
+        :
+    else
+        U=-1
+    fi
+}
+
+# Once, for every branch that is not merged: how many commits it holds alone,
+# and, for the ones that hold any, whether GitHub merged them. Doing it here and
+# not in each inspect is what lets the GitHub question be one request. apply
+# reloads the items, which empties UNIQ, so what it acts on is judged afresh.
+prepare() {
+    local i name need=()
+    for ((i = 0; i < N; i++)); do
+        progress "$CLEANUP_CMD: checking branch $((i + 1)) of $N"
+        name="${B_name[i]}"
+        [ -n "${B_wt[i]}" ] && continue
+        [ -n "${MERGED["$name"]+x}" ] && continue
+        count_unique "$name"
+        UNIQ["$name"]=$U
+        (( U != 0 )) && need+=("$name")
+    done
+    progress_done
+    if [ ${#need[@]} -gt 0 ]; then gh_batch "${need[@]}"; fi
+}
+
+# Everything the list and the checks before deleting need to know about branch
+# $1, left in the I_* arrays at the same index.
+#
+# A check that cannot be answered counts against the branch, not for it: a
+# rev-list that fails is "has work", never "merged", since merged and quiet is
+# what gets deleted without being asked about.
+inspect() {
+    local i=$1 name="${B_name[$1]}" tip="${B_sha[$1]}" wt="${B_wt[$1]}"
+    local prot="" act="${B_date[$1]}" unique=0 merged="" state tier x
+    local parts=() work="" badge="" disp="$wt"
+    case $wt in "$HOME"/*) disp="~${wt#"$HOME"}" ;; esac
+
+    if [ "$name" = "$DEFAULT" ]; then
+        prot="default branch"
+    elif [ -n "$wt" ]; then
+        if [ -n "$CUR" ] && [ "$(readlink -f -- "$wt")" = "$CUR" ]; then
+            prot="current branch"
+        elif [ -d "$wt" ]; then
+            prot="checked out in $disp"
+        else
+            prot="checked out in $disp, whose directory is gone: git cleanup worktrees clears it"
+        fi
+    fi
+
+    if [[ ${RL["$name"]-} =~ ^[0-9]+$ ]] && (( RL["$name"] > act )); then act=${RL["$name"]}; fi
+
+    if [ -n "$prot" ]; then
+        :
+    elif [ -n "${MERGED["$name"]+x}" ]; then
+        merged="merged"
+    else
+        if [ -n "${UNIQ["$name"]+x}" ]; then unique=${UNIQ["$name"]}; else count_unique "$name"; unique=$U; fi
+        if (( unique != 0 )) && [ -n "${PRS["$name $tip"]:-}" ]; then
+            merged="merged (PR #${PRS["$name $tip"]})"
+            unique=0
+        elif (( unique == 0 )); then
+            merged="pushed"
+        fi
+    fi
+
+    if (( unique > 1 )); then work="$unique commits only here"
+    elif (( unique == 1 )); then work="1 commit only here"
+    elif (( unique < 0 )); then work="could not tell what is merged"
+    fi
+
+    if (( unique != 0 )); then
+        state=3
+    elif (( NOW - act < DAYS_S )); then
+        state=4
+    else
+        state=5
+    fi
+
+    if [ -n "$prot" ]; then
+        tier=1
+    elif [ "${B_lock[i]}" -eq 1 ]; then
+        tier=2
+    else
+        tier=$state
+    fi
+
+    if [ -n "$prot" ]; then
+        badge="($prot)"
+    else
+        if [ "${B_lock[i]}" -eq 1 ]; then
+            if [ -n "${B_lockreason["$name"]}" ]; then parts+=("locked: ${B_lockreason["$name"]}"); else parts+=("locked"); fi
+        fi
+        if [ -n "$work" ]; then parts+=("$work"); else parts+=("$merged"); fi
+        [ "${B_track[i]}" = "[gone]" ] && parts+=("upstream gone")
+        for x in "${parts[@]}"; do badge+="${badge:+, }$x"; done
+    fi
+
+    I_key[i]="$name"; I_disp[i]="$name"; I_col2[i]="${B_up[i]:--}"
+    I_prot[i]="$prot"; I_tier[i]=$tier; I_state[i]=$state; I_act[i]=$act
+    I_miss[i]=0; I_work[i]="$work"; I_badge[i]="$badge"; I_subject[i]="${B_subject[i]}"
+}
+
+REMOVED=0
+LOCKED=0
+
+# What the word on one line does to branch I, which the library has already
+# looked at again: it is not protected, and has not moved to a riskier tier
+# unless the word is a lock.
+act_on() {
+    local i=$1 k=$2 verb name d now err text sha relock=0 reason
+    verb="${A_verb[k]}"; name="${A_key[k]}"
+    d="${I_disp[i]}"; now="${I_state[i]}"
+    reason="${B_lockreason["$name"]-}"
+
+    if [ "$verb" = lock ]; then
+        text="${A_reason[k]:-kept by git cleanup branches}"
+        if [ "${B_lock[i]}" -eq 1 ]; then
+            if [ -z "${A_reason[k]}" ] || [ "${A_reason[k]}" = "$reason" ]; then
+                echo "locked    $d (already)"
+                return
+            fi
+        fi
+        if err="$(git config "branch.$name.cleanupLock" "$text" 2>&1)"; then
+            echo "locked    $d: $text"; LOCKED=$((LOCKED + 1))
+        else
+            failed "$d" "$err"
+        fi
+        return
+    fi
+
+    case $verb in
+        clean|force)
+            if [ "${B_lock[i]}" -eq 1 ]; then
+                refuse "$d" "locked${reason:+ ($reason)}; use unlock or unlock-force"
+                return
+            fi
+            ;;
+    esac
+    case $verb in
+        clean|unlock)
+            if [ "$now" -eq 3 ]; then
+                refuse "$d" "has work (${I_work[i]}); use $( [ "$verb" = clean ] && echo force || echo unlock-force ) to delete it anyway"
+                return
+            fi
+            ;;
+    esac
+
+    if [ "${B_lock[i]}" -eq 1 ]; then
+        if ! err="$(git config --unset "branch.$name.cleanupLock" 2>&1)"; then failed "$d" "$err"; return; fi
+        relock=1
+    fi
+
+    sha="$(git rev-parse --short "refs/heads/$name" 2>/dev/null)"
+    if err="$(git branch -D "$name" 2>&1)"; then
+        echo "deleted   $d (was $sha)"
+        REMOVED=$((REMOVED + 1))
+    else
+        (( relock )) && git config "branch.$name.cleanupLock" "$reason" >/dev/null 2>&1
+        failed "$d" "$err"
+    fi
+}
+
+confirm_text() {
+    local verb removing=0 forcing=0 unlocking=0 locking=0 text
+    for verb in "${A_verb[@]}"; do
+        case $verb in
+            lock) locking=$((locking + 1)) ;;
+            *) removing=$((removing + 1)) ;;
+        esac
+        case $verb in force|unlock-force) forcing=$((forcing + 1)) ;; esac
+        case $verb in unlock|unlock-force) unlocking=$((unlocking + 1)) ;; esac
+    done
+    text=""
+    if (( removing )); then
+        text="delete $removing"
+        (( forcing )) && text+=", $forcing of them losing commits that are neither merged nor pushed"
+        (( unlocking )) && text+=", $unlocking unlocked first"
+    fi
+    if (( locking )); then text+="${text:+; }lock $locking"; fi
+    echo "$text"
+}
+
+summary() {
+    printf '%d deleted, %d locked, %d not done\n' "$REMOVED" "$LOCKED" "$BAD"
+}
+
+cleanup_main "$@"

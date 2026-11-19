@@ -2,11 +2,11 @@
 # The part of `git cleanup <thing>` that does not depend on the thing: reading
 # the flags, writing the list, opening it in $GIT_EDITOR, parsing what comes
 # back, asking once more, and applying it line by line. Sourced by
-# lib/cleanup-worktrees, and meant for a lib/cleanup-branches to be sourced by
-# in the same way. Nothing is written for branches yet: it was extracted from
-# the one script that exists, along the seams that a second one would
-# obviously want, and the first branches script is likely to move a seam or
-# two. Say so here rather than pretend it was foreseen.
+# lib/cleanup-worktrees and lib/cleanup-branches. It was extracted from the
+# worktrees script alone, along the seams a second one would obviously want,
+# and the branches script was then written against it. That moved one seam:
+# how long idle means. It was fourteen days written into this file, and
+# branches wanted one, so each subcommand now says (DAYS_DEFAULT below).
 #
 # The list is opened in an editor, the way `git rebase -i` does, and what is
 # saved is what happens. A picker (fzf, numbers typed at a prompt) was weighed
@@ -48,7 +48,7 @@
 # over for needing an install.sh line and a MANPATH that nothing else wants.
 #
 # CLEANUP_NOW (seconds since the epoch) stands in for the clock. Only the tests
-# set it, to put the fourteen-day boundary where they can hit it.
+# set it, to put the idle boundary where they can hit it.
 #
 # What the script that sources this must provide:
 #
@@ -57,6 +57,11 @@
 #                      of every message
 #     CLEANUP_MAN      the manual page's name, "git-cleanup-worktrees"
 #     ITEM, ITEMS      the thing listed, singular and plural, for prose
+#     DAYS_DEFAULT     days without activity that make an item idle, unless
+#                      --days says otherwise: 14 for worktrees, 7 for branches
+#                      (a merged branch costs nothing to remake; a worktree is
+#                      a checkout somebody may come back to). Left unset it is
+#                      14.
 #     VALID_WORDS      array of the words a line may start with
 #     REASON_WORD      the one word that may carry a quoted reason ("lock")
 #     RECHECK_EXEMPT   array of words that are not refused when the item has
@@ -72,6 +77,16 @@
 #     load_items       fill N and I_key (a unique id per item) for every item,
 #                      and whatever the script's own arrays hold. Called again
 #                      before each action, so it must reflect the world now
+#     load_one KEY     optional. Like load_items, but for the one item KEY: N
+#                      becomes 1 (or 0 if it is gone) with the item at index
+#                      0. cleanup_apply calls it before each action instead of
+#                      load_items, which is what keeps applying linear: a full
+#                      reload per action made deleting N branches cost N
+#                      reloads of all of them, 30 seconds for 560 of 1040
+#     prepare          optional. Called once, after the first load_items and
+#                      before the first inspect, for work that is cheaper done
+#                      for every item at once than inside each inspect (a
+#                      branch lookup that costs a network round trip, say)
 #     inspect I        fill the I_* arrays for item I (see below)
 #     act_on I K       carry out word A_verb[K] on item I, reporting with
 #                      refuse / failed / echo, and keeping its own counts
@@ -91,13 +106,28 @@
 #
 # After parse(), A_verb / A_key / A_reason hold what the user asked for.
 
-DAYS=14
 DRY=0
 YES=0
 BAD=0
 declare -A LISTED_STATE=()
 
+# One line on stderr that is overwritten as it changes, and only when stderr is
+# a terminal, so a pipe or a file is never given the carriage returns. What is
+# slow here is a wait with nothing on the screen, and not how long it is: a
+# counter that moves is the difference between a script that works and one that
+# looks hung.
+progress() {
+    if [ -t 2 ]; then printf '\r\033[K%s' "$*" >&2; fi
+    return 0
+}
+
+progress_done() {
+    if [ -t 2 ]; then printf '\r\033[K' >&2; fi
+    return 0
+}
+
 die() {
+    progress_done
     echo "$CLEANUP_CMD: $*" >&2
     exit "${DIE_STATUS:-1}"
 }
@@ -108,7 +138,7 @@ usage: $CLEANUP_CMD [-n | -y] [--days N]
 
   -n, --dry-run  list the $ITEMS and what would happen to each by default
   -y, --yes      clean the idle ones now, without the editor or a question
-  --days N       how long without activity counts as idle (default 14)
+  --days N       how long without activity counts as idle (default $DAYS_DEFAULT)
   -h, --help     this text
 
 Without -n or -y the list opens in your git editor. The first word of a line
@@ -124,6 +154,8 @@ EOF
 }
 
 cleanup_parse_args() {
+    : "${DAYS_DEFAULT:=14}"
+    DAYS="$DAYS_DEFAULT"
     while [ $# -gt 0 ]; do
         case "$1" in
             -n|--dry-run) DRY=1 ;;
@@ -320,7 +352,7 @@ cleanup_apply() {
     BAD=0
     for ((k = 0; k < ${#A_verb[@]}; k++)); do
         verb="${A_verb[k]}"; key="${A_key[k]}"
-        load_items
+        if declare -F load_one >/dev/null; then load_one "$key"; else load_items; fi
         find_idx "$key"
         if [ "$FOUND" -lt 0 ]; then echo "gone      $key"; continue; fi
         i=$FOUND
@@ -358,10 +390,13 @@ cleanup_main() {
     cleanup_parse_args "$@"
     setup
     load_items
+    if declare -F prepare >/dev/null; then prepare; fi
     for ((i = 0; i < N; i++)); do
+        progress "$CLEANUP_CMD: reading $ITEMS, $((i + 1)) of $N"
         inspect "$i"
         LISTED_STATE["${I_key[i]}"]="${I_state[i]}"
     done
+    progress_done
 
     if [ "$DRY" -eq 1 ]; then
         render_body

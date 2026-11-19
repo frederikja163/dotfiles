@@ -1,0 +1,201 @@
+.\" The manual for lib/cleanup-branches, which is what `git cleanup branches
+.\" --help` opens: the script hands --help to man, since git passes arguments
+.\" after a subcommand through untouched. Only `git cleanup --help` is git's,
+.\" and is git-cleanup.1. -h prints the short form.
+.\"
+.\" What is common to every `git cleanup` subcommand (the flags, the file the
+.\" editor opens, the exit status) is in git-cleanup.1, not repeated here.
+.\"
+.\" The list of words is written out three times: here, in the script's
+.\" words(), which is also the header of the file the editor opens and what -h
+.\" prints, and nowhere else. tests/test_cleanup_branches.sh fails when this
+.\" page lacks one the script reads, so they cannot drift apart unnoticed.
+.TH GIT\-CLEANUP\-BRANCHES 1 "" "dotfiles" "dotfiles"
+.SH NAME
+git\-cleanup\-branches \- delete local git branches that are merged or pushed and have been quiet for a week
+.SH SYNOPSIS
+.B git cleanup branches
+[\fB\-n\fR | \fB\-y\fR] [\fB\-\-days\fR \fIN\fR]
+.br
+.B git cleanup branches
+\fB\-h\fR
+.SH DESCRIPTION
+Sorts every local branch into a group, opens the list in your git editor, and
+does what the saved list says. Only branches that have been idle for
+.B \-\-days
+days (seven unless told otherwise) start out turned on.
+.PP
+\fBbranch\fR and \fBbr\fR do for \fBbranches\fR. The options, the file the editor
+opens and the exit status are the same for every subcommand and are in
+.BR git\-cleanup (1).
+.PP
+Local branches only. Remote branches are never touched.
+.PP
+The threshold is a week and not the fourteen days of worktrees, because an idle
+branch has nothing that is not already in the default branch or on a remote:
+deleting it loses a name, and a single command brings that back. It is not
+shorter because the local branch list is also a record of what was worked on
+lately, and a branch merged on Monday should still be in it on Tuesday. A branch
+with work that only it has is in \fBhas work\fR however old it is, so the
+threshold cannot reach anything that matters.
+.SH THE LIST
+A branch is put in the first of these that fits it, and they are listed in this
+order.
+.TP
+.B 1 protected
+The default branch (what \fBorigin/HEAD\fR says, then \fBinit.defaultBranch\fR,
+then \fBmain\fR or \fBmaster\fR), the branch you are on, and any branch that is
+checked out in a worktree, which the row names. Never cleaned, and git refuses to
+delete the last two itself. Written as a comment with no word, so it cannot be
+turned on.
+.IP
+A worktree whose directory has gone still holds its branch until it is pruned,
+and the row says so. Run \fBgit cleanup worktrees\fR first: removing a worktree
+keeps its branch, which is then judged on its own the next time.
+.TP
+.B 2 locked
+Marked as kept with \fBlock\fR. Shown with the reason. Written as \fB# unlock\fR.
+.TP
+.B 3 has work
+Commits that are on neither the default branch nor any remote\-tracking branch,
+and that no merged pull request accounts for (see below). Written as
+\fB# clean\fR.
+.TP
+.B 4 recent
+Nothing to lose, but active within the last \fB\-\-days\fR days. Written as
+\fB# clean\fR.
+.TP
+.B 5 idle
+Nothing to lose and quiet for \fB\-\-days\fR days. Written as \fBclean\fR, so it
+is on.
+.PP
+Idle ones are listed oldest first, recent and has\-work ones newest first. The
+rows say how many commits are only here, or whether the branch is \fBmerged\fR
+or \fBpushed\fR, and show \fBupstream gone\fR when the remote branch has been
+deleted. That is shown and not trusted: it is as true of an unmerged branch
+deleted on the remote.
+.SH MERGED
+A branch has nothing to lose when any of these holds, checked in this order.
+.IP \(bu 2
+Its tip is reachable from the local default branch.
+.IP \(bu 2
+Every commit on it is on some remote\-tracking branch: it has been pushed.
+.IP \(bu 2
+A merged pull request has this branch's name \fIand\fR its tip commit. This is
+for squash merges, which GitHub makes of most pull requests: the branch's own
+commits never reach the default branch, only a new one holding the same change,
+and \fBgit branch \-\-merged\fR cannot see that.
+.PP
+The tip is what stops a branch that went on after the merge, or was amended,
+from being called merged: it stays in \fBhas work\fR.
+.PP
+The pull requests are asked about by branch name, in one GraphQL request through
+\fBgh\fR for all the branches that need it (forty at a time, so a longer list is
+several), and only when some branch is not merged or pushed. It costs one round
+trip whatever the repository's history, and has no limit to fall off: an old
+branch is found as readily as a new one. A listing of the last thousand merged
+pull requests was tried first and took several seconds on a repository with a
+long history. Without \fBgh\fR, without a network, or on a remote that is not
+GitHub, the run says so once and such branches stay in \fBhas work\fR.
+.SH THE WORDS
+The first word of a line says what happens to the branch it names. A line
+starting with
+.B #
+and a space is off: take the
+.B #
+and the space off to turn it on, put them back or delete the line to skip it.
+.TP
+.B clean
+Delete the branch. Refused if it has commits that are neither merged nor
+pushed.
+.TP
+.B force
+Delete it even then, losing those commits.
+.TP
+.B unlock
+Unlock it, then clean.
+.TP
+.B unlock\-force
+Unlock it, then force.
+.TP
+.B lock
+Lock it instead, so it is kept: it is listed as locked from then on, and a locked
+branch is never cleaned until unlocked. Say why in double quotes between the word
+and the name:
+.RS
+.PP
+.nf
+lock "release 1.4"  feat/x
+.fi
+.PP
+The reason cannot contain a double quote. Without one the lock says it was made
+by this command. A different reason for a branch that is already locked replaces
+the old one.
+.PP
+Git has no lock on a branch. This one is a setting,
+\fBbranch.\fIname\fB.cleanupLock\fR, whose value is the reason, and only
+\fBgit cleanup\fR honours it: \fBgit branch \-D\fR takes no notice. It lives in
+the repository's own config, moves with \fBgit branch \-m\fR, and is removed when
+the branch is deleted.
+.RE
+.PP
+There is no \fBdiscard\fR, which has nothing to apply to here.
+.SH SAFETY
+.IP \(bu 2
+.B clean
+never throws work away. Turning on a whole group is safe, because it refuses a
+branch with commits that exist nowhere else, as does \fBunlock\fR. Only
+.B force
+and
+.B unlock\-force
+written on the line delete those.
+.IP \(bu 2
+Each line is looked at again just before it is acted on. A branch that has moved
+to a riskier group while the editor was open, or that a worktree has since
+checked out, is refused rather than deleted on out\-of\-date information.
+.IP \(bu 2
+A branch is deleted with \fBgit branch \-D\fR after that check. \fB\-d\fR judges
+"merged" against whatever is checked out, and refuses a squash\-merged branch that
+is fine to go.
+.IP \(bu 2
+Deleting a branch deletes its reflog, so every deletion prints the commit the
+branch was at, \fBdeleted feat/x (was a1b2c3d)\fR. \fBgit branch feat/x a1b2c3d\fR
+brings it back.
+.IP \(bu 2
+A lock is put back, with its reason, if a branch that was unlocked to be deleted
+could not be.
+.SH ACTIVITY
+The newer of the tip commit's date and the newest entry in the branch's own
+reflog, so a branch made today from an old commit is not idle. The reflog is
+stamped when the branch is made and on a commit, reset or rebase on it, and not
+on a checkout, so a branch that was only looked at reads as quiet. That costs
+nothing: a quiet branch with no work of its own is what is being looked for.
+.SH EXAMPLES
+See what would happen, and change nothing:
+.PP
+.nf
+git cleanup branches \-n
+.fi
+.PP
+Delete what is idle without looking at it:
+.PP
+.nf
+git cleanup br \-y
+.fi
+.PP
+Treat a week as idle, and review the list:
+.PP
+.nf
+git cleanup branches \-\-days 7
+.fi
+.PP
+In the editor, delete a branch with unmerged work and keep another for good:
+.PP
+.nf
+force  spike  origin/spike  40d  3 commits only here
+lock "release hotfix"  hotfix/1.4  origin/hotfix/1.4  12d  pushed
+.fi
+.SH SEE ALSO
+.BR git\-cleanup (1),
+.BR git\-cleanup\-worktrees (1),
+.BR git\-branch (1)

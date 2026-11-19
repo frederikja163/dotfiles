@@ -39,7 +39,7 @@ curl -fsSL https://raw.githubusercontent.com/frederikja163/dotfiles/main/setup.s
 | `xdg`      | `~/.config/{mimeapps.list,xdg-desktop-portal,xdg-desktop-portal-termfilechooser}`, `~/.local/share/{applications,dbus-1}` | yazi as the file explorer and Brave's file dialogs, Brave as the default browser |
 | `systemd`  | `~/.config/systemd/user/`     | drop-in that restarts hypridle and un-dims the screen when it crashes |
 | `bin`      | — (on `PATH` in place)        | small scripts; not linked, see `install.sh` |
-| `man`      | — (found beside `bin` on `PATH`) | manual pages for scripts in `bin/`; `man git-cleanup`, `man git-cleanup-worktrees` |
+| `man`      | — (found beside `bin` on `PATH`) | manual pages for scripts in `bin/`; `man git-cleanup`, `man git-cleanup-worktrees`, `man git-cleanup-branches` |
 | `system`   | `/etc`                        | system config (needs root)           |
 | `packages` | —                             | `pacman.txt`, `aur.txt`              |
 | `tests`    | —                             | `run.sh`, `sandbox.sh`, Lua tests, `test_nvim.sh` for the editor |
@@ -86,7 +86,7 @@ dotfiles, and is named after whatever it drives instead.
 | `dotfiles-monitor-order` | pin which screen is monitor 1, 2, ...; set orientation              |
 | `dotfiles-session-restore` | desktops and windows back after a crash, not after a boot; `--now`, `--off` |
 | `github-notify`          | GitHub notifications as dunst ones, polled every minute; following one opens it |
-| `git-cleanup`            | `git cleanup worktrees` (or `wt`): worktrees idle for 14 days, reviewed in your git editor, then removed; a line's first word is `clean`, `force`, `discard`, `unlock`, `unlock-force` or `lock "reason"`; `-n` lists, `-y` cleans the idle ones, `--days N`; `git cleanup worktrees --help` is the manual; branches are meant to follow |
+| `git-cleanup`            | `git cleanup worktrees` (`wt`) and `git cleanup branches` (`br`): what has gone stale, reviewed in your git editor, then removed; worktrees after 14 days idle, local branches that are merged or pushed after a week; a line's first word is `clean`, `force`, `discard` (worktrees), `unlock`, `unlock-force` or `lock "reason"`; `-n` lists, `-y` cleans the idle ones, `--days N`; `git cleanup <thing> --help` is the manual |
 | `hypr-keybinds`          | the `SUPER + /` cheatsheet, generated from `hyprctl binds`          |
 | `ide`                    | `SUPER + SHIFT + I`: Rider if the directory holds a solution, else nvim |
 | `power-menu`             | `SUPER + Escape`: lock, log out, reboot, shut down                  |
@@ -109,8 +109,8 @@ scripts start with (drag for an area, click for a window), and `lib/focused-wind
 which they end with: a notice that opens the file in yazi, and the deleting of
 captures over thirty days old; `lib/indicator`, which feeds the bar's camera,
 microphone and Caps Lock pills; `lib/cleanup-worktrees`, which `git cleanup
-worktrees` runs, on `lib/cleanup-lib.sh`, the editor-driven list that a
-`cleanup-branches` is meant to share; and `lib/lines-changed.csx`, the dotnet-script
+worktrees` runs, and `lib/cleanup-branches`, both on `lib/cleanup-lib.sh`, the editor-driven
+list they share; and `lib/lines-changed.csx`, the dotnet-script
 that `bin/lines-changed` launches. That pair has nothing of this repo in it and
 is meant to be copied out whole.
 

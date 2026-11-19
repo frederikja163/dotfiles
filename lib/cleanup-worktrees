@@ -97,6 +97,7 @@ CLEANUP_CMD="git cleanup worktrees"
 CLEANUP_MAN="git-cleanup-worktrees"
 ITEM="worktree"
 ITEMS="worktrees"
+DAYS_DEFAULT=14
 VALID_WORDS=(clean force discard unlock unlock-force lock)
 REASON_WORD="lock"
 RECHECK_EXEMPT=(lock)

@@ -501,9 +501,9 @@ done
 OUT="$(cd "$R" && "$SCRIPT" 2>&1)"; RC=$?
 check "no argument is a usage error" "$RC" 2
 check "...that lists what there is to clean" "$(grep -c 'worktrees' <<<"$OUT")" 1
-OUT="$(cd "$R" && "$SCRIPT" branches 2>&1)"; RC=$?
+OUT="$(cd "$R" && "$SCRIPT" remote-branches 2>&1)"; RC=$?
 check "something it does not know is a usage error" "$RC" 2
-check "...which names it" "$(grep -c 'unknown thing to clean: branches' <<<"$OUT")" 1
+check "...which names it" "$(grep -c 'unknown thing to clean: remote-branches' <<<"$OUT")" 1
 OUT="$(cd "$R" && "$SCRIPT" -h 2>&1)"; RC=$?
 check "-h is the usage, and not an error" "$RC" 0
 OUT="$(cd "$R" && "$SCRIPT" wt --days nope 2>&1)"; RC=$?
