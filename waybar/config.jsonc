@@ -48,9 +48,13 @@
     "hyprland/workspaces",
     "hyprland/submap"
   ],
-  "modules-center": [
-    "clock"
-  ],
+  // The clock is the last of the right-hand group, in the corner, and not in
+  // the centre slot it started in. A centred module is placed against the
+  // middle of the bar, so when the left and right groups together outgrow a
+  // laptop screen it is the first thing to be pushed sideways; in the corner it
+  // has nothing to be pushed against. Its text is a fixed width apart from the
+  // weekday and month names, so the status icons beside it move by a character
+  // at most, never by a title's length.
   "modules-right": [
     "custom/recording",
     "custom/camera",
@@ -64,8 +68,23 @@
     "bluetooth",
     "network",
     "backlight",
-    "battery"
+    "battery",
+    "clock"
   ],
+  // Waybar has no way to scroll this module or clip it: it always lays out
+  // every button, and when they outgrow the bar the bar's minimum width grows
+  // and the rest is shoved around. So on a narrow screen the names are cut
+  // instead, which bin/waybar-main does per monitor by replacing "format" with
+  // "{name:.12}" below a width threshold. It is done there and not here
+  // because this file describes one machine-independent bar, and a wide screen
+  // has room for the full names.
+  //
+  // The truncating form has to say {name}, never {icon:.12}. Waybar decides
+  // whether to look icons up by searching the format for the literal text
+  // "{icon}" (workspaces.cpp), so any modifier inside the braces turns the
+  // lookup off and the button comes out empty, with no error. It also means a
+  // narrow screen does not get the format-icons fallback below, which only ever
+  // mattered for desktops nothing has labelled.
   "hyprland/workspaces": {
     "on-click": "activate",
     "format": "{icon}",
@@ -200,6 +219,8 @@
   // the left group grows rightwards from a fixed edge. In the right-hand group
   // the growth is absorbed at the group's own left edge, so the icons at the
   // far end -- the ones read by position rather than by looking -- hold still.
+  // (The clock now sits beyond them in the corner, a fixed-width pill, so they
+  // are held in place by it and not by the screen edge.)
   //
   // This is the built-in mpris module rather than a custom module polling mpv's
   // --input-ipc-server socket. mpv speaks no MPRIS by itself: it sits on the

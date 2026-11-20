@@ -70,15 +70,35 @@ monitors = [
 if not monitors:
     sys.exit(1)
 
-# Every monitor gets the same full bar. Each bar is pinned to one output so
+# Every monitor gets the same full bar, bar one difference below. Each bar is pinned to one output so
 # waybar puts a copy on each screen rather than one bar spanning all of them;
 # a bar with an empty "output" would land on every monitor anyway, but spelling
 # them out keeps each bar on the monitor it is drawn for.
+#
+# A narrow screen gets its desktop names cut short. Waybar cannot scroll or clip
+# the workspaces module, so on a laptop with a long row of labelled desktops
+# the bar outgrows the screen and shoves everything else about; a wide screen
+# has the room and keeps the full names. The width compared is the logical one,
+# after scaling, since that is the space the bar is actually laid out in: the
+# 1920 pixel panel at 1.5 scale is 1280 wide, not 1920. The format has to be
+# {name:.N} and never {icon:.N}, see the note over hyprland/workspaces in the
+# config.
+NARROW_BELOW = 1500
+NAME_LENGTH = 12
+
+def logical_width(m):
+    scale = m.get("scale") or 1
+    return m["width"] / scale
+
 bars = []
 for m in monitors:
     bar = dict(config)
     bar["name"] = m["name"]
     bar["output"] = m["name"]
+    if logical_width(m) < NARROW_BELOW and "hyprland/workspaces" in bar:
+        bar["hyprland/workspaces"] = dict(
+            bar["hyprland/workspaces"], format="{name:.%d}" % NAME_LENGTH
+        )
     bars.append(bar)
 
 json.dump(bars, open(dst, "w"), indent=2)

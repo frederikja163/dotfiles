@@ -55,8 +55,12 @@ STUB
 cat > "$TMP/bin/hyprctl" <<'STUB'
 #!/usr/bin/env bash
 [ -n "${SLOW_HYPRCTL:-}" ] && sleep "$SLOW_HYPRCTL"
+if [ -n "${MONITORS_JSON:-}" ]; then
+    printf '%s\n' "$MONITORS_JSON"
+    exit 0
+fi
 cat <<'JSON'
-[{"name":"TEST-1","width":1920,"height":1080,"disabled":false}]
+[{"name":"TEST-1","width":1920,"height":1080,"scale":1.0,"disabled":false}]
 JSON
 STUB
 
@@ -138,6 +142,39 @@ wait "$a" "$b"
 check "one bar" "$(bar_count)" 1
 check "and it is a new one" "$([ "$(bar_pids)" != "$first" ] && echo yes)" yes
 unset SLOW_HYPRCTL
+
+# What the generated config says about one monitor's workspaces format.
+format_of() {
+    python3 - "$XDG_RUNTIME_DIR/waybar-main.jsonc" "$1" <<'PY'
+import json, sys
+bars = {b["output"]: b for b in json.load(open(sys.argv[1]))}
+print(bars[sys.argv[2]]["hyprland/workspaces"]["format"])
+PY
+}
+
+echo "scenario: a narrow screen gets its desktop names cut, a wide one does not"
+# The laptop: 1920 pixels at scale 1.5 is 1280 logical, which is what the bar
+# is laid out in. The raw width alone would call it a wide screen.
+export MONITORS_JSON='[
+ {"name":"LAPTOP","width":1920,"height":1200,"scale":1.5,"disabled":false},
+ {"name":"DESK","width":2560,"height":1440,"scale":1.0,"disabled":false},
+ {"name":"FHD","width":1920,"height":1080,"scale":1.0,"disabled":false},
+ {"name":"NOSCALE","width":1280,"height":720,"disabled":false}]'
+"$SCRIPT" >/dev/null 2>&1
+check "scaled laptop is truncated" "$(format_of LAPTOP)" "{name:.12}"
+check "wide monitor keeps the icon format" "$(format_of DESK)" "{icon}"
+check "1080p at scale 1 keeps the icon format" "$(format_of FHD)" "{icon}"
+check "a missing scale counts as 1" "$(format_of NOSCALE)" "{name:.12}"
+unset MONITORS_JSON
+
+echo "scenario: the clock is the last module on the right"
+last="$(python3 - "$XDG_RUNTIME_DIR/waybar-main.jsonc" <<'PY'
+import json, sys
+bar = json.load(open(sys.argv[1]))[0]
+print(bar["modules-right"][-1], "modules-center" in bar)
+PY
+)"
+check "clock last, no centre group" "$last" "clock False"
 
 echo
 printf '%d passed, %d failed\n' "$pass" "$fail"
