@@ -1,5 +1,5 @@
 -- Debugging C#: build, launch under a debugger, stop at a breakpoint, step, look
--- at values. The verb is <leader>D, which enters a mode (ide.modal), and the same
+-- at values. The verb is <leader>d, which enters a mode (ide.modal), and the same
 -- things are :Debug, :DebugAttach and :Breakpoints.
 --
 -- Two pieces do the work. nvim-dap is the client: Neovim has no Debug Adapter
@@ -414,8 +414,8 @@ end
 
 modal.define('debug', {
     desc = 'Debug the program, step by step',
-    entry = '<leader>D',
-    hint = 'j over · l into · h out · c continue or start · b breakpoint · r to cursor · u/d stack · K value · s vars · f stack list · q stop',
+    entry = '<leader>d',
+    hint = 'j over · l into · h out · c continue or start · b breakpoint · r to cursor · u/d stack · K or <C-s> value · s vars · f stack list · q stop',
     -- As long as review's, for the same reason: it is a mode for reading, and the
     -- program being looked at does not stop to be looked at.
     idle = 30000,
@@ -430,7 +430,7 @@ modal.define('debug', {
         { 'B', conditional_breakpoint, desc = 'Breakpoint on this line that stops only when a condition is true' },
         { 'u', frame('up'), desc = 'Up the call stack, to the caller' },
         { 'd', frame('down'), desc = 'Down the call stack, back toward where it stopped' },
-        { 'K', evaluate, desc = 'Show the value of the expression under the cursor' },
+        { { 'K', '<C-s>' }, evaluate, desc = 'Show the value of the expression under the cursor' },
         { 's', sidebar('scopes', 'scopes'), desc = 'Show or hide the variables' },
         { 'f', sidebar('frames', 'frames'), desc = 'Show or hide the call stack' },
         { 'R', repl, desc = 'Show or hide the REPL: the output, and expressions to evaluate', leave = true },

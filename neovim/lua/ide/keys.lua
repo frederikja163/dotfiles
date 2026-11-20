@@ -53,7 +53,9 @@ for _, key in ipairs({ 'h', 'j', 'k', 'l' }) do
 end
 -- Completion (ide.completion). The menu is Neovim's own, so <C-n>, <C-p>, <C-y>
 -- and <C-e> are what they always were; these are the keys cmp had that it has no
--- equivalent for. <C-s> is Neovim's: signature help, by hand.
+-- equivalent for. <C-s> is Neovim's: signature help, by hand. In Normal mode it is
+-- hover, so that the one chord means "show me what this is" in both modes; K is
+-- the same thing and keeps working, but cannot be typed in Insert mode.
 map('i', '<CR>', completion.confirm, { expr = true, desc = 'Accept the highlighted completion, or a new line' })
 map({ 'i', 's' }, '<Tab>', completion.next, { expr = true, desc = 'Next completion or snippet placeholder, or a tab' })
 map({ 'i', 's' }, '<S-Tab>', completion.previous, { expr = true, desc = 'Previous completion or snippet placeholder' })
@@ -65,6 +67,8 @@ map('i', '<C-j>', '<C-o>j', { desc = 'Move the cursor down without leaving Inser
 map('i', '<C-k>', '<C-o>k', { desc = 'Move the cursor up without leaving Insert mode' })
 map('i', '<C-h>', '<C-o>h', { desc = 'Move the cursor left without leaving Insert mode' })
 map('i', '<C-l>', '<C-o>l', { desc = 'Move the cursor right without leaving Insert mode' })
+
+map('n', '<C-s>', function() vim.lsp.buf.hover() end, { desc = 'Show the documentation of the symbol under the cursor' })
 
 map('n', '<leader>ws', '<cmd>wincmd s<CR>', { desc = 'Split the window below' })
 map('n', '<leader>wv', '<cmd>wincmd v<CR>', { desc = 'Split the window to the right' })
@@ -161,12 +165,12 @@ map('n', '[e', function()
     vim.diagnostic.jump({ count = -1, severity = vim.diagnostic.severity.ERROR, float = true })
 end, { desc = 'Previous error' })
 
--- The diagnostics under the cursor, which is used all the time, so it has the
--- short key and the debug mode is the one on <leader>D. Neovim's own <C-w>d is a
--- chord that is awkward to type for something this frequent, and stays as it is.
--- <C-d> was considered and is not used: it scrolls half a page, which is more
--- frequent still.
-map('n', '<leader>d', vim.diagnostic.open_float, { desc = 'Show the diagnostics under the cursor' })
+-- The diagnostics under the cursor. <leader>d is the debug mode, which was on
+-- <leader>D and cost three keys to enter; x is the usual letter for problems.
+-- Neovim's own <C-w>d is a chord that is awkward to type for something this
+-- frequent, and stays as it is. <C-d> was considered and is not used: it scrolls
+-- half a page, which is more frequent still.
+map('n', '<leader>x', vim.diagnostic.open_float, { desc = 'Show the diagnostics under the cursor' })
 
 -- Review is a mode, on <leader>r, and is declared with its keys in ide.review.
 -- What stays out here is what is useful with no review running.

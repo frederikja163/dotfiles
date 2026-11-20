@@ -29,7 +29,7 @@ local BUILTIN = {
     { 'ZR', 'Restart Neovim and restore the session (a count 1-8 does not restore it)' },
     { '<C-]>', 'Go to the definition of the word under the cursor' },
     { '<C-t>', 'Go back from a definition' },
-    { '<C-w>d', 'Show the diagnostics under the cursor (<leader>d is the short way)' },
+    { '<C-w>d', 'Show the diagnostics under the cursor (<leader>x is the short way)' },
 }
 
 -- Defaults that carry their own description, kept in the sheet.

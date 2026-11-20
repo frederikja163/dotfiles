@@ -43,7 +43,7 @@ T.async(function()
     ------------------------------------------------------------------------
     T.section('the config loads, and the mode is there')
     T.check('no module failed', vim.g.ide_failed, {})
-    T.check('<leader>D enters it', vim.fn.maparg(vim.keycode('<Space>D'), 'n', false, true).desc, 'Mode: Debug the program, step by step')
+    T.check('<leader>d enters it', vim.fn.maparg(vim.keycode('<Space>d'), 'n', false, true).desc, 'Mode: Debug the program, step by step')
     local listed
     for _, entry in ipairs(modal.list()) do
         if entry.name == 'debug' then listed = entry end

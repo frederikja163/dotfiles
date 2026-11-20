@@ -42,7 +42,7 @@ local expected = {
     '<C-h>', '<C-j>', '<C-k>', '<C-l>', '<Space>ff', '<Space>fb', '<Space>fh', '<Space>fo', '<Space>fj',
     '<Space>fr', '<Space>fR', '<Space>fd', '<Space>fD', '<Space>fp', '<Space>/', '<Space>e', '<Space><Space>',
     '<Space>?', '<Space>q', '<Space>Q', ']e', '[e', '<Space>s', '<Space>m', '<Space>ws', '<Space>wv', '<Space>wc',
-    '<Space>wo', '<Space>w=', '<Space>ww', '<Space>wr', ']c', '[c', '<Space>d', '<Space>D',
+    '<Space>wo', '<Space>w=', '<Space>ww', '<Space>wr', ']c', '[c', '<Space>d', '<Space>x',
     '<Space>bb', '<Space>br', '<Space>bw', '<Space>tt', '<Space>tn', '<Space>tf', '<Space>tl',
 }
 local absent = {}
@@ -56,8 +56,11 @@ T.check('and the ones this stage is about are all bound', absent, {})
 T.check('the keys moved off the review prefix are gone', vim.fn.maparg(vim.keycode('<Space>h'), 'n'), '')
 T.check('<leader>r is the review mode, not the config reload it was',
     vim.fn.maparg(vim.keycode('<Space>r'), 'n', false, true).desc, 'Mode: Review the diff, hunk by hunk')
-T.check('<leader>D is the debug mode', vim.fn.maparg(vim.keycode('<Space>D'), 'n', false, true).desc,
+T.check('<leader>d is the debug mode', vim.fn.maparg(vim.keycode('<Space>d'), 'n', false, true).desc,
     'Mode: Debug the program, step by step')
+T.check('<leader>D is free again', vim.fn.maparg(vim.keycode('<Space>D'), 'n'), '')
+T.check('<C-s> is hover in Normal mode, as it is signature help in Insert mode',
+    vim.fn.maparg(vim.keycode('<C-s>'), 'n', false, true).desc, 'Show the documentation of the symbol under the cursor')
 
 T.section('the wide find is the plain key and the shift one is this buffer')
 do
@@ -84,14 +87,14 @@ vim.api.nvim_set_current_buf(float_buf)
 vim.api.nvim_buf_set_lines(float_buf, 0, -1, false, { 'x' })
 local ns = vim.api.nvim_create_namespace('test-x')
 vim.diagnostic.set(ns, float_buf, { { lnum = 0, col = 0, message = 'something is wrong here' } })
-vim.api.nvim_feedkeys(vim.keycode('<Space>d'), 'x', false)
+vim.api.nvim_feedkeys(vim.keycode('<Space>x'), 'x', false)
 local shown
 for _, win in ipairs(vim.api.nvim_list_wins()) do
     if vim.api.nvim_win_get_config(win).relative ~= '' then
         shown = table.concat(vim.api.nvim_buf_get_lines(vim.api.nvim_win_get_buf(win), 0, -1, false), '\n')
     end
 end
-T.ok('<leader>d opens the diagnostics under the cursor', shown ~= nil and shown:find('something is wrong here', 1, true) ~= nil, shown)
+T.ok('<leader>x opens the diagnostics under the cursor', shown ~= nil and shown:find('something is wrong here', 1, true) ~= nil, shown)
 vim.cmd('silent only!')
 vim.diagnostic.reset(ns, float_buf)
 
